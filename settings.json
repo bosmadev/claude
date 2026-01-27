@@ -1,0 +1,504 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "FORCE_COLOR": "1",
+    "CLAUDE_CODE_TMPDIR": "/mnt/claude-tmp"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(spectacle --help:*)",
+      "Bash(bash:*)",
+      "Bash(pyright:*)",
+      "Bash(du:*)",
+      "Bash(gh auth status:*)",
+      "Bash(xargs cat:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(echo:*)",
+      "Bash(pwd:*)",
+      "Bash(which:*)",
+      "Bash(whereis:*)",
+      "Bash(file:*)",
+      "Bash(wc:*)",
+      "Bash(jq:*)",
+      "Bash(node:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(xxd:*)",
+      "Bash(pgrep:*)",
+      "Bash(systemctl status:*)",
+      "Bash(systemctl --user status:*)",
+      "Bash(claude:*)",
+      "Bash(uv:*)",
+      "Bash(pnpm:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(biome:*)",
+      "Bash(tsc:*)",
+      "Bash(vitest:*)",
+      "Bash(pytest:*)",
+      "Bash(playwright:*)",
+      "Bash(openssl rand:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)",
+      "Bash(git fetch:*)",
+      "Bash(git show:*)",
+      "Bash(git archive:*)",
+      "Bash(git add:*)",
+      "Bash(fc-list:*)",
+      "Bash(gh auth login:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh workflow list:*)",
+      "Bash(gh browse:*)",
+      "Bash(gh api:*)",
+      "Bash(pip show:*)",
+      "Bash(agent-browser:*)",
+      "Bash(getfacl:*)",
+      "Skill",
+      "Bash(/usr/share/claude/bin/agent-browser:*)",
+      "Bash(/usr/share/claude/bin/install-agent-browser.sh:*)",
+      "WebSearch",
+      "WebFetch",
+      "Read",
+      "Grep",
+      "Glob",
+      "Edit",
+      "Write",
+      "KillShell",
+      "NotebookEdit",
+      "Task",
+      "TodoWrite",
+      "mcp__serena__activate_project",
+      "mcp__serena__check_onboarding_performed",
+      "mcp__serena__create_text_file",
+      "mcp__serena__delete_memory",
+      "mcp__serena__edit_memory",
+      "mcp__serena__find_file",
+      "mcp__serena__find_referencing_symbols",
+      "mcp__serena__find_symbol",
+      "mcp__serena__get_current_config",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__initial_instructions",
+      "mcp__serena__insert_after_symbol",
+      "mcp__serena__insert_before_symbol",
+      "mcp__serena__list_dir",
+      "mcp__serena__list_memories",
+      "mcp__serena__onboarding",
+      "mcp__serena__prepare_for_new_conversation",
+      "mcp__serena__read_file",
+      "mcp__serena__read_memory",
+      "mcp__serena__rename_symbol",
+      "mcp__serena__replace_content",
+      "mcp__serena__replace_symbol_body",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__switch_modes",
+      "mcp__serena__think_about_collected_information",
+      "mcp__serena__think_about_task_adherence",
+      "mcp__serena__think_about_whether_you_are_done",
+      "mcp__serena__write_memory",
+      "mcp__playwriter__execute",
+      "mcp__playwriter__reset",
+      "mcp__ide__getDiagnostics",
+      "mcp__ide__executeCode",
+      "mcp__vs-claude__open",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(diff:*)",
+      "Bash(stat:*)",
+      "Bash(readlink:*)",
+      "Bash(realpath:*)",
+      "Bash(dirname:*)",
+      "Bash(basename:*)",
+      "Bash(mktemp:*)",
+      "Bash(md5sum:*)",
+      "Bash(sha256sum:*)",
+      "Bash(date:*)",
+      "Bash(env:*)",
+      "Bash(printenv:*)",
+      "Bash(whoami:*)",
+      "Bash(hostname:*)",
+      "Bash(uname:*)",
+      "Bash(lsof:*)",
+      "Bash(ps:*)",
+      "Bash(top -bn1:*)",
+      "Bash(free:*)",
+      "Bash(df:*)",
+      "Bash(timeout:*)",
+      "Bash(xdg-open:*)",
+      "Bash(code:*)",
+      "Bash(less:*)",
+      "Bash(more:*)",
+      "Bash(zip:*)",
+      "Bash(unzip:*)",
+      "Bash(tar:*)",
+      "Bash(gzip:*)",
+      "Bash(gunzip:*)",
+      "Bash(base64:*)",
+      "Bash(tr:*)",
+      "Bash(cut:*)",
+      "Bash(paste:*)",
+      "Bash(column:*)",
+      "Bash(printf:*)",
+      "Bash(test:*)",
+      "Bash([[:*)",
+      "Bash(true:*)",
+      "Bash(false:*)",
+      "Bash(sleep:*)",
+      "Bash(watch:*)",
+      "Bash(time:*)",
+      "Bash(seq:*)",
+      "Bash(yes:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(make:*)",
+      "Bash(cmake:*)",
+      "Bash(cargo:*)",
+      "Bash(go:*)",
+      "Bash(rustc:*)",
+      "Bash(gcc:*)",
+      "Bash(g++:*)",
+      "Bash(javac:*)",
+      "Bash(java:*)",
+      "Bash(ruby:*)",
+      "Bash(perl:*)",
+      "Bash(php:*)",
+      "Bash(dotnet:*)",
+      "Bash(mix:*)",
+      "Bash(rebar3:*)",
+      "Bash(elm:*)",
+      "Bash(deno:*)",
+      "Bash(bun:*)"
+    ],
+    "deny": [],
+    "ask": [
+      "Bash(> /dev/sda:*)",
+      "Bash(mkfs:*)",
+      "Bash(dd if=:*)",
+      "Bash(sudo:*)",
+      "Bash(su:*)",
+      "Bash(passwd:*)",
+      "Bash(chown:*)",
+      "Bash(curl:*)",
+      "Bash(curl * | sh:*)",
+      "Bash(curl * | bash:*)",
+      "Bash(wget * | sh:*)",
+      "Bash(wget * | bash:*)",
+      "Bash(eval:*)",
+      "Bash(exec:*)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf ~:*)",
+      "Bash(rm -rf /*:*)",
+      "Bash(rm :*)",
+      "Bash(rm -:*)",
+      "Bash(mv :*)",
+      "Bash(mv -:*)",
+      "Bash(cp :*)",
+      "Bash(cp -:*)",
+      "Bash(git checkout:*)",
+      "Bash(git reset:*)",
+      "Bash(git clean:*)",
+      "Bash(git init:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git commit:*)",
+      "Bash(git stash:*)",
+      "Bash(git sparse-checkout:*)",
+      "Bash(git rebase:*)",
+      "Bash(git merge:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git revert:*)",
+      "Bash(git tag:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(gh issue close:*)",
+      "Bash(gh issue delete:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr close:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(gh pr review:*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh repo delete:*)",
+      "Bash(gh repo fork:*)",
+      "Bash(gh release create:*)",
+      "Bash(gh release delete:*)",
+      "Bash(gh run cancel:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(kill:*)",
+      "Bash(pkill:*)",
+      "Bash(rm /usr/share/claude/plans/*-agent-*:*)",
+      "Bash(sed -i:*)",
+      "Bash(chmod:*)",
+      "mcp__serena__execute_shell_command",
+      "ExitPlanMode"
+    ],
+    "defaultMode": "plan"
+  },
+  "hooks": {
+    "Setup": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/scripts/token-guard.py check --quiet",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/setup.py validate-symlinks",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/ralph.py stop",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /usr/share/claudeCodeChange/tools/claudeChangeStop.js",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/dennis/.claudeCodeChange/tools/claudeChangeStop.js"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/ralph.py session-start",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/ralph.py pre-compact",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/share/claude/hooks/auto-allow.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/git.py commit-review",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "MultiEdit|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/share/claude/hooks/auto-allow.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node /usr/share/claudeCodeChange/tools/claudeChangePreToolUse.js",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/scripts/ralph.py hook-pretool",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "MultiEdit|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/dennis/.claudeCodeChange/tools/claudeChangePreToolUse.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/git.py command-history",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/git.py change-tracker",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py guardian",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py plan-write-check",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py hook-sync",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py insights-reminder",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py ralph-enforcer",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py ralph-agent-tracker",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "^/start",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py skill-parser",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /usr/share/claude/hooks/guards.py plan-comments",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/share/claude/hooks/utils.sh notify",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/usr/share/claude/scripts/statusline.sh"
+  },
+  "outputStyle": "Engineer",
+  "enabledPlugins": {},
+  "gitCoAuthor": false,
+  "enabledMcpjsonServers": [
+    "playwriter",
+    "context7",
+    "serena"
+  ],
+  "enableAllProjectMcpServers": true
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Refresh Claude OAuth Token on Resume from Sleep
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+# Layer 2: Defense against systemd Persistent=true bug #24984
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/share/claude/scripts/refresh-claude-token.sh
+Environment="CLAUDE_HOME=/usr/share/claude"
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
