@@ -262,9 +262,9 @@ fi
 ### Parse Commit Log
 
 Read `.claude/commit.md` to extract:
-- File list from "## Files Modified" section
+- File list from "## Changes" section
 - Summary from "## Summary" section
-- Detect conventional type from file patterns and descriptions
+- Detect action verb from file patterns and git status
 
 ## Example Session
 
