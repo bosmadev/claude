@@ -1,0 +1,148 @@
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned, labeled]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
+  # Manual trigger - "Summarize PR" button in Actions tab
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: false
+        type: choice
+        options:
+          - 'Summarize changes in this PR'
+          - 'Review code quality'
+          - 'Security audit (OWASP)'
+          - 'Custom prompt'
+        default: 'Summarize changes in this PR'
+      custom_prompt:
+        description: 'Custom prompt (if action is Custom prompt)'
+        required: false
+        type: string
+      model:
+        description: 'Model'
+        required: false
+        type: choice
+        options:
+          - claude-sonnet-4-5-20250929
+          - claude-opus-4-5-20251101
+        default: claude-sonnet-4-5-20250929
+      max_turns:
+        description: 'Max conversation turns'
+        required: false
+        type: number
+        default: 25
+      timeout:
+        description: 'Timeout (minutes)'
+        required: false
+        type: number
+        default: 30
+
+  # FUTURE: Uncomment for daily health check across codebases
+  # Runs at 9 AM on weekdays, pings each repo with a quick status check
+  # schedule:
+  #   - cron: '0 9 * * 1-5'  # 9 AM Mon-Fri
+  # To enable: uncomment above and add to job 'if' condition:
+  #   github.event_name == 'schedule' ||
+
+permissions:
+  id-token: write
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  claude:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && github.event.action == 'assigned' && github.event.assignee.login == 'claude[bot]') ||
+      (github.event_name == 'issues' && github.event.action == 'opened' && contains(github.event.issue.body, '@claude')) ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'claude') ||
+      (github.event_name == 'pull_request' && github.event.action == 'opened')
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ github.event.inputs.timeout || 30 }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Create MCP Configuration
+        run: |
+          cat > /tmp/mcp-config.json << 'EOF'
+          {
+            "mcpServers": {
+              "sequential-thinking": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+              },
+              "context7": {
+                "command": "npx",
+                "args": ["-y", "@context7/mcp-server"]
+              }
+            }
+          }
+          EOF
+          # NOTE: Only sequential-thinking and context7 included for CI safety
+          # Serena/Playwriter excluded - risk of infinite loops burning minutes
+
+      - name: Claude Code Action
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          trigger_phrase: "@claude"
+          assignee_trigger: "claude[bot]"
+          label_trigger: "claude"
+          base_branch: "main"
+          branch_prefix: ""
+          branch_name_template: "{{entityType}}-{{entityNumber}}-{{description}}"
+          allowed_bots: "dependabot[bot],renovate[bot]"
+          track_progress: true
+          use_sticky_comment: true
+          include_fix_links: true
+          use_commit_signing: true
+          claude_args: |
+            --max-turns ${{ github.event.inputs.max_turns || '25' }}
+            --model ${{ github.event.inputs.model || 'claude-sonnet-4-5-20250929' }}
+            --mcp-config /tmp/mcp-config.json
+            --allowedTools "mcp__sequential-thinking__sequentialthinking,mcp__context7__*,Bash(gh:*),Bash(npm:*),Bash(pnpm:*),Bash(git:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(tree:*),Bash(find:*),Bash(wc:*),Bash(grep:*),Bash(echo:*),Bash(pwd:*),Bash(mkdir:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Read,Write,Edit,MultiEdit,Glob,Grep,Task"
+          prompt: |
+            ## Context
+            - Repository: ${{ github.repository }}
+            - Event: ${{ github.event_name }}
+            - Actor: ${{ github.actor }}
+
+            ## Action
+            ${{ github.event.inputs.action == 'Summarize changes in this PR' && '
+            Summarize this PR in clear English paragraphs:
+            1. **What changed** - List files added, modified, deleted
+            2. **Why it changed** - Infer purpose from commit messages and code
+            3. **Impact** - What this affects (APIs, UI, tests, etc.)
+            4. **Review notes** - Any concerns or suggestions
+
+            Format as a clean comment/description for the PR.
+            ' || '' }}
+            ${{ github.event.inputs.action == 'Review code quality' && 'Review code quality: style, patterns, potential bugs, test coverage.' || '' }}
+            ${{ github.event.inputs.action == 'Security audit (OWASP)' && 'Perform OWASP Top 10 security audit. Check for injection, auth issues, data exposure.' || '' }}
+            ${{ github.event.inputs.action == 'Custom prompt' && github.event.inputs.custom_prompt || '' }}
+
+            ## Bot PR Guidelines (Dependabot/Renovate)
+            If this is a bot-generated PR:
+            - Review the changes but DO NOT auto-merge
+            - Leave assessment as a comment
+            - List steps for manual resolution if needed
+            - User will pull to CLI to resolve manually

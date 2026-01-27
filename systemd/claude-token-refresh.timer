@@ -1,0 +1,18 @@
+[Unit]
+Description=Refresh Claude OAuth token every 30 minutes
+Documentation=https://github.com/bosmadev/claude
+
+[Timer]
+# Start 5 minutes after boot
+OnBootSec=5min
+# Then every 30 minutes
+OnUnitActiveSec=30min
+# CRITICAL: Catch up after sleep/suspend
+# Note: systemd bug #24984 may cause issues with multiple suspend cycles
+# Layer 2 (resume hook) provides backup for this case
+Persistent=true
+# Randomize to avoid thundering herd if multiple machines
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

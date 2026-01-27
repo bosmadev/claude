@@ -1,0 +1,291 @@
+{
+  "numStartups": 19,
+  "installMethod": "native",
+  "autoUpdates": false,
+  "hasSeenTasksHint": true,
+  "hasUsedStash": true,
+  "tipsHistory": {
+    "new-user-warmup": 7,
+    "plan-mode-for-complex-tasks": 1,
+    "terminal-setup": 11,
+    "memory-command": 17,
+    "theme-command": 2,
+    "prompt-queue": 7,
+    "enter-to-steer-in-relatime": 2,
+    "todo-list": 2,
+    "install-github-app": 12,
+    "install-slack-app": 12,
+    "drag-and-drop-images": 12,
+    "double-esc-code-restore": 12,
+    "continue": 12,
+    "shift-tab": 12,
+    "image-paste": 4,
+    "desktop-app": 19,
+    "web-app": 19,
+    "mobile-app": 19,
+    "guest-passes": 17,
+    "custom-agents": 7,
+    "agent-flag": 7,
+    "permissions": 11,
+    "rename-conversation": 11,
+    "custom-commands": 11,
+    "colorterm-truecolor": 15
+  },
+  "promptQueueUseCount": 271,
+  "showExpandedTodos": true,
+  "autoConnectIde": true,
+  "cachedGrowthBookFeatures": {
+    "tengu_1p_event_batch_config": {
+      "scheduledDelayMillis": 5000,
+      "maxExportBatchSize": 200,
+      "maxQueueSize": 8192
+    },
+    "tengu_mcp_tool_search": true,
+    "tengu_scratch": true,
+    "tengu_brass_pebble": false,
+    "tengu_disable_bypass_permissions_mode": false,
+    "tengu_event_sampling_config": {},
+    "tengu_tool_pear": false,
+    "tengu_log_segment_events": false,
+    "tengu_log_datadog_events": true,
+    "tengu_keybinding_customization": false,
+    "tengu_c4w_usage_limit_notifications_enabled": true,
+    "tengu_thinkback": false,
+    "tengu_claudeai_mcp_connectors": false,
+    "tengu_tool_search_unsupported_models": [
+      "haiku"
+    ],
+    "tengu_attribution_header": true,
+    "enhanced_telemetry_beta": false,
+    "tengu_pid_based_version_locking": true,
+    "tengu_vscode_review_upsell": false,
+    "tengu_vscode_onboarding": false,
+    "tengu_cache_plum_violet": false,
+    "tengu_streaming_tool_execution2": false,
+    "tengu_bash_haiku_prefetch": true,
+    "tengu-top-of-feed-tip": {
+      "tip": "",
+      "color": ""
+    },
+    "tengu_react_vulnerability_warning": false,
+    "tengu_code_diff_cli": true,
+    "tengu_post_compact_survey": false,
+    "tengu_plan_mode_interview_phase": false,
+    "tengu_session_memory": false,
+    "tengu_permission_explainer": true,
+    "tengu_plank_river_frost": "user_intent",
+    "tengu_chrome_auto_enable": false,
+    "tengu_file_write_optimization": false,
+    "tengu_sm_compact": false,
+    "tengu_compact_streaming_retry": false,
+    "tengu_scarf_coffee": false,
+    "tengu_keybinding_customization_release": false,
+    "tengu_pr_status_cli": false,
+    "tengu_marble_kite": false,
+    "tengu_kv7_prompt_sort": false,
+    "tengu_compact_cache_prefix": false
+  },
+  "userID": "0aba681f9db42e038159977b4f1527f8bced99c9bbd7cf9d5f741b7961357e02",
+  "lastReleaseNotesSeen": "2.1.20",
+  "changelogLastFetched": 1769501212011,
+  "projects": {
+    "/usr/share/claude": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {
+        "vs-claude": {
+          "type": "stdio",
+          "command": "/home/dennis/.vscode-insiders/extensions/mariozechner.vs-claude-0.0.3/build/mcp/mcp-server-linux-amd64",
+          "args": [],
+          "env": {}
+        }
+      },
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": true,
+      "projectOnboardingSeenCount": 0,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false,
+      "hasCompletedProjectOnboarding": true,
+      "lastCost": 0.45830275000000004,
+      "lastAPIDuration": 56880,
+      "lastAPIDurationWithoutRetries": 56836,
+      "lastToolDuration": 12077,
+      "lastDuration": 1155687,
+      "lastLinesAdded": 0,
+      "lastLinesRemoved": 0,
+      "lastTotalInputTokens": 18654,
+      "lastTotalOutputTokens": 2035,
+      "lastTotalCacheCreationInputTokens": 37267,
+      "lastTotalCacheReadInputTokens": 333486,
+      "lastTotalWebSearchRequests": 0,
+      "lastModelUsage": {
+        "claude-haiku-4-5-20251001": {
+          "inputTokens": 18586,
+          "outputTokens": 558,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "webSearchRequests": 0,
+          "costUSD": 0.021376
+        },
+        "claude-opus-4-5-20251101": {
+          "inputTokens": 68,
+          "outputTokens": 1477,
+          "cacheReadInputTokens": 333486,
+          "cacheCreationInputTokens": 37267,
+          "webSearchRequests": 0,
+          "costUSD": 0.43692675
+        }
+      },
+      "lastSessionId": "39eb35c0-0af6-429d-88de-a30be8ada34f",
+      "reactVulnerabilityCache": {
+        "detected": false,
+        "package": null,
+        "packageName": null,
+        "version": null,
+        "packageManager": null
+      }
+    },
+    "/home/dennis": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {
+        "vs-claude": {
+          "type": "stdio",
+          "command": "/home/dennis/.vscode-insiders/extensions/mariozechner.vs-claude-0.0.3/build/mcp/mcp-server-linux-amd64",
+          "args": [],
+          "env": {}
+        }
+      },
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": true,
+      "projectOnboardingSeenCount": 0,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false
+    }
+  },
+  "autoUpdatesProtectedForNative": true,
+  "firstStartTime": "2026-01-24T00:05:35.731Z",
+  "sonnet45MigrationComplete": true,
+  "opus45MigrationComplete": true,
+  "opusProMigrationComplete": true,
+  "thinkingMigrationComplete": true,
+  "s1mAccessCache": {
+    "18a6ba0d-8927-47b6-9571-0f549ada2369": {
+      "hasAccess": false,
+      "hasAccessNotAsDefault": false,
+      "timestamp": 1769500050597
+    }
+  },
+  "passesEligibilityCache": {
+    "18a6ba0d-8927-47b6-9571-0f549ada2369": {
+      "eligible": true,
+      "referral_code_details": {
+        "code": "J2OjHznH6A",
+        "campaign": "claude_code_guest_pass",
+        "referral_link": "https://claude.ai/referral/J2OjHznH6A"
+      },
+      "referrer_reward": null,
+      "timestamp": 1769503873324
+    }
+  },
+  "hasShownOpus45Notice": {
+    "18a6ba0d-8927-47b6-9571-0f549ada2369": true
+  },
+  "groveConfigCache": {
+    "d944b29f-4832-4a63-b293-6eceae956e45": {
+      "grove_enabled": true,
+      "timestamp": 1769500049831
+    }
+  },
+  "skillUsage": {
+    "start": {
+      "usageCount": 40,
+      "lastUsedAt": 1769501906154
+    },
+    "sessions": {
+      "usageCount": 2,
+      "lastUsedAt": 1769247624503
+    },
+    "chats": {
+      "usageCount": 8,
+      "lastUsedAt": 1769446464960
+    },
+    "reviewplan": {
+      "usageCount": 22,
+      "lastUsedAt": 1769434735275
+    },
+    "review": {
+      "usageCount": 1,
+      "lastUsedAt": 1769285991743
+    },
+    "quality": {
+      "usageCount": 2,
+      "lastUsedAt": 1769286064848
+    },
+    "commit": {
+      "usageCount": 4,
+      "lastUsedAt": 1769464866754
+    }
+  },
+  "cachedChromeExtensionInstalled": true,
+  "oauthAccount": {
+    "accountUuid": "d944b29f-4832-4a63-b293-6eceae956e45",
+    "emailAddress": "dennis@bosma.dev",
+    "organizationUuid": "18a6ba0d-8927-47b6-9571-0f549ada2369",
+    "hasExtraUsageEnabled": false,
+    "displayName": "Dennis",
+    "organizationRole": "admin",
+    "workspaceRole": null,
+    "organizationName": "dennis@bosma.dev's Organization"
+  },
+  "claudeCodeFirstTokenDate": "2026-01-19T07:42:14.958502Z",
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.19",
+  "githubRepoPaths": {
+    "bosmadev/claude": [
+      "/usr/share/claude"
+    ]
+  },
+  "officialMarketplaceAutoInstallAttempted": true,
+  "officialMarketplaceAutoInstalled": true,
+  "hasIdeAutoConnectDialogBeenShown": true,
+  "lastPlanModeUse": 1769458346428,
+  "mcpServers": {
+    "playwriter": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "playwriter@latest"
+      ],
+      "env": {}
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {}
+    },
+    "serena": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server"
+      ],
+      "env": {}
+    }
+  },
+  "passesUpsellSeenCount": 4,
+  "passesLastSeenCampaign": "claude_code_guest_pass",
+  "feedbackSurveyState": {
+    "lastShownTime": 1769457419004
+  }
+}
