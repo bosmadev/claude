@@ -25,7 +25,7 @@ import pty
 import shutil
 import sys
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, field, asdict
@@ -829,6 +829,59 @@ class RalphProtocol:
 
         return (alive_count > 0, alive_count, dead_count)
 
+    def _check_all_tasks_completed(self) -> bool:
+        """
+        Check if all tasks in task list are completed.
+
+        This handles the case where work is done in the main conversation
+        without spawning agents - if all tasks show completed, allow exit.
+
+        Returns:
+            True if task list exists and all tasks are completed.
+        """
+        try:
+            # Find task queue file for this project
+            state = self.read_state()
+            if not state:
+                return False
+
+            # Look for task queue file
+            # checkpoint_path stores the plan file path (from planFile in JSON)
+            plan_file = state.checkpoint_path or ""
+            if plan_file:
+                plan_name = Path(plan_file).stem
+                queue_file = self.base_dir / ".claude" / f"task-queue-{plan_name}.json"
+            else:
+                # Try to find any task queue file
+                claude_dir = self.base_dir / ".claude"
+                if not claude_dir.exists():
+                    return False
+                queue_files = list(claude_dir.glob("task-queue-*.json"))
+                if not queue_files:
+                    return False
+                queue_file = queue_files[0]  # Use most recent
+
+            if not queue_file.exists():
+                return False
+
+            with open(queue_file, 'r') as f:
+                queue_data = json.load(f)
+
+            tasks = queue_data.get("tasks", [])
+            if not tasks:
+                return False
+
+            # Check if all tasks are completed
+            for task in tasks:
+                status = task.get("status", "pending")
+                if status not in ("completed", "deleted"):
+                    return False
+
+            return True
+
+        except (json.JSONDecodeError, OSError, AttributeError):
+            return False
+
     # =========================================================================
     # Hook Handlers
     # =========================================================================
@@ -919,6 +972,36 @@ class RalphProtocol:
                 "decision": "approve",
                 "reason": "Ralph protocol complete",
                 "cleanup": cleanup_results
+            }
+
+        # CHECK 6: All tasks completed (work done in main conversation without agents)
+        # Still require completion signals, but inject prompt to output them
+        all_tasks_done = self._check_all_tasks_completed()
+        if all_tasks_done and not (has_complete and has_exit):
+            self.log_activity("All tasks done but missing completion signals - injecting prompt")
+            # Mark phase complete in state
+            try:
+                if self.state_path.exists():
+                    with open(self.state_path, 'r') as f:
+                        state_data = json.load(f)
+                    state_data["phase"] = "complete"
+                    state_data["completedAt"] = datetime.now(timezone.utc).isoformat()
+                    with open(self.state_path, 'w') as f:
+                        json.dump(state_data, f, indent=2)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+            return {
+                "decision": "block",
+                "reason": "All tasks completed - output completion signals",
+                "inject_message": f"""✅ ALL TASKS COMPLETED
+
+All tasks in the task list are marked complete. Output the Ralph completion signals NOW:
+
+RALPH_COMPLETE
+EXIT_SIGNAL
+
+This will properly close the Ralph session."""
             }
 
         # BLOCK: Valid active session, require completion

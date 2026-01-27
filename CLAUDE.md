@@ -1,4 +1,6 @@
-# Claude Code Configuration
+# Claude Code Configuration 
+
+#### Based on claude-code: 2.1.20
 
 **Stack:** Next.js 16.1+, React 19+, Node.js 25+, Python 3.14+, FastAPI, TypeScript 5.9.3+, Tailwind CSS v4+, Shadcn UI, Radix, Playwright, Vitest, Biome 2.3.10+, Knip 5.77.1+, uv 0.9.18+, pnpm 10.26.2+.
 
@@ -53,11 +55,11 @@
 
 All temporary pending files MUST be created in `{repo}/.claude/` directory, never in repo root:
 
-| File | Correct Location | Wrong Location |
-|------|------------------|----------------|
+| File              | Correct Location                     | Wrong Location               |
+| ----------------- | ------------------------------------ | ---------------------------- |
 | pending-commit.md | `{repo}/.claude/pending-commit.md` | `{repo}/pending-commit.md` |
-| pending-pr.md | `{repo}/.claude/pending-pr.md` | `{repo}/pending-pr.md` |
-| commit.md | `{repo}/.claude/commit.md` | Already correct |
+| pending-pr.md     | `{repo}/.claude/pending-pr.md`     | `{repo}/pending-pr.md`     |
+| commit.md         | `{repo}/.claude/commit.md`         | Already correct              |
 
 This keeps repo root clean and prevents accidental commits of temporary files.
 
@@ -66,6 +68,7 @@ This keeps repo root clean and prevents accidental commits of temporary files.
 All plans in `/plans/` MUST follow Plan Change Tracking:
 
 **Required Frontmatter:**
+
 ```markdown
 # Plan Title
 
@@ -75,12 +78,14 @@ All plans in `/plans/` MUST follow Plan Change Tracking:
 ```
 
 **On every plan update:**
+
 1. Remove ALL existing 🟧 (Orange Square) markers
 2. Add 🟧 marker AT END of modified lines (not beginning - avoids breaking markdown)
 3. Update "Last Updated" timestamp
 4. If `USER:` comments found - process, remove, mark changed line with 🟧 at end
 
 **Change Marker Format:**
+
 ```markdown
 ### Section Title 🟧    <- Correct: marker at END
 Some changed content 🟧
@@ -89,6 +94,7 @@ Some changed content 🟧
 ```
 
 **Never ask user:**
+
 - "How do you want to provide feedback?"
 - "Should I proceed with the plan?"
 - Any confirmation about plan workflow itself
@@ -111,10 +117,12 @@ Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sle
 ```
 
 **Token Lifetimes:**
+
 - Access token: ~2 hours
 - Refresh token: ~1 year
 
 **Morning Workflow:**
+
 1. Wake from sleep → Layer 2 triggers refresh (5s delay for network)
 2. Open terminal → Layer 3 runs background check
 3. Start Claude → Layer 4 validates before first operation
@@ -122,23 +130,23 @@ Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sle
 
 **Scripts:**
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/claude-github.sh` | Main token management (status/refresh/sync) |
-| `scripts/refresh-claude-token.sh` | Wrapper for systemd (handles network wait) |
-| `scripts/token-guard.py` | Pre-operation validation (Layer 4) |
-| `scripts/install-token-timer.sh` | Install systemd units |
+| Script                              | Purpose                                     |
+| ----------------------------------- | ------------------------------------------- |
+| `scripts/claude-github.sh`        | Main token management (status/refresh/sync) |
+| `scripts/refresh-claude-token.sh` | Wrapper for systemd (handles network wait)  |
+| `scripts/token-guard.py`          | Pre-operation validation (Layer 4)          |
+| `scripts/install-token-timer.sh`  | Install systemd units                       |
 
 **Troubleshooting:**
 
-| Issue | Solution |
-|-------|----------|
-| Token expired | Run: `/usr/share/claude/scripts/claude-github.sh refresh --force` |
-| Timer not running | Check: `systemctl status claude-token-refresh.timer` |
-| Resume hook missing | Run: `systemctl enable claude-token-resume.service` |
-| Manual refresh | Run: `claude auth login` |
-| Debug logs | View: `~/.claude/debug/token-refresh.log` |
-| Check all layers | Run: `systemctl status claude-token-{refresh,resume}.*` |
+| Issue               | Solution                                                           |
+| ------------------- | ------------------------------------------------------------------ |
+| Token expired       | Run:`/usr/share/claude/scripts/claude-github.sh refresh --force` |
+| Timer not running   | Check:`systemctl status claude-token-refresh.timer`              |
+| Resume hook missing | Run:`systemctl enable claude-token-resume.service`               |
+| Manual refresh      | Run:`claude auth login`                                          |
+| Debug logs          | View:`~/.claude/debug/token-refresh.log`                         |
+| Check all layers    | Run:`systemctl status claude-token-{refresh,resume}.*`           |
 
 ## Web Research Fallback Chain
 
@@ -155,20 +163,20 @@ When fetching web content (research, scouting, documentation), use this fallback
 
 ### Browser Selection
 
-| Scenario | Browser |
-|----------|---------|
-| Simple public page | WebFetch or agent-browser |
-| Requires login/auth | Playwriter |
-| Cloudflare/captcha | Browser-Use |
-| Bot detection | Patchright (cyberscraper) |
-| Debug/inspect | Chrome MCP |
+| Scenario            | Browser                   |
+| ------------------- | ------------------------- |
+| Simple public page  | WebFetch or agent-browser |
+| Requires login/auth | Playwriter                |
+| Cloudflare/captcha  | Browser-Use               |
+| Bot detection       | Patchright (cyberscraper) |
+| Debug/inspect       | Chrome MCP                |
 
 **For subagents fetching web content:** Always include this fallback chain in prompts.
 
 ### Browser Capability Matrix
 
 | Browser        | Auth | Stealth | Captcha | CDP | Best For              |
-|----------------|------|---------|---------|-----|-----------------------|
+| -------------- | ---- | ------- | ------- | --- | --------------------- |
 | WebFetch       | No   | No      | No      | No  | Simple public pages   |
 | agent-browser  | No   | Yes     | No      | Yes | Headless automation   |
 | Playwriter MCP | Yes  | Yes     | No      | Yes | Auth flows, sessions  |
@@ -236,7 +244,7 @@ graph TD
 ### Browser Pairing Matrix
 
 | Primary       | Secondary     | Use Case                         |
-|---------------|---------------|----------------------------------|
+| ------------- | ------------- | -------------------------------- |
 | WebFetch      | agent-browser | Public pages, JS rendering check |
 | agent-browser | Playwriter    | Headless vs headed comparison    |
 | Playwriter    | Browser-Use   | Auth flow verification           |
@@ -276,11 +284,13 @@ graph TD
 ```
 
 **Shape Guide:**
+
 - `["text"]` = Rectangle (actions, endpoints)
 - `(["text"])` = Stadium/pill (decisions) - USE THIS instead of diamonds
 - Avoid `{"text"}` diamonds - makes charts look like chess boards
 
 **Color Palette:**
+
 - Background: `#09090b` (near-black)
 - Node fill: `#0c0c14` (dark navy)
 - Decision fill: `#18181b` (zinc-900)
@@ -307,145 +317,145 @@ graph TD
 
 ### /start - Ralph Autonomous Development
 
-| Command | Description |
-|---------|-------------|
-| `/start` | 3 agents, 3 iterations, enters plan mode |
-| `/start [task]` | 3 agents, 3 iterations with task |
-| `/start [N]` | N agents, 3 iterations |
-| `/start [N] [M]` | N agents, M iterations |
-| `/start [N] [M] [task]` | N agents, M iterations with task |
-| `/start [N] [M] noreview [task]` | Skip post-implementation review |
-| `/start [N] [M] review [rN] [rM] [task]` | Custom review: rN agents, rM iterations |
-| `/start [N] [M] import <source>` | Import from PRD/YAML/GitHub |
-| `/start help` | Show usage |
+| Command                                    | Description                              |
+| ------------------------------------------ | ---------------------------------------- |
+| `/start`                                 | 3 agents, 3 iterations, enters plan mode |
+| `/start [task]`                          | 3 agents, 3 iterations with task         |
+| `/start [N]`                             | N agents, 3 iterations                   |
+| `/start [N] [M]`                         | N agents, M iterations                   |
+| `/start [N] [M] [task]`                  | N agents, M iterations with task         |
+| `/start [N] [M] noreview [task]`         | Skip post-implementation review          |
+| `/start [N] [M] review [rN] [rM] [task]` | Custom review: rN agents, rM iterations  |
+| `/start [N] [M] import <source>`         | Import from PRD/YAML/GitHub              |
+| `/start help`                            | Show usage                               |
 
 ### /review - Multi-Aspect Code Review
 
-| Command | Description |
-|---------|-------------|
-| `/review` | Run ALL aspects (5 agents, 2 iterations) |
-| `/review [N] [M]` | N agents, M iterations |
-| `/review pr [number]` | Review specific PR |
-| `/review security` | Security-focused OWASP audit |
-| `/review security --owasp` | Full OWASP Top 10 audit |
-| `/review help` | Show usage |
+| Command                      | Description                              |
+| ---------------------------- | ---------------------------------------- |
+| `/review`                  | Run ALL aspects (5 agents, 2 iterations) |
+| `/review [N] [M]`          | N agents, M iterations                   |
+| `/review pr [number]`      | Review specific PR                       |
+| `/review security`         | Security-focused OWASP audit             |
+| `/review security --owasp` | Full OWASP Top 10 audit                  |
+| `/review help`             | Show usage                               |
 
 ### /quality - Code Quality and Configuration
 
-| Command | Description |
-|---------|-------------|
-| `/quality` | Run all checks (Biome, Knip, TypeScript) |
-| `/quality audit` | Audit CLAUDE.md files |
-| `/quality setup` | Analyze codebase for automations |
-| `/quality design [path]` | Frontend design review |
-| `/quality rule "<text>"` | Add behavior rule |
-| `/quality help` | Show usage |
+| Command                    | Description                              |
+| -------------------------- | ---------------------------------------- |
+| `/quality`               | Run all checks (Biome, Knip, TypeScript) |
+| `/quality audit`         | Audit CLAUDE.md files                    |
+| `/quality setup`         | Analyze codebase for automations         |
+| `/quality design [path]` | Frontend design review                   |
+| `/quality rule "<text>"` | Add behavior rule                        |
+| `/quality help`          | Show usage                               |
 
 ### /commit - Git Commit Workflow
 
-| Command | Description |
-|---------|-------------|
-| `/commit` | Generate pending-commit.md |
-| `/commit confirm` | Execute pending commit |
-| `/commit abort` | Cancel pending commit |
-| `/commit show` | Show pending changes |
-| `/commit clear` | Clear change log |
-| `/commit help` | Show usage |
+| Command             | Description                |
+| ------------------- | -------------------------- |
+| `/commit`         | Generate pending-commit.md |
+| `/commit confirm` | Execute pending commit     |
+| `/commit abort`   | Cancel pending commit      |
+| `/commit show`    | Show pending changes       |
+| `/commit clear`   | Clear change log           |
+| `/commit help`    | Show usage                 |
 
 ### /openpr - Create Pull Request
 
-| Command | Description |
-|---------|-------------|
-| `/openpr` | Create PR to main |
+| Command              | Description         |
+| -------------------- | ------------------- |
+| `/openpr`          | Create PR to main   |
 | `/openpr [branch]` | Create PR to branch |
-| `/openpr help` | Show usage |
+| `/openpr help`     | Show usage          |
 
 ### /repotodo - Process TODO Comments
 
-| Command | Description |
-|---------|-------------|
-| `/repotodo list` | List all TODOs by category |
+| Command                 | Description                   |
+| ----------------------- | ----------------------------- |
+| `/repotodo list`      | List all TODOs by category    |
 | `/repotodo <cat> all` | Process ALL TODOs of category |
-| `/repotodo <cat> [N]` | Process N TODOs of category |
-| `/repotodo help` | Show usage |
+| `/repotodo <cat> [N]` | Process N TODOs of category   |
+| `/repotodo help`      | Show usage                    |
 
 ### /reviewplan - Process Plan USER Comments
 
-| Command | Description |
-|---------|-------------|
-| `/reviewplan` | Process all USER comments in /plans/ |
-| `/reviewplan [path]` | Process specific plan file |
-| `/reviewplan help` | Show usage |
+| Command                | Description                          |
+| ---------------------- | ------------------------------------ |
+| `/reviewplan`        | Process all USER comments in /plans/ |
+| `/reviewplan [path]` | Process specific plan file           |
+| `/reviewplan help`   | Show usage                           |
 
 ### /chats - Chat Management
 
-| Command | Description |
-|---------|-------------|
-| `/chats` | List all chats |
-| `/chats [id]` | View chat details |
-| `/chats rename [id] [name]` | Rename chat |
-| `/chats delete [id]` | Delete by ID |
-| `/chats delete [days]` | Delete older than N days |
-| `/chats delete all` | Delete all (prompts for screenshots/plans) |
-| `/chats cache` | Clean caches |
-| `/chats open [id]` | Show resume command |
-| `/chats filter [project]` | Filter by project |
-| `/chats commits` | Manage commit.md files |
-| `/chats commits delete all` | Delete all commit.md files |
-| `/chats plans` | Manage plan files |
-| `/chats plans delete all` | Delete all plan files |
-| `/chats help` | Show usage |
+| Command                       | Description                                |
+| ----------------------------- | ------------------------------------------ |
+| `/chats`                    | List all chats                             |
+| `/chats [id]`               | View chat details                          |
+| `/chats rename [id] [name]` | Rename chat                                |
+| `/chats delete [id]`        | Delete by ID                               |
+| `/chats delete [days]`      | Delete older than N days                   |
+| `/chats delete all`         | Delete all (prompts for screenshots/plans) |
+| `/chats cache`              | Clean caches                               |
+| `/chats open [id]`          | Show resume command                        |
+| `/chats filter [project]`   | Filter by project                          |
+| `/chats commits`            | Manage commit.md files                     |
+| `/chats commits delete all` | Delete all commit.md files                 |
+| `/chats plans`              | Manage plan files                          |
+| `/chats plans delete all`   | Delete all plan files                      |
+| `/chats help`               | Show usage                                 |
 
 ### /launch - Visual App Verification
 
-| Command | Description |
-|---------|-------------|
-| `/launch` | Start server + visual verification |
+| Command                      | Description                                          |
+| ---------------------------- | ---------------------------------------------------- |
+| `/launch`                  | Start server + visual verification                   |
 | `/launch --only <browser>` | Single browser (chrome-mcp/agent-browser/playwriter) |
-| `/launch help` | Show usage |
+| `/launch help`             | Show usage                                           |
 
 ### /screen - Screenshot Management
 
-| Command | Description |
-|---------|-------------|
-| `/screen` | Capture region screenshot |
-| `/screen [N]` | Review last N screenshots |
-| `/screen list` | List all with metadata |
-| `/screen clean` | Delete >7 days old |
-| `/screen analyze [id]` | Analyze screenshot |
-| `/screen delete [id]` | Delete screenshot |
-| `/screen help` | Show usage |
+| Command                  | Description               |
+| ------------------------ | ------------------------- |
+| `/screen`              | Capture region screenshot |
+| `/screen [N]`          | Review last N screenshots |
+| `/screen list`         | List all with metadata    |
+| `/screen clean`        | Delete >7 days old        |
+| `/screen analyze [id]` | Analyze screenshot        |
+| `/screen delete [id]`  | Delete screenshot         |
+| `/screen help`         | Show usage                |
 
 ### /youtube - Video Transcription
 
-| Command | Description |
-|---------|-------------|
-| `/youtube <url>` | Transcribe video |
-| `/youtube list` | List transcriptions |
+| Command                  | Description          |
+| ------------------------ | -------------------- |
+| `/youtube <url>`       | Transcribe video     |
+| `/youtube list`        | List transcriptions  |
 | `/youtube delete <id>` | Delete transcription |
-| `/youtube delete all` | Delete all |
-| `/youtube help` | Show usage |
+| `/youtube delete all`  | Delete all           |
+| `/youtube help`        | Show usage           |
 
 ### /scraper - Web Scraping
 
-| Command | Description |
-|---------|-------------|
-| `/scraper <url>` | Auto-select browser |
-| `/scraper <url> --stealth` | Stealth mode |
-| `/scraper <url> --tor` | Route through Tor |
-| `/scraper <url> --pages 1-10` | Multi-page |
-| `/scraper help` | Show usage |
+| Command                         | Description         |
+| ------------------------------- | ------------------- |
+| `/scraper <url>`              | Auto-select browser |
+| `/scraper <url> --stealth`    | Stealth mode        |
+| `/scraper <url> --tor`        | Route through Tor   |
+| `/scraper <url> --pages 1-10` | Multi-page          |
+| `/scraper help`               | Show usage          |
 
 ### /token - Claude GitHub Token Management
 
-| Command | Description |
-|---------|-------------|
-| `/token` or `/token status` | Show token expiry and repo status |
-| `/token refresh` | Refresh if expiring soon |
-| `/token refresh --force` | Force refresh regardless of expiry |
-| `/token sync` | Push token to current repo secrets |
-| `/token sync all` | Push token to all detected repos |
-| `/token help` | Show usage |
+| Command                         | Description                        |
+| ------------------------------- | ---------------------------------- |
+| `/token` or `/token status` | Show token expiry and repo status  |
+| `/token refresh`              | Refresh if expiring soon           |
+| `/token refresh --force`      | Force refresh regardless of expiry |
+| `/token sync`                 | Push token to current repo secrets |
+| `/token sync all`             | Push token to all detected repos   |
+| `/token help`                 | Show usage                         |
 
 ## Serena Semantic Code Tools
 
@@ -453,15 +463,15 @@ Serena provides LSP-powered semantic code analysis. **Prefer Serena tools over t
 
 ### When to Use Serena
 
-| Task | Serena Tool | Instead of |
-|------|-------------|------------|
-| Find function/class by name | `mcp__serena__find_symbol` | `Grep` |
-| Get file structure overview | `mcp__serena__get_symbols_overview` | `Read` full file |
-| Find all callers of a function | `mcp__serena__find_referencing_symbols` | `Grep` for name |
-| Rename symbol across codebase | `mcp__serena__rename_symbol` | Multi-file `Edit` |
-| Replace function body | `mcp__serena__replace_symbol_body` | `Edit` tool |
-| Insert code after symbol | `mcp__serena__insert_after_symbol` | `Edit` tool |
-| Search with code context | `mcp__serena__search_for_pattern` | `Grep` |
+| Task                           | Serena Tool                               | Instead of          |
+| ------------------------------ | ----------------------------------------- | ------------------- |
+| Find function/class by name    | `mcp__serena__find_symbol`              | `Grep`            |
+| Get file structure overview    | `mcp__serena__get_symbols_overview`     | `Read` full file  |
+| Find all callers of a function | `mcp__serena__find_referencing_symbols` | `Grep` for name   |
+| Rename symbol across codebase  | `mcp__serena__rename_symbol`            | Multi-file `Edit` |
+| Replace function body          | `mcp__serena__replace_symbol_body`      | `Edit` tool       |
+| Insert code after symbol       | `mcp__serena__insert_after_symbol`      | `Edit` tool       |
+| Search with code context       | `mcp__serena__search_for_pattern`       | `Grep`            |
 
 ### Serena Workflow
 
@@ -475,12 +485,12 @@ Serena provides LSP-powered semantic code analysis. **Prefer Serena tools over t
 
 Use Serena memory for persistent project context:
 
-| Tool | Purpose |
-|------|---------|
-| `mcp__serena__write_memory` | Save architectural decisions, symbol maps |
-| `mcp__serena__read_memory` | Recall project context |
-| `mcp__serena__list_memories` | See available memory files |
-| `mcp__serena__edit_memory` | Update existing memory |
+| Tool                           | Purpose                                   |
+| ------------------------------ | ----------------------------------------- |
+| `mcp__serena__write_memory`  | Save architectural decisions, symbol maps |
+| `mcp__serena__read_memory`   | Recall project context                    |
+| `mcp__serena__list_memories` | See available memory files                |
+| `mcp__serena__edit_memory`   | Update existing memory                    |
 
 ### Auto-Activation
 
@@ -491,9 +501,8 @@ If not configured, run `mcp__serena__onboarding` once per project.
 
 Use these checkpoints during complex tasks:
 
-| Tool | When to Use |
-|------|-------------|
-| `mcp__serena__think_about_collected_information` | After gathering context |
-| `mcp__serena__think_about_task_adherence` | Before making changes |
-| `mcp__serena__think_about_whether_you_are_done` | Before reporting completion |
-
+| Tool                                               | When to Use                 |
+| -------------------------------------------------- | --------------------------- |
+| `mcp__serena__think_about_collected_information` | After gathering context     |
+| `mcp__serena__think_about_task_adherence`        | Before making changes       |
+| `mcp__serena__think_about_whether_you_are_done`  | Before reporting completion |
