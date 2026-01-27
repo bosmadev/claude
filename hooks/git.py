@@ -34,6 +34,135 @@ signal.alarm(5)
 
 
 # =============================================================================
+# Unpushed Commits Check - Utility for detecting local-only commits
+# =============================================================================
+
+def check_unpushed_commits(cwd: str | None = None) -> tuple[bool, int, str]:
+    """
+    Check if there are unpushed commits in the current git repository.
+
+    Args:
+        cwd: Working directory to check. If None, uses current directory.
+
+    Returns:
+        Tuple of (has_unpushed, count, branch):
+        - has_unpushed: True if there are commits not pushed to remote
+        - count: Number of unpushed commits (0 if none or error)
+        - branch: Current branch name (empty string if not in repo)
+
+    Examples:
+        >>> has_unpushed, count, branch = check_unpushed_commits()
+        >>> if has_unpushed:
+        ...     print(f"{count} unpushed commits on {branch}")
+    """
+    cwd = cwd or "."
+
+    # Check if we're in a git repository
+    repo_root = find_git_root_from_cwd(cwd)
+    if not repo_root:
+        return (False, 0, "")
+
+    # Get current branch name
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return (False, 0, "")
+        branch = result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return (False, 0, "")
+
+    # Check if remote exists (any remote)
+    try:
+        result = subprocess.run(
+            ["git", "remote"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            # No remotes configured
+            return (False, 0, branch)
+        remotes = result.stdout.strip().split("\n")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return (False, 0, branch)
+
+    # Get tracking branch for current branch
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            upstream = result.stdout.strip()
+        else:
+            # No tracking branch - try origin/<branch> or origin/main
+            preferred_remote = "origin" if "origin" in remotes else remotes[0]
+            # Check if origin/<branch> exists
+            check_result = subprocess.run(
+                ["git", "rev-parse", "--verify", f"{preferred_remote}/{branch}"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if check_result.returncode == 0:
+                upstream = f"{preferred_remote}/{branch}"
+            else:
+                # Try origin/main
+                check_result = subprocess.run(
+                    ["git", "rev-parse", "--verify", f"{preferred_remote}/main"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if check_result.returncode == 0:
+                    upstream = f"{preferred_remote}/main"
+                else:
+                    # Try origin/master as fallback
+                    check_result = subprocess.run(
+                        ["git", "rev-parse", "--verify", f"{preferred_remote}/master"],
+                        cwd=repo_root,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if check_result.returncode == 0:
+                        upstream = f"{preferred_remote}/master"
+                    else:
+                        # No valid upstream found
+                        return (False, 0, branch)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return (False, 0, branch)
+
+    # Count commits ahead of upstream
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "--count", f"{upstream}..HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return (False, 0, branch)
+        count = int(result.stdout.strip())
+        return (count > 0, count, branch)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+        return (False, 0, branch)
+
+
+# =============================================================================
 # Commit Review (PreToolUse)
 # =============================================================================
 

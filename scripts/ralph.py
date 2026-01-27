@@ -742,6 +742,91 @@ class RalphProtocol:
             pass
 
     # =========================================================================
+    # Git State Detection
+    # =========================================================================
+
+    def _detect_unpushed_commits(self) -> tuple[bool, int, str]:
+        """
+        Detect if there are unpushed commits in the current branch.
+
+        Returns:
+            Tuple of (has_unpushed: bool, count: int, branch: str).
+        """
+        try:
+            # Get current branch name
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=str(self.base_dir),
+                timeout=10
+            )
+            if result.returncode != 0:
+                return (False, 0, "")
+
+            branch = result.stdout.strip()
+            if not branch or branch == "HEAD":
+                # Detached HEAD state
+                return (False, 0, "HEAD")
+
+            # Check if branch has upstream
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"],
+                capture_output=True,
+                text=True,
+                cwd=str(self.base_dir),
+                timeout=10
+            )
+
+            if result.returncode != 0:
+                # No upstream configured - check if any remote exists
+                result = subprocess.run(
+                    ["git", "remote"],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(self.base_dir),
+                    timeout=10
+                )
+                if result.returncode != 0 or not result.stdout.strip():
+                    # No remotes configured - local-only repo, allow exit
+                    return (False, 0, branch)
+
+                # Has remote but no tracking - count unpushed commits
+                result = subprocess.run(
+                    ["git", "rev-list", "--count", branch, "--not", "--remotes"],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(self.base_dir),
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    count = int(result.stdout.strip())
+                    if count > 0:
+                        return (True, count, branch)
+                return (False, 0, branch)
+
+            upstream = result.stdout.strip()
+
+            # Count commits ahead of upstream
+            result = subprocess.run(
+                ["git", "rev-list", "--count", f"{upstream}..HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=str(self.base_dir),
+                timeout=10
+            )
+
+            if result.returncode != 0:
+                return (False, 0, branch)
+
+            count = int(result.stdout.strip())
+            return (count > 0, count, branch)
+
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError) as e:
+            self.log_activity(f"Error detecting unpushed commits: {e}", level="WARN")
+            return (False, 0, "")
+
+    # =========================================================================
     # Stale Session Detection
     # =========================================================================
 
@@ -965,6 +1050,35 @@ class RalphProtocol:
         has_complete = self.check_completion(transcript)
         has_exit = self.should_exit(transcript)
 
+        # CHECK 6: Unpushed commits check (before allowing RALPH_COMPLETE)
+        # If agent signals completion but hasn't pushed, block exit
+        if has_complete:
+            has_unpushed, unpushed_count, branch = self._detect_unpushed_commits()
+            if has_unpushed:
+                self.log_activity(
+                    f"Exit blocked: {unpushed_count} unpushed commit(s) on branch '{branch}'",
+                    level="WARN"
+                )
+                return {
+                    "decision": "block",
+                    "reason": f"Unpushed commits detected ({unpushed_count} on '{branch}')",
+                    "inject_message": f"""🚫 UNPUSHED COMMITS DETECTED
+
+You have {unpushed_count} unpushed commit(s) on branch '{branch}'.
+
+Before completing the Ralph session, you MUST push your commits:
+
+```bash
+git push origin {branch}
+```
+
+After pushing, output the completion signals again:
+
+RALPH_COMPLETE
+EXIT_SIGNAL
+"""
+                }
+
         if has_complete and has_exit:
             self.log_activity("Exit allowed: Both signals present in transcript")
             cleanup_results = self.cleanup_ralph_session(keep_activity_log=True)
@@ -974,7 +1088,7 @@ class RalphProtocol:
                 "cleanup": cleanup_results
             }
 
-        # CHECK 6: All tasks completed (work done in main conversation without agents)
+        # CHECK 7: All tasks completed (work done in main conversation without agents)
         # Still require completion signals, but inject prompt to output them
         all_tasks_done = self._check_all_tasks_completed()
         if all_tasks_done and not (has_complete and has_exit):
