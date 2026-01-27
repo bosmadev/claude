@@ -303,15 +303,64 @@ graph TD
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     DEFENSE IN DEPTH (5 LAYERS)                 │
+│                     DEFENSE IN DEPTH (6 LAYERS)                 │
 ├─────────────────────────────────────────────────────────────────┤
 │ Layer 1: External Script → Orchestrates loop, creates state     │
 │ Layer 2: Skill → Invokes script, spawns agents                  │
 │ Layer 3: Hook  → Validates protocol, injects reminders          │
 │ Layer 4: Context → Always-visible protocol rules                │
-│ Layer 5: Exit  → Validates completion signals                   │
+│ Layer 5: Push Gate → MUST push before completion allowed        │
+│ Layer 6: Exit  → Validates completion signals                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Layer 5: Push Gate (Must Push Before Completion)
+
+Ralph agents MUST push their work to remote before signaling completion. This prevents:
+- Lost work from uncommitted/unpushed changes
+- Orphaned local branches that never reach the repository
+- Silent failures where agents claim success but work is stranded
+
+**Enforcement Flow:**
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#0c0c14', 'primaryTextColor': '#fcd9b6', 'primaryBorderColor': '#c2410c', 'lineColor': '#ea580c', 'secondaryColor': '#18181b', 'background': '#09090b', 'mainBkg': '#0c0c14', 'edgeLabelBackground': '#18181b'}}}%%
+graph TD
+    A["Agent: Work Complete"] --> B(["Has Commits?"])
+    B -->|No| C["Skip Push Gate"]
+    B -->|Yes| D(["Pushed to Remote?"])
+    D -->|Yes| E["Allow ULTRATHINK_COMPLETE"]
+    D -->|No| F["BLOCK: Must Push First"]
+    F --> G["Agent: git push"]
+    G --> D
+    C --> E
+
+    style A fill:#0c0c14,stroke:#ea580c,stroke-width:3px,color:#fcd9b6
+    style B fill:#18181b,stroke:#fb923c,stroke-width:3px,color:#fff7ed
+    style D fill:#18181b,stroke:#fb923c,stroke-width:3px,color:#fff7ed
+    style E fill:#09090b,stroke:#16a34a,stroke-width:3px,color:#dcfce7
+    style F fill:#09090b,stroke:#ef4444,stroke-width:3px,color:#fecaca
+    style C fill:#0c0c14,stroke:#ea580c,stroke-width:3px,color:#fcd9b6
+    style G fill:#0c0c14,stroke:#ea580c,stroke-width:3px,color:#fcd9b6
+```
+
+**Agent Requirements:**
+
+1. Before emitting `ULTRATHINK_COMPLETE`, verify:
+   - All changes are committed
+   - All commits are pushed to remote branch
+   - Use `git status` and `git log origin/branch..HEAD` to check
+
+2. If unpushed commits exist:
+   - Push to remote: `git push -u origin <branch>`
+   - Only then signal completion
+
+3. Hook validation (`ralph.py`):
+   - Checks for unpushed commits on completion signal
+   - Blocks completion if push required
+   - Injects reminder to push first
+
+**Exception:** Read-only agents (reviewers, analyzers) that make no commits bypass this gate.
 
 ## Skill Commands Reference
 
@@ -328,6 +377,8 @@ graph TD
 | `/start [N] [M] review [rN] [rM] [task]` | Custom review: rN agents, rM iterations  |
 | `/start [N] [M] import <source>`         | Import from PRD/YAML/GitHub              |
 | `/start help`                            | Show usage                               |
+
+**Note:** All implementation agents must push their work to remote before completion. See [Layer 5: Push Gate](#layer-5-push-gate-must-push-before-completion) in Ralph Defense-in-Depth.
 
 ### /review - Multi-Aspect Code Review
 

@@ -206,6 +206,34 @@ When user runs `/commit confirm`:
    - Clear `.claude/commit.md` contents
    - This prevents stale pending files from causing confusion in future commits
 
+### Phase 2.5: Push After Commit (REQUIRED for Ralph)
+
+**CRITICAL:** When running under Ralph autonomous mode, commits MUST be pushed before signaling completion. The stop hook will block if unpushed commits exist.
+
+After successful commit, immediately push:
+
+```bash
+# Push to current branch (works for any branch)
+git push origin HEAD
+
+# Or explicitly for main branch
+git push origin main
+```
+
+**Why this matters:**
+- Ralph stop hook validates no unpushed commits exist
+- Unpushed commits block `TASK_DONE` signal
+- Other agents may be waiting on pushed changes
+- Prevents lost work if session terminates
+
+**Push verification:**
+```bash
+# Check for unpushed commits
+git log origin/$(git branch --show-current)..HEAD --oneline
+
+# Should return empty if all pushed
+```
+
 ### Phase 3: Abort
 
 When user runs `/commit abort`:
@@ -350,6 +378,8 @@ rm -f .claude/pending-pr.md
 | No commit.md found | Fallback to git diff analysis |
 | Detached HEAD | Use worktree folder name as branch |
 | Pending commit exists | Ask to overwrite or abort |
+| Unpushed commits exist | Push with `git push origin HEAD` before signaling done |
+| Push rejected | Pull with rebase: `git pull --rebase origin main` then push |
 
 ## Safety Rules
 
@@ -358,6 +388,7 @@ rm -f .claude/pending-pr.md
 - Preserve commit.md on abort (user may want to retry)
 - Validate staged changes match commit.md before committing
 - Use HEREDOC for commit messages to preserve formatting
+- **Push commits before completion** (Ralph stop hook blocks on unpushed commits)
 
 ---
 
