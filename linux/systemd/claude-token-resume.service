@@ -6,8 +6,8 @@ After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate
 [Service]
 Type=oneshot
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/share/claude/scripts/refresh-claude-token.sh
-Environment="CLAUDE_HOME=/usr/share/claude"
+ExecStart=C:\Users\Dennis\.claude/scripts/refresh-claude-token.sh
+Environment="CLAUDE_HOME=C:\Users\Dennis\.claude"
 StandardOutput=journal
 StandardError=journal
 

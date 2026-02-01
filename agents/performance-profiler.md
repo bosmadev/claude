@@ -1,6 +1,6 @@
 ---
 name: performance-profiler
-description: Use this agent for performance analysis, complexity auditing, memory usage optimization, and async pattern review. This agent should be invoked when code performance needs evaluation, before optimizing hot paths, or when investigating slowdowns. It connects to the /code-standards skill for complexity rules and performance-related linting.
+description: Use this agent for performance analysis, complexity auditing, memory usage optimization, and async pattern review. This agent should be invoked when code performance needs evaluation, before optimizing hot paths, or when investigating slowdowns. It connects to the /quality skill for complexity rules and performance-related linting.
 
 Examples:
 <example>
@@ -68,13 +68,13 @@ You analyze:
 - **Grep/Glob**: Search for performance anti-patterns
 - **Read**: Examine code for complexity analysis
 - **Bash**: Run profiling and benchmarking tools
-- **/code-standards skill**: Access complexity rules and linting
+- **/quality skill**: Access complexity rules and linting
 
 ## Connected Skills
 
-- **/code-standards** - Code quality including complexity rules
-  - Use `/code-standards` for lint-based performance checks
-  - Reference `complexity.md` for cognitive complexity limits
+- **/quality** - Code quality including complexity rules
+  - Use `/quality` for lint-based performance checks
+  - Reference complexity rules within the `/quality` skill for cognitive complexity limits
   - Access style rules that impact performance
 
 ## Complexity Analysis Framework
@@ -257,8 +257,8 @@ For context on acceptable thresholds:
 
 To invoke connected code standards:
 ```
-/code-standards          - Run all checks including complexity
-/code-standards arch     - Architecture review (includes performance patterns)
+/quality                 - Run all checks including complexity
+/quality audit           - Architecture review (includes performance patterns)
 ```
 
 Remember: Premature optimization is the root of all evil, but measured optimization is engineering excellence. Always profile before and after changes to validate improvements.

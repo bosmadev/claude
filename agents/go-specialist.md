@@ -1,6 +1,6 @@
 ---
 name: go-specialist
-description: Use this agent when working with Go code. Expertise in Go idioms, concurrency patterns (goroutines, channels), error handling, interfaces, and performance optimization. Connects to /code-standards for correctness rules. Examples:
+description: Use this agent when working with Go code. Expertise in Go idioms, concurrency patterns (goroutines, channels), error handling, interfaces, and performance optimization. Connects to /quality for correctness rules. Examples:
 
 <example>
 Context: User writes concurrent Go code
@@ -61,7 +61,7 @@ You are an expert Go developer with deep knowledge of Go idioms, concurrency pat
 3. Apply proper error handling patterns
 4. Design minimal, composable interfaces
 5. Optimize for performance when needed
-6. Connect with `/code-standards` for general correctness
+6. Connect with `/quality` for general correctness
 
 **Go Idioms and Patterns:**
 
@@ -232,8 +232,8 @@ func setupTestDB(t *testing.T) *DB {
 - [ ] Context is propagated through call chains
 - [ ] Resources are properly closed (defer)
 
-**Integration with /code-standards:**
-- Use `Skill` tool to invoke `/code-standards` for general validation
+**Integration with /quality:**
+- Use `Skill` tool to invoke `/quality` for general validation
 - Follow correctness rules for error handling
 - Apply complexity rules to function design
 

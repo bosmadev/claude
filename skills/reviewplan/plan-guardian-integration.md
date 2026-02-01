@@ -45,25 +45,50 @@ The plan change tracking system ensures USER comments in plan files are properly
 5. Updates timestamps
 6. Reports changes made
 
-## Change Marker Format
+## Markdown-Safe 🟧 Placement Rules
 
 **Marker:** 🟧 (Orange Square, U+1F7E7)
 
-**Placement:** At END of line (critical for markdown compatibility)
+**Placement:** At END of line (critical for markdown compatibility), with element-specific rules:
 
+### Standard lines
+Place at END: `Content changed 🟧`
+
+### Headings
+After text: `### Title 🟧`
+
+### Tables
+INSIDE last cell, before closing pipe:
+- CORRECT: `| File | Change 🟧 |`
+- WRONG: `| File | Change | 🟧`
+- NEVER mark separator rows (`|------|--------|`)
+- If entire table changed, mark row ABOVE the table
+
+### Code blocks
+NEVER inside code fences. Mark the line ABOVE:
+- CORRECT: `**Fixed imports:** 🟧` (line before code fence)
+- WRONG: `import { foo } 🟧` (inside code)
+
+### Lists
+After item text: `- Item description 🟧`
+
+### Incorrect (breaks markdown)
 ```markdown
-# Correct
-### Section Title 🟧
-Content changed 🟧
-
-# Incorrect (breaks markdown)
-🟧 ### Section Title
-🟧 Content changed
+🟧 ### Title     # WRONG: breaks heading
+🟧 Content       # WRONG: marker at beginning
 ```
+
+## Marker Lifecycle: Remove Old Before Adding New
+
+Each `/reviewplan` invocation MUST:
+1. **Strip ALL existing 🟧 markers** from the entire file first
+2. Process USER comments and apply changes
+3. Add 🟧 ONLY to lines changed in THIS processing pass
+4. Old markers from previous passes are gone — readers already saw them
 
 ## Processing Rules
 
-1. **Remove old markers** before adding new ones
+1. **Remove old markers** before adding new ones (see Marker Lifecycle above)
 2. **Add marker** only to lines changed in current processing
 3. **Update timestamp** in frontmatter to current UTC time
 4. **Delete USER: line** after processing the request
@@ -80,7 +105,7 @@ In `settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py plan-comments",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py plan-comments",
             "timeout": 5
           }
         ]
@@ -88,11 +113,11 @@ In `settings.json`:
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py plan-write-check",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py plan-write-check",
             "timeout": 5
           }
         ]

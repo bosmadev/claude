@@ -213,4 +213,52 @@ npx webpack-bundle-analyzer stats.json
 lighthouse https://example.com --output json --output-path report.json
 ```
 
+## TODO Insertion Protocol
+
+During review, you MUST insert TODO comments directly into source code for every finding. Do not just report issues -- leave actionable markers in the code itself.
+
+### TODO Format
+
+Use priority-tagged comments with agent attribution:
+
+```
+// TODO-P1: [Critical issue description] - performance-reviewer
+// TODO-P2: [Important issue description] - performance-reviewer
+// TODO-P3: [Improvement suggestion] - performance-reviewer
+```
+
+**Priority Levels:**
+
+| Priority | When to Use | Example |
+|----------|-------------|---------|
+| `TODO-P1` | O(n^2+) in hot path, memory leak, unbounded query | `// TODO-P1: O(n^2) nested loop on user list - use Map for O(n) lookup - performance-reviewer` |
+| `TODO-P2` | Missing pagination, unnecessary re-renders, large bundle | `// TODO-P2: findMany without limit - add pagination to prevent unbounded fetch - performance-reviewer` |
+| `TODO-P3` | Minor optimization, caching opportunity | `// TODO-P3: Consider memoizing this computed value - called 50+ times per render - performance-reviewer` |
+
+### Insertion Rules
+
+1. **Insert at the exact location** of the issue (above the problematic line)
+2. **Use the Edit tool or Serena tools** (`mcp__serena__replace_symbol_body`, `mcp__serena__insert_before_symbol`) to insert comments
+3. **Use the correct comment syntax** for the file type:
+   - TypeScript/JavaScript: `// TODO-P1: ...`
+   - Python: `# TODO-P1: ...`
+   - HTML/JSX: `{/* TODO-P1: ... */}`
+   - CSS: `/* TODO-P1: ... */`
+4. **Include file path and line reference** in your review log entry
+5. **Never auto-fix the issue** -- only insert the TODO comment describing what needs to change and why
+6. **One TODO per issue** -- do not combine multiple issues into a single comment
+
+### Review Log Reporting
+
+After inserting TODOs, report each insertion to the shared review log at `.claude/review-agents.md`:
+
+```markdown
+| File | Line | Priority | Issue | Agent |
+|------|------|----------|-------|-------|
+| src/utils/search.ts | 34 | P1 | O(n^2) nested filter in hot path | performance-reviewer |
+| src/api/reports.ts | 78 | P2 | Unbounded query without LIMIT | performance-reviewer |
+```
+
+If you find zero issues, still confirm in the log that the review was completed with no findings.
+
 Remember: The fastest code is code that doesn't run. Question whether each operation is necessary before optimizing it. Measure twice, optimize once.

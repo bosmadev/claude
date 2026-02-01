@@ -3,7 +3,7 @@ name: openpr
 description: Squash commits and create a pull request with auto-generated summary. Creates .claude/pending-pr.md for review before execution.
 argument-hint: [base-branch]
 user-invocable: true
-context: main
+context: fork
 ---
 
 # Open PR Workflow

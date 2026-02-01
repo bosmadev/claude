@@ -1,6 +1,6 @@
 ---
 name: repotodo
-description: Scan and process TODO comments in the codebase. Use /repotodo list to see all TODOs, /repotodo <category> all to process all of a type, or /repotodo <category> 1 to process one.
+description: Scan and process TODO comments in the codebase. Use /repotodo list to see all TODOs, /repotodo <priority> all to process all of a priority, /repotodo <priority> 1 to process one, or /repotodo verify to check alignment with review findings.
 user-invocable: true
 context: fork
 ---
@@ -11,26 +11,26 @@ context: fork
 
 ## Purpose
 
-Scan the codebase for TODO comments marked with categories and process them systematically.
+Scan the codebase for TODO comments and process them by priority.
 
 ## TODO Comment Format
 
-TODOs should be marked as: `// TODO-<category>: description`
+TODOs use a simple priority-based format:
 
-### Supported Categories
-| Category   | Description |
-|------------|-------------|
-| feat       | A new feature |
-| fix        | A bug fix |
-| docs       | Documentation changes |
-| style      | Code style changes (formatting, semicolons, etc.) |
-| refactor   | Code refactoring (neither fixes a bug nor adds a feature) |
-| test       | Adding or updating tests |
-| chore      | Routine tasks like updating dependencies or build tools |
-| build      | Changes affecting the build system or external dependencies |
-| ci         | Changes to CI configuration files or scripts |
-| perf       | Performance improvements |
-| revert     | Reverting a previous commit |
+| Format      | Priority | Description                              |
+|-------------|----------|------------------------------------------|
+| `TODO-P1:`  | Critical | Blocking issues, security fixes, crashes |
+| `TODO-P2:`  | High     | Important features, significant bugs     |
+| `TODO-P3:`  | Medium   | Nice-to-have, minor improvements         |
+| `TODO:`     | Low      | General notes, future considerations     |
+
+**Examples:**
+```typescript
+// TODO-P1: Fix authentication bypass vulnerability
+// TODO-P2: Add input validation for user forms
+// TODO-P3: Refactor to reduce code duplication
+// TODO: Consider adding dark mode support
+```
 
 ## Commands
 
@@ -39,48 +39,143 @@ TODOs should be marked as: `// TODO-<category>: description`
 Show usage information:
 
 ```
-/repotodo - Scan and process TODO comments in the codebase
+/repotodo - Scan and process TODO comments by priority
 
 Usage:
   /repotodo [command] [args]
 
 Commands:
-  list              List all TODOs by category
-  <category> all    Process all TODOs of a category
-  <category> <N>    Process N TODOs of a category
-  help              Show this help
-
-Categories: feat, fix, docs, style, refactor, test, chore, build, ci, perf, revert
+  list           List all TODOs by priority
+  P1 all         Process all P1 (critical) TODOs
+  P1 <N>         Process N P1 TODOs
+  P2 all         Process all P2 (high) TODOs
+  P2 <N>         Process N P2 TODOs
+  P3 all         Process all P3 (medium) TODOs
+  P3 <N>         Process N P3 TODOs
+  low all        Process all low-priority TODOs (plain TODO:)
+  low <N>        Process N low-priority TODOs
+  all            Process ALL TODOs (starts with P1)
+  verify         Check alignment between review findings and source TODOs
+  verify --fix   Inject missing TODOs from review findings into source
+  help           Show this help
 
 Examples:
   /repotodo list
-  /repotodo fix all
-  /repotodo feat 1
+  /repotodo P1 all
+  /repotodo P2 1
+  /repotodo low 3
+  /repotodo verify
+  /repotodo verify --fix
 ```
 
 ### `/repotodo list`
-Lists all TODOs in the codebase grouped by category.
+
+Lists all TODOs grouped by priority.
 
 **Output format:**
 ```
-| Category | Count |
-|----------|-------|
-| feat     | 5     |
-| fix      | 3     |
-| ...      | ...   |
+## TODO Summary
+
+| Priority | Count | Description              |
+|----------|-------|--------------------------|
+| P1       | 2     | Critical - fix first     |
+| P2       | 5     | High priority            |
+| P3       | 8     | Medium priority          |
+| low      | 12    | General TODOs            |
+
+### P1 - Critical (2)
+- `src/auth.ts:45` - Fix authentication bypass vulnerability
+- `lib/db.ts:123` - Prevent SQL injection
+
+### P2 - High (5)
+...
 ```
 
-Then list each TODO with file path and line number.
+### `/repotodo <priority> all`
 
-### `/repotodo <category> all`
-Process ALL TODOs of the specified category.
+Process ALL TODOs of the specified priority.
 
-Example: `/repotodo feat all` - Implement all TODO-feat items
+Example: `/repotodo P1 all` - Fix all critical TODOs
 
-### `/repotodo <category> <N>`
-Process N TODOs of the specified category.
+### `/repotodo <priority> <N>`
 
-Example: `/repotodo chore 1` - Process one TODO-chore item
+Process N TODOs of the specified priority.
+
+Example: `/repotodo P2 1` - Process one high-priority TODO
+
+### `/repotodo all`
+
+Process all TODOs in priority order (P1 → P2 → P3 → low).
+
+### `/repotodo verify`
+
+Verify alignment between review findings in `.claude/review-agents.md` and TODO comments in source code.
+
+**Steps:**
+
+1. **Read review findings:** Parse `.claude/review-agents.md` for all findings (file paths, severity, descriptions)
+2. **Scan source TODOs:** Grep codebase for `TODO-P1:`, `TODO-P2:`, `TODO-P3:` comments
+3. **Cross-reference:** Match review findings to source TODOs by file path and description similarity
+4. **Report alignment:**
+
+**Output format:**
+```
+## TODO Verification Report
+
+### Summary
+- X findings have matching source TODOs
+- Y findings are MISSING source TODOs (need injection)
+- Z source TODOs have no matching finding (orphaned)
+
+### Matched Findings (X)
+| Finding | Source TODO | File | Priority |
+|---------|------------|------|----------|
+| Auth bypass vulnerability | TODO-P1: Fix auth bypass | src/auth.ts:45 | P1 |
+
+### Missing TODOs (Y) — findings with no source TODO
+| Finding | File | Suggested Priority | Action Needed |
+|---------|------|--------------------|---------------|
+| SQL injection risk | lib/db.ts:89 | P1 | Insert TODO |
+
+### Orphaned TODOs (Z) — source TODOs with no matching finding
+| Source TODO | File | Priority | Status |
+|-------------|------|----------|--------|
+| TODO-P2: Refactor auth module | src/auth.ts:102 | P2 | No matching finding |
+```
+
+**Matching logic:**
+- Match by file path: finding references same file as TODO
+- Match by description: fuzzy match between finding description and TODO text
+- Match by line proximity: finding and TODO within 10 lines of each other
+- Priority mapping: finding severity maps to TODO priority (Critical→P1, High→P2, Medium→P3)
+
+### `/repotodo verify --fix`
+
+Same as `verify` but also injects missing TODOs into source files for unmatched findings.
+
+**Steps:**
+
+1. Run the standard `verify` analysis
+2. For each finding that has NO matching source TODO:
+   - Determine the target file and line from the finding
+   - Map finding severity to TODO priority (Critical→P1, High→P2, Medium→P3)
+   - Insert a TODO comment at the appropriate location in the source file
+   - Format: `// TODO-P{N}: {description} - Review: {agent-id}`
+3. Report what was injected
+
+**Output format (appended to verify report):**
+```
+### Injected TODOs (N)
+| File | Line | Priority | TODO Text |
+|------|------|----------|-----------|
+| src/auth.ts:89 | 89 | P1 | TODO-P1: Fix SQL injection - Review: agent-3 |
+```
+
+**Safety:**
+- Never overwrites existing TODOs
+- Skips injection if a similar TODO already exists within 5 lines
+- Uses `scripts/post-review.py` for the actual injection when available
+- Dry-run output shown before any file modifications
 
 ## Workflow
 
@@ -89,48 +184,66 @@ Example: `/repotodo chore 1` - Process one TODO-chore item
 Use grep to find all TODO comments:
 
 ```bash
-grep -rn "TODO-\(feat\|fix\|docs\|style\|refactor\|test\|chore\|build\|ci\|perf\|revert\):" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.py" --include="*.md" .
+# Find priority TODOs (excluding vendor directories)
+grep -rn "TODO-P[123]:\|TODO:" \
+  --include="*.ts" --include="*.tsx" \
+  --include="*.js" --include="*.jsx" \
+  --include="*.py" --include="*.md" \
+  --include="*.go" --include="*.rs" \
+  --include="*.java" --include="*.kt" \
+  --exclude-dir=node_modules \
+  --exclude-dir=.venv \
+  --exclude-dir=venv \
+  --exclude-dir=vendor \
+  --exclude-dir=dist \
+  --exclude-dir=build \
+  .
 ```
 
 Parse results into structured format:
 - File path
 - Line number
-- Category
+- Priority (P1, P2, P3, or low)
 - Description
 
-### Phase 2: Lock Check (for single TODO processing)
+**Priority Classification:**
+- `TODO-P1:` → P1 (critical)
+- `TODO-P2:` → P2 (high)
+- `TODO-P3:` → P3 (medium)
+- `TODO:` (without priority) → low
 
-Before processing a TODO, check if it's already being processed by another CLI instance:
+### Phase 2: Lock Check (for concurrent safety)
 
-1. Lock file location: `/tmp/claude-todo-locks/`
+Before processing a TODO, check if it's already being processed:
+
+1. Lock file location: `$TEMP/claude-todo-locks/`
 2. Lock file format: `{file_path_hash}_{line_number}.lock`
 3. Lock contains: timestamp, CLI instance ID
+4. Stale lock timeout: 1 hour
 
-**Lock logic:**
 ```bash
-LOCK_DIR="/tmp/claude-todo-locks"
+LOCK_DIR="$TEMP/claude-todo-locks"
 mkdir -p "$LOCK_DIR"
 
-# Create lock file with current timestamp
 LOCK_FILE="$LOCK_DIR/$(echo "$FILE:$LINE" | md5sum | cut -d' ' -f1).lock"
 
 if [ -f "$LOCK_FILE" ]; then
-  # Check if lock is stale (older than 1 hour)
   LOCK_AGE=$(($(date +%s) - $(stat -c %Y "$LOCK_FILE")))
   if [ $LOCK_AGE -lt 3600 ]; then
-    echo "TODO already being processed by another instance"
+    echo "TODO already being processed"
     # Skip to next TODO
   fi
 fi
 
-# Create/update lock
 echo "$(date +%s):$$" > "$LOCK_FILE"
 ```
+
+**Windows note:** `stat -c %Y` and `md5sum` are available via Git Bash. In PowerShell, use `(Get-Item $file).LastWriteTimeUtc` and `Get-FileHash -Algorithm MD5` instead.
 
 ### Phase 3: Process TODO
 
 1. Read the file containing the TODO
-2. Understand the context around the TODO (read 50 lines before and after)
+2. Understand context (50 lines before and after)
 3. Implement the requested change
 4. Remove the TODO comment after completion
 5. Release the lock
@@ -142,81 +255,26 @@ After completing a TODO:
 2. Delete the lock file
 3. Report completion
 
-## Review Log Cleanup
+## Review Log Integration
 
-When `/repotodo` finishes processing TODOs, it cleans up `.claude/review-agents.md`:
+When `/repotodo` finishes processing, it cleans up `.claude/review-agents.md`:
 
-### Cleanup Behavior
+1. Check if TODO comments still exist in source files
+2. Remove completed TODO rows from tracking tables
+3. Update `Total TODOs` count
+4. Archive file when all TODOs are complete
 
-After processing each TODO:
+## Best Practices
 
-1. Read `.claude/review-agents.md` if it exists
-2. For each row in the agent tables:
-   - Check if the TODO comment still exists in the source file
-   - If the TODO was removed (fixed), delete the row from the table
-3. Update `Total TODOs` count in header
-4. If all rows for an agent section are done, remove that agent section
-5. If all agents are done, archive or delete the file
-
-### Implementation
-
-```bash
-cleanup_review_log() {
-  local review_log=".claude/review-agents.md"
-  [ -f "$review_log" ] || return
-
-  local temp_file=$(mktemp)
-  local total_remaining=0
-
-  # Process each table row
-  while IFS='|' read -r _ file line category comment _; do
-    # Skip header rows
-    [[ "$file" =~ ^[[:space:]]*File ]] && continue
-    [[ "$file" =~ ^[[:space:]]*--- ]] && continue
-    [ -z "$file" ] && continue
-
-    file=$(echo "$file" | tr -d ' ')
-    line=$(echo "$line" | tr -d ' ')
-
-    # Check if TODO still exists at that line
-    if [ -f "$file" ]; then
-      local line_content=$(sed -n "${line}p" "$file" 2>/dev/null)
-      if echo "$line_content" | grep -q "TODO-"; then
-        # TODO still exists, keep the row
-        ((total_remaining++))
-        echo "| $file | $line | $category | $comment |" >> "$temp_file"
-      fi
-    fi
-  done < <(grep "^|" "$review_log" | tail -n +3)
-
-  # Update the total count
-  sed -i "s/\*\*Total TODOs:\*\* [0-9]*/\*\*Total TODOs:\*\* $total_remaining/" "$review_log"
-
-  # If no TODOs remain, optionally archive
-  if [ "$total_remaining" -eq 0 ]; then
-    mv "$review_log" ".claude/review-agents-$(date +%Y%m%d-%H%M%S).archived.md"
-    echo "Review complete - all TODOs processed. Log archived."
-  fi
-}
-```
-
-### After Processing
-
-After each TODO is processed:
-```bash
-# Check if this TODO came from a review agent
-if grep -q "Review agent" "$file:$line"; then
-  cleanup_review_log
-fi
-```
-
----
+1. **Use P1 sparingly** - Only for blocking/critical issues
+2. **Default to P2** for most actionable items
+3. **Use plain TODO** for ideas and future considerations
+4. **Include context** in the TODO description
+5. **Process P1s immediately** - Don't let critical items linger
 
 ## Important Notes
 
-- Always read the full context before implementing a TODO
-- Ensure changes don't break existing functionality
-- Run tests if available after implementing each TODO
-- If a TODO is unclear, ask for clarification instead of guessing
+- Always read full context before implementing a TODO
+- Run tests after implementing each TODO
+- If unclear, ask for clarification instead of guessing
 - Group related TODOs when processing multiple items
-- Review agent TODOs are tracked in `.claude/review-agents.md` and cleaned up automatically

@@ -11,12 +11,23 @@ Usage:
     python3 ralph.py pre-compact   # PreCompact hook
 """
 
+import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 RALPH_SCRIPT = SCRIPTS_DIR / "ralph.py"
+
+# ---------------------------------------------------------------------------
+# Timeout guard — kill process if stdin/subprocess hangs (Windows-safe)
+# ---------------------------------------------------------------------------
+_TOTAL_TIMEOUT = 25  # seconds — must be less than the hook timeout in settings.json
+
+_kill_timer = threading.Timer(_TOTAL_TIMEOUT, lambda: os._exit(0))
+_kill_timer.daemon = True
+_kill_timer.start()
 
 
 def main() -> None:
@@ -28,16 +39,23 @@ def main() -> None:
     mode = sys.argv[1]
     hook_command = f"hook-{mode}"
 
-    # Read stdin for hook input
+    # Determine subprocess timeout based on mode
+    sub_timeout = {"stop": 25, "session-start": 8, "pre-compact": 8}.get(mode, 15)
+
+    # Read stdin for hook input (with implicit timeout from _kill_timer)
     stdin_data = sys.stdin.read()
 
     # Call scripts/ralph.py hook-{mode}
-    result = subprocess.run(
-        ["python3", str(RALPH_SCRIPT), hook_command],
-        input=stdin_data,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, str(RALPH_SCRIPT), hook_command],
+            input=stdin_data,
+            capture_output=True,
+            text=True,
+            timeout=sub_timeout,
+        )
+    except subprocess.TimeoutExpired:
+        sys.exit(0)  # Don't block Claude Code
 
     # Forward stdout/stderr
     if result.stdout:

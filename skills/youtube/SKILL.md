@@ -3,7 +3,7 @@ name: youtube
 description: Transcribe YouTube videos and manage transcripts. Use for video analysis, content extraction, or research.
 argument-hint: <video_id_or_url> | list | delete <id> | delete all
 user-invocable: true
-context: main
+context: fork
 ---
 
 # YouTube Transcription Skill
@@ -49,7 +49,7 @@ When user provides a video ID or URL:
 ### 1. Run Transcription Script
 
 ```bash
-export YOUTUBE_PROJECT_DIR="$PWD" && cd /usr/share/claude/skills/youtube/scripts && uv run transcribe.py "$VIDEO_ID_OR_URL"
+export YOUTUBE_PROJECT_DIR="$PWD" && cd C:/Users/Dennis/.claude/skills/youtube/scripts && uv run transcribe.py "$VIDEO_ID_OR_URL"
 ```
 
 The `YOUTUBE_PROJECT_DIR` environment variable ensures the session tracker is created in the current project directory, not the script directory.
@@ -74,7 +74,7 @@ Show:
 
 ### 1. Scan Transcripts Directory
 
-Find all `.md` files in `~/.claude/youtube/transcriptions/`
+Find all `.md` files in `%USERPROFILE%\.claude\youtube\transcriptions\`
 
 ### 2. Parse YAML Frontmatter
 
@@ -88,7 +88,7 @@ For each file, extract:
 ### 3. Get Session Information
 
 For each transcript, check which sessions have used it by scanning:
-- `~/.claude/projects/*/sessions-index.json` for session metadata
+- `%USERPROFILE%\.claude\projects\*\sessions-index.json` for session metadata
 - `.claude/youtube-session.json` files in project directories
 
 ### 4. Display Table
@@ -129,7 +129,7 @@ find ~/.claude/youtube/transcriptions -name "youtube-${VIDEO_ID}*.md" 2>/dev/nul
 Display transcript metadata and ask for confirmation:
 ```
 Delete transcript for "Video Title" by "Author" (3:32)?
-File: ~/.claude/transcriptions/youtube-dQw4w9WgXcQ.md
+File: %USERPROFILE%\.claude\youtube\transcriptions\youtube-dQw4w9WgXcQ.md
 Size: 45 KB
 
 Type "yes" to confirm:
@@ -201,7 +201,7 @@ Deleted X transcripts, freed Y
     {
       "video_id": "dQw4w9WgXcQ",
       "title": "Never Gonna Give You Up",
-      "file_path": "~/.claude/transcriptions/youtube-dQw4w9WgXcQ.md",
+      "file_path": "%USERPROFILE%\\.claude\\youtube\\transcriptions\\youtube-dQw4w9WgXcQ.md",
       "added_at": "2026-01-21T10:00:00Z"
     }
   ]
@@ -222,13 +222,13 @@ When `<promise>RALPH_COMPLETE</promise>` is detected, the ralph-orchestrator.py 
 - **Always confirm before deletion**
 - **`delete all` requires typing "yes"**
 - **Never auto-delete transcripts**
-- **Keep transcripts in global location (`~/.claude/transcriptions/`)**
+- **Keep transcripts in global location (`%USERPROFILE%\.claude\youtube\transcriptions\`)**
 - **Track per-session usage in project-local file**
 
 ## File Locations
 
 | File | Purpose |
 |------|---------|
-| `/usr/share/claude/skills/youtube/scripts/transcribe.py` | Main transcription script |
-| `~/.claude/youtube/transcriptions/*.md` | Stored transcripts (global, per-user) |
+| `C:\Users\Dennis\.claude\skills\youtube\scripts\transcribe.py` | Main transcription script |
+| `%USERPROFILE%\.claude\youtube\transcriptions\*.md` | Stored transcripts (global, per-user) |
 | `.claude/youtube-session.json` | Session usage tracker (project-local) |

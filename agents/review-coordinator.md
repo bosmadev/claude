@@ -32,7 +32,7 @@ PR reviews benefit from multiple perspectives. The coordinator provides a unifie
 tools: "*"
 model: opus
 color: cyan
-preload_skills:
+skills:
   - review
   - quality
 ---

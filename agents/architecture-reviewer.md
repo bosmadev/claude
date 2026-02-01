@@ -222,8 +222,6 @@ class OrderService {
 
 ### Detecting High Coupling
 
-TODO: Implement these
-
 ```bash
 # Find circular dependencies
 npx madge --circular src/
@@ -364,21 +362,81 @@ Circular Dependencies: [list]
 
 ## Quick Commands
 
-TODO: Implement these
-
 ```bash
-# Dependency analysis
+# Detect circular dependencies
 npx madge --circular --extensions ts src/
+
+# Generate dependency graph (visual SVG)
+npx madge --image deps.svg --extensions ts src/
+
+# Alternative circular dependency detection
 npx dpdm --circular src/index.ts
 
-# Module size analysis
+# Module size analysis (sorted by line count)
 find src -name "*.ts" -exec wc -l {} + | sort -n
 
-# Find god classes (many methods)
+# Find god classes (files with many exported members)
 grep -c "^\s*\(async \)\?\(public \|private \|protected \)\?[a-z]" src/**/*.ts
 
-# Find large files
+# Find large files (potential SRP violations)
 find src -name "*.ts" -size +500c -exec ls -lh {} +
+
+# Check import depth (deeply nested imports = high coupling)
+grep -rn "import.*from '\.\./\.\./\.\." src/
+
+# List all cross-layer imports (detect layer violations)
+grep -rn "from.*infrastructure" src/domain/ src/application/
+
+# Count dependencies per file
+for f in src/**/*.ts; do echo "$(grep -c "^import" "$f") $f"; done | sort -rn | head -20
 ```
+
+## TODO Insertion Protocol
+
+During review, you MUST insert TODO comments directly into source code for every finding. Do not just report issues -- leave actionable markers in the code itself.
+
+### TODO Format
+
+Use priority-tagged comments with agent attribution:
+
+```
+// TODO-P1: [Critical issue description] - architecture-reviewer
+// TODO-P2: [Important issue description] - architecture-reviewer
+// TODO-P3: [Improvement suggestion] - architecture-reviewer
+```
+
+**Priority Levels:**
+
+| Priority | When to Use | Example |
+|----------|-------------|---------|
+| `TODO-P1` | Circular dependency, layer violation causing runtime issues | `// TODO-P1: Domain layer imports infrastructure - violates dependency rule - architecture-reviewer` |
+| `TODO-P2` | SOLID violation, high coupling, god class | `// TODO-P2: Class handles auth + email + reporting - split into separate services - architecture-reviewer` |
+| `TODO-P3` | Minor cohesion issue, pattern improvement | `// TODO-P3: Consider extracting factory for complex object creation - architecture-reviewer` |
+
+### Insertion Rules
+
+1. **Insert at the exact location** of the issue (above the problematic line)
+2. **Use the Edit tool or Serena tools** (`mcp__serena__replace_symbol_body`, `mcp__serena__insert_before_symbol`) to insert comments
+3. **Use the correct comment syntax** for the file type:
+   - TypeScript/JavaScript: `// TODO-P1: ...`
+   - Python: `# TODO-P1: ...`
+   - HTML/JSX: `{/* TODO-P1: ... */}`
+   - CSS: `/* TODO-P1: ... */`
+4. **Include file path and line reference** in your review log entry
+5. **Never auto-fix the issue** -- only insert the TODO comment describing what needs to change and why
+6. **One TODO per issue** -- do not combine multiple issues into a single comment
+
+### Review Log Reporting
+
+After inserting TODOs, report each insertion to the shared review log at `.claude/review-agents.md`:
+
+```markdown
+| File | Line | Priority | Issue | Agent |
+|------|------|----------|-------|-------|
+| src/services/UserService.ts | 12 | P2 | SRP violation - handles auth + email + reporting | architecture-reviewer |
+| src/domain/Order.ts | 5 | P1 | Domain imports infrastructure (prisma) | architecture-reviewer |
+```
+
+If you find zero issues, still confirm in the log that the review was completed with no findings.
 
 Remember: Architecture is about trade-offs. Document the decisions, not just the code. Future maintainers (including yourself) will thank you for explaining why, not just what.

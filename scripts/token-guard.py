@@ -22,9 +22,11 @@ import time
 from pathlib import Path
 
 # Configuration
-CLAUDE_HOME = os.environ.get("CLAUDE_HOME", "/usr/share/claude")
+_DEFAULT_CLAUDE_HOME = r"C:\Users\Dennis\.claude" if sys.platform == "win32" else str(Path.home() / ".claude")
+CLAUDE_HOME = os.environ.get("CLAUDE_HOME", _DEFAULT_CLAUDE_HOME)
 CREDS_FILE = Path.home() / ".claude" / ".credentials.json"
-REFRESH_SCRIPT = Path(CLAUDE_HOME) / "scripts" / "refresh-claude-token.sh"
+_REFRESH_EXT = "refresh-claude-token.py"  # Cross-platform Python script
+REFRESH_SCRIPT = Path(CLAUDE_HOME) / "scripts" / _REFRESH_EXT
 BUFFER_SECONDS = 600  # Refresh 10 min before expiry
 
 
@@ -56,13 +58,14 @@ def refresh_token(force=False):
     """Attempt to refresh the token. Returns True on success."""
     if not REFRESH_SCRIPT.exists():
         # Fallback to direct call
-        script = Path(CLAUDE_HOME) / "scripts" / "claude-github.sh"
+        _fallback_name = "claude-github.py"  # Cross-platform Python script
+        script = Path(CLAUDE_HOME) / "scripts" / _fallback_name
         if script.exists():
-            args = [str(script), "refresh"]
+            args = [sys.executable, str(script), "refresh"]
         else:
             return False
     else:
-        args = [str(REFRESH_SCRIPT)]
+        args = [sys.executable, str(REFRESH_SCRIPT)]
 
     if force:
         args.append("--force")
@@ -95,57 +98,60 @@ def main():
     command = "check"
 
     for arg in sys.argv[1:]:
+        if arg in ("help", "--help", "-h"):
+            print(__doc__.strip())
+            sys.exit(0)
         if arg in ("check", "status"):
             command = arg
             break
 
     if not CREDS_FILE.exists():
         if not quiet:
-            print("✗ No credentials file - run 'claude auth login'")
+            print("[x] No credentials file - run 'claude auth login'")
         sys.exit(2)
 
     valid, expires_in, has_refresh = get_token_status()
 
     if command == "status":
         if valid:
-            print(f"✓ Token valid for {format_time(expires_in)}")
+            print(f"[+] Token valid for {format_time(expires_in)}")
         elif expires_in > 0:
-            print(f"⚠ Token expires in {format_time(expires_in)}")
+            print(f"[!] Token expires in {format_time(expires_in)}")
         else:
-            print("✗ Token EXPIRED")
+            print("[x] Token EXPIRED")
 
         if has_refresh:
-            print("✓ Refresh token present")
+            print("[+] Refresh token present")
         else:
-            print("✗ No refresh token")
+            print("[x] No refresh token")
 
         sys.exit(0 if valid else 1)
 
     # Check command
     if valid:
         if not quiet:
-            print(f"✓ Token valid ({format_time(expires_in)})")
+            print(f"[+] Token valid ({format_time(expires_in)})")
         sys.exit(0)
 
     # Token needs refresh
     if not has_refresh:
         if not quiet:
-            print("✗ Token expired and no refresh token - run 'claude auth login'")
+            print("[x] Token expired and no refresh token - run 'claude auth login'")
         sys.exit(1)
 
     if not quiet:
-        print(f"⚠ Token {'expired' if expires_in <= 0 else 'expiring soon'} - refreshing...")
+        print(f"[!] Token {'expired' if expires_in <= 0 else 'expiring soon'} - refreshing...")
 
     if refresh_token():
         # Verify refresh worked
         valid, expires_in, _ = get_token_status()
         if valid:
             if not quiet:
-                print(f"✓ Token refreshed ({format_time(expires_in)})")
+                print(f"[+] Token refreshed ({format_time(expires_in)})")
             sys.exit(0)
 
     if not quiet:
-        print("✗ Token refresh failed - run 'claude auth login'")
+        print("[x] Token refresh failed - run 'claude auth login'")
     sys.exit(1)
 
 

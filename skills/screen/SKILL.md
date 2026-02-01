@@ -1,16 +1,15 @@
 ---
 name: screen
-description: Capture and manage screenshots using Spectacle region mode. Use for visual documentation, bug reporting, or UI reference.
+description: Capture and manage screenshots using Windows Snipping Tool. Use for visual documentation, bug reporting, or UI reference.
 argument-hint: [N] | list | clean | analyze [id] | delete [id]
 user-invocable: true
-context: main
+context: fork
 ---
-
 # Screen Capture Skill
 
 **When invoked, immediately output: `SKILL_STARTED: screen`**
 
-Capture screenshots with Spectacle region mode and manage your screenshot library.
+Capture screenshots with Windows Snipping Tool and manage your screenshot library.
 
 ## Usage
 
@@ -28,23 +27,24 @@ Capture screenshots with Spectacle region mode and manage your screenshot librar
 
 From `$ARGUMENTS`, determine the action:
 
-| Input | Action |
-|-------|--------|
-| `""` or empty | Capture new region screenshot |
-| Number (N) | Review last N screenshots |
-| `list` | List all screenshots |
-| `clean` | Delete screenshots older than 7 days |
-| `analyze <id>` | Analyze specific screenshot |
-| `delete <id>` | Delete specific screenshot |
-| `help` | Show usage help |
+| Input            | Action                               |
+| ---------------- | ------------------------------------ |
+| `""` or empty  | Capture new region screenshot        |
+| Number (N)       | Review last N screenshots            |
+| `list`         | List all screenshots                 |
+| `clean`        | Delete screenshots older than 7 days |
+| `analyze <id>` | Analyze specific screenshot          |
+| `delete <id>`  | Delete specific screenshot           |
+| `help`         | Show usage help                      |
 
 ---
 
 ## Storage
 
-Screenshots are stored at: `/usr/share/claude/skills/screen/screenshots/`
+Screenshots are stored at: `C:\Users\Dennis\.claude\skills\screen\screenshots\`
 
 Filename format: `screen-{timestamp}.png`
+
 - Example: `screen-20260123-143052.png`
 
 ---
@@ -56,20 +56,22 @@ When user runs `/screen` with no arguments:
 ### 1. Run Capture Script
 
 ```bash
-/usr/share/claude/skills/screen/scripts/capture.sh
+python C:/Users/Dennis/.claude/skills/screen/scripts/capture.py
 ```
 
 The script will:
-- Launch Spectacle in region capture mode
+
+- Launch Windows Snipping Tool in region capture mode
 - Wait for user to select a region
-- Save to `/usr/share/claude/skills/screen/screenshots/screen-{timestamp}.png`
+- Save to `C:\Users\Dennis\.claude\skills\screen\screenshots\screen-{timestamp}.png`
 - Output the file path on success
 
 ### 2. Display Result
 
 On success:
+
 ```
-Screenshot captured: /usr/share/claude/skills/screen/screenshots/screen-20260123-143052.png
+Screenshot captured: C:\Users\Dennis\.claude\skills\screen\screenshots\screen-20260123-143052.png
 ```
 
 ### 3. Offer Analysis
@@ -87,12 +89,13 @@ If yes, use the Read tool to view the image and describe its contents.
 ### 1. Get Recent Screenshots
 
 ```bash
-python3 /usr/share/claude/skills/screen/scripts/manage.py list --limit N --json
+python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py list --limit N --json
 ```
 
 ### 2. Display and Analyze
 
 For each screenshot (newest first):
+
 1. Show filename, timestamp, and size
 2. Use Read tool to view the image
 3. Provide brief description of contents
@@ -106,13 +109,13 @@ For each screenshot (newest first):
 ### 1. Run List Command
 
 ```bash
-python3 /usr/share/claude/skills/screen/scripts/manage.py list
+python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py list
 ```
 
 ### 2. Display Table
 
 ```
-Screenshots (/usr/share/claude/skills/screen/screenshots/):
+Screenshots (C:\Users\Dennis\.claude\skills\screen\screenshots\):
 
 ID       | Filename                    | Created          | Size
 ---------|----------------------------|------------------|--------
@@ -135,7 +138,7 @@ ID is derived from the timestamp portion (HHMMSS) for easy reference.
 ### 1. Find Old Screenshots
 
 ```bash
-python3 /usr/share/claude/skills/screen/scripts/manage.py clean --dry-run
+python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py clean --dry-run
 ```
 
 ### 2. Show Preview
@@ -156,8 +159,9 @@ Total: 390 KB to free
 ### 4. Execute
 
 On "yes":
+
 ```bash
-python3 /usr/share/claude/skills/screen/scripts/manage.py clean
+python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py clean
 ```
 
 ### 5. Report
@@ -179,6 +183,7 @@ Match ID against timestamp portion of filenames.
 ### 2. Read and Analyze
 
 Use the Read tool to view the image file, then provide:
+
 - Description of UI elements visible
 - Text content (if readable)
 - Notable features or issues
@@ -193,14 +198,14 @@ Use the Read tool to view the image file, then provide:
 ### 1. Find Screenshot
 
 ```bash
-python3 /usr/share/claude/skills/screen/scripts/manage.py find <id>
+python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py find <id>
 ```
 
 ### 2. Show Confirmation
 
 ```
 Delete screenshot?
-File: /usr/share/claude/skills/screen/screenshots/screen-20260123-143052.png
+File: C:\Users\Dennis\.claude\skills\screen\screenshots\screen-20260123-143052.png
 Created: Jan 23, 2026 14:30:52
 Size: 245 KB
 
@@ -210,8 +215,9 @@ Type "yes" to confirm:
 ### 3. Execute
 
 On "yes":
+
 ```bash
-python3 /usr/share/claude/skills/screen/scripts/manage.py delete <id>
+python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py delete <id>
 ```
 
 ### 4. Report
@@ -238,13 +244,13 @@ Deleted: screen-20260123-143052.png
 
 ## Dependencies
 
-- `spectacle` - KDE screenshot utility
-- `python3` - For management script
+- Windows Snipping Tool - Built-in Windows screenshot utility
+- `python` - For management script
 
 ## File Locations
 
-| File | Purpose |
-|------|---------|
-| `/usr/share/claude/skills/screen/scripts/capture.sh` | Capture script |
-| `/usr/share/claude/skills/screen/scripts/manage.py` | Management operations |
-| `/usr/share/claude/skills/screen/screenshots/` | Screenshot storage |
+| File                                           | Purpose               |
+| ---------------------------------------------- | --------------------- |
+| `C:\Users\Dennis\.claude\skills\screen\scripts\capture.py` | Capture script        |
+| `C:\Users\Dennis\.claude\skills\screen\scripts\manage.py`  | Management operations |
+| `C:\Users\Dennis\.claude\skills\screen\screenshots\`       | Screenshot storage    |

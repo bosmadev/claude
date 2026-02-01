@@ -7,10 +7,12 @@ Usage:
     commit-helper.py get-branch <file-path>   - Get current branch name
     commit-helper.py get-increment <file-path> - Get next commit increment
     commit-helper.py detect-type <file-path>  - Detect conventional commit type
+    commit-helper.py check-env <file-path>    - Check .env encryption status
 
 The file-path is used to detect the git repository root.
 """
 
+import json
 import re
 import subprocess
 import sys
@@ -31,6 +33,51 @@ COMMIT_TYPES = {
     "perf": "Performance improvements",
     "revert": "Reverting a previous commit",
 }
+
+
+def check_dotenvx(repo_root: Path) -> bool:
+    """Check if package.json has env:encrypt script for dotenvx."""
+    package_json_path = repo_root / "package.json"
+
+    if not package_json_path.exists():
+        return False
+
+    try:
+        with open(package_json_path, "r") as f:
+            package_data = json.load(f)
+
+        scripts = package_data.get("scripts", {})
+        return "env:encrypt" in scripts
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def run_env_encrypt(repo_root: Path) -> bool:
+    """Run pnpm env:encrypt to encrypt .env files before commit.
+
+    Returns True if successful, False otherwise.
+    """
+    try:
+        result = subprocess.run(
+            ["pnpm", "env:encrypt"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        print("dotenvx: Encrypted .env files")
+        if result.stdout.strip():
+            # Only print first few lines of output
+            lines = result.stdout.strip().split("\n")[:5]
+            for line in lines:
+                print(f"  {line}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: env:encrypt failed: {e.stderr.strip()}", file=sys.stderr)
+        return False
+    except FileNotFoundError:
+        print("Warning: pnpm not found, skipping env:encrypt", file=sys.stderr)
+        return False
 
 
 def get_repo_root(file_path: str) -> Path | None:
@@ -225,6 +272,33 @@ def detect_commit_type(commit_log: dict) -> str:
     return "chore"
 
 
+def check_env_encryption(repo_root: Path) -> dict:
+    """Check if .env files need encryption and their current status."""
+    result = {
+        "dotenvx_enabled": False,
+        "unencrypted_env_files": [],
+        "encrypted_env_files": [],
+    }
+
+    # Check package.json for env:encrypt
+    pkg_json = repo_root / "package.json"
+    if pkg_json.exists():
+        pkg = json.loads(pkg_json.read_text())
+        if "env:encrypt" in pkg.get("scripts", {}):
+            result["dotenvx_enabled"] = True
+
+    # Find .env files and check encryption header
+    for env_file in repo_root.glob(".env*"):
+        if env_file.is_file() and not env_file.name.endswith(".example"):
+            content = env_file.read_text()
+            if content.startswith("#/---"):
+                result["encrypted_env_files"].append(str(env_file.name))
+            else:
+                result["unencrypted_env_files"].append(str(env_file.name))
+
+    return result
+
+
 def get_git_diff_stat(repo_root: Path) -> str:
     """Get git diff stat as fallback for file changes."""
     try:
@@ -241,89 +315,69 @@ def get_git_diff_stat(repo_root: Path) -> str:
 
 
 def generate_pending_commit(repo_root: Path) -> str:
-    """Generate pending-commit.md content."""
+    """Generate pending-commit.md content.
+
+    Format: Clean text with NO markdown headings.
+    - Line 1: Subject ({branch}-{increment})
+    - Line 2: Blank
+    - Lines 3+: Bullet list with action verbs (Added, Updated, Fixed, etc.)
+    - After bullets: Optional extended description
+    """
+    # Run dotenvx encryption if available (before any file operations)
+    if check_dotenvx(repo_root):
+        run_env_encrypt(repo_root)
+
     branch = get_branch_name(repo_root)
     safe_branch = sanitize_branch_name(branch)
     increment = get_next_increment(repo_root, branch)
     commit_id = f"{safe_branch}-{increment}"
 
     commit_log = read_commit_log(repo_root)
-    commit_type = detect_commit_type(commit_log)
 
-    # Build file changes section
+    # Build bullet list from commit.md entries or git diff
+    bullets = []
     if commit_log["entries"]:
-        files_section = "\n".join(commit_log["entries"])
-    else:
-        files_section = get_git_diff_stat(repo_root)
-
-    # Build summary
-    if commit_log["summary"]:
-        summary = commit_log["summary"]
-    else:
-        summary = "Update codebase"
-
-    # Generate scope from common path prefix
-    scope = ""
-    if commit_log["entries"]:
-        paths = []
         for entry in commit_log["entries"]:
-            match = re.search(r"(?:create|modify|delete): ([^\s]+)", entry)
+            # Convert "[timestamp] action: path - desc" to "- Action desc"
+            match = re.search(r"\] (create|modify|delete): ([^\s]+)\s*-?\s*(.*)", entry)
             if match:
-                paths.append(match.group(1))
-        if paths:
-            # Find common directory
-            parts = [p.split("/") for p in paths]
-            if parts and len(parts[0]) > 1:
-                scope = parts[0][0]  # First directory
+                action, path, desc = match.groups()
+                action_verb = {"create": "Added", "modify": "Updated", "delete": "Removed"}.get(action, "Changed")
+                if desc.strip():
+                    bullets.append(f"- {action_verb} {desc.strip()}")
+                else:
+                    bullets.append(f"- {action_verb} {path}")
 
-    # Build commit message
-    if scope:
-        commit_message = f"{commit_type}({scope}): {summary}"
-    else:
-        commit_message = f"{commit_type}: {summary}"
+    if not bullets:
+        # Fallback: parse git diff stat
+        diff_stat = get_git_diff_stat(repo_root)
+        for line in diff_stat.split("\n"):
+            if "|" in line:
+                file_path = line.split("|")[0].strip()
+                if file_path:
+                    bullets.append(f"- Updated {file_path}")
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not bullets:
+        bullets = ["- Updated codebase"]
 
-    content = f"""# Pending Commit
+    # Build body from summary if exists
+    body_section = ""
+    if commit_log["summary"]:
+        body_section = f"\n{commit_log['summary']}"
 
-Generated: {timestamp}
+    bullets_text = "\n".join(bullets)
 
-## Commit ID
+    content = f"""{commit_id}
 
-{commit_id}
-
-## Branch
-
-{branch}
-
-## Type
-
-{commit_type} - {COMMIT_TYPES.get(commit_type, "Unknown")}
-
-## Message
-
-{commit_message}
-
-## Files Changed
-
-{files_section}
-
-## Full Commit Message
-
-```
-{commit_message}
-
-Commit-ID: {commit_id}
-```
+{bullets_text}{body_section}
 
 ---
 
 **Actions:**
+
 - Run `/commit confirm` to create this commit
 - Run `/commit abort` to cancel
-- Edit this file to modify the commit message before confirming
-
-**Available Types:** {", ".join(COMMIT_TYPES.keys())}
+- Edit this file to modify the commit message
 """
 
     return content
@@ -336,7 +390,9 @@ def cmd_generate(file_path: str) -> int:
         print(f"Error: '{file_path}' is not in a git repository", file=sys.stderr)
         return 1
 
-    pending_path = repo_root / "pending-commit.md"
+    claude_dir = repo_root / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+    pending_path = claude_dir / "pending-commit.md"
 
     if pending_path.exists():
         print(f"Warning: pending-commit.md already exists at {pending_path}")
@@ -389,6 +445,18 @@ def cmd_detect_type(file_path: str) -> int:
     return 0
 
 
+def cmd_check_env(file_path: str) -> int:
+    """Check .env encryption status and output as JSON."""
+    repo_root = get_repo_root(file_path)
+    if not repo_root:
+        print(f"Error: '{file_path}' is not in a git repository", file=sys.stderr)
+        return 1
+
+    result = check_env_encryption(repo_root)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
@@ -419,6 +487,12 @@ def main() -> int:
             print("Usage: commit-helper.py detect-type <file-path>", file=sys.stderr)
             return 1
         return cmd_detect_type(sys.argv[2])
+
+    elif command == "check-env":
+        if len(sys.argv) < 3:
+            print("Usage: commit-helper.py check-env <file-path>", file=sys.stderr)
+            return 1
+        return cmd_check_env(sys.argv[2])
 
     else:
         print(f"Unknown command: {command}", file=sys.stderr)

@@ -3,7 +3,7 @@ name: review
 description: "Code review: multi-aspect analysis OR PR review. Use '/review' for code quality, '/review pr [N]' for pull requests, '/review security' for OWASP audit."
 argument-hint: "[agents] [iterations] [scope|pr number|security]"
 user-invocable: true
-context: main
+context: fork
 ---
 
 # /review - Multi-Aspect Code Review
@@ -111,9 +111,9 @@ Runs OWASP Top 10:2025 focused security audit.
 ### Security TODO Format
 
 ```typescript
-// TODO-security: SQL injection risk in user input - Review agent [ID]
-// TODO-security: Missing rate limit on auth endpoint - Review agent [ID]
-// TODO-security: Hardcoded API key detected - Review agent [ID]
+// TODO-P1: SQL injection risk in user input - Review agent [ID]
+// TODO-P1: Missing rate limit on auth endpoint - Review agent [ID]
+// TODO-P1: Hardcoded API key detected - Review agent [ID]
 ```
 
 ### Key Security Checks
@@ -201,31 +201,39 @@ Output to `.claude/review-agents.md`:
 
 ## TODOs Added
 
-| File | Line | Category | Comment |
+| File | Line | Priority | Comment |
 |------|------|----------|---------|
-| src/auth.ts | 42 | security | SQL injection risk |
-| src/api.ts | 156 | perf | Consider memoization |
+| src/auth.ts | 42 | P1 | SQL injection risk |
+| src/api.ts | 156 | P2 | Consider memoization |
 
 ## Next Steps
 
 - Run `/repotodo list` to see all TODOs
-- Run `/repotodo security 1` to fix security issues
+- Run `/repotodo P1 all` to fix critical issues first
 - Re-run `/review` to verify fixes
 ```
 
 ## TODO Comment Format
 
-Review agents leave inline comments:
+Review agents leave inline comments using priority-based format:
 
 ```typescript
-// TODO-fix: [description] - Review agent [ID]
-// TODO-security: [description] - Review agent [ID]
-// TODO-perf: [description] - Review agent [ID]
-// TODO-a11y: [description] - Review agent [ID]
-// TODO-docs: [description] - Review agent [ID]
-// TODO-test: [description] - Review agent [ID]
-// TODO-arch: [description] - Review agent [ID]
+// TODO-P1: [critical issue] - Review agent [ID]     // Security, crashes, blocking
+// TODO-P2: [important issue] - Review agent [ID]    // Bugs, performance, quality
+// TODO-P3: [improvement] - Review agent [ID]        // Refactoring, docs, tests
 ```
+
+**Priority mapping for review findings:**
+| Finding Type | Priority |
+|--------------|----------|
+| Security vulnerabilities | P1 |
+| Breaking bugs, crashes | P1 |
+| Performance issues | P2 |
+| Missing error handling | P2 |
+| Code quality issues | P2 |
+| Refactoring suggestions | P3 |
+| Documentation gaps | P3 |
+| Test coverage | P3 |
 
 ## PR Review Mode
 
@@ -329,6 +337,30 @@ Use `mcp__serena__find_referencing_symbols` to detect:
 mcp__serena__write_memory("review-context", <architectural decisions>)
 mcp__serena__read_memory("review-context") - Recall for subsequent reviews
 ```
+
+## Emoji Review Output Format (MANDATORY)
+
+All review report tables MUST use emoji-prefixed headers for visual scanning:
+
+**Findings tables:**
+```markdown
+| # | ⚠️ Category | 🔴 Severity | 📄 File | 📋 Description |
+|---|------------|------------|---------|---------------|
+| 1 | 🔒 Security | 🔴 Critical | auth.ts | SQL injection |
+| 2 | ⚡ Perf     | 🟡 Medium   | api.ts  | N+1 queries   |
+```
+
+**Summary tables:**
+```markdown
+| ✅ Category     | 📊 Count | 🔴 Critical | 🟡 High | 🟢 Low |
+|----------------|---------|-----------|--------|-------|
+| 🔒 Security    | 3       | 1         | 2      | 0     |
+| ⚡ Performance  | 5       | 0         | 2      | 3     |
+```
+
+**Priority items:** 🔴 Critical, 🟡 Medium, 🟢 Low.
+**Decision tables:** Each row gets a leading emoji for visual scanning.
+**Comparison matrices:** Use emoji columns for at-a-glance status.
 
 ## Notes
 

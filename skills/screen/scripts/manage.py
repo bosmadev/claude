@@ -2,16 +2,17 @@
 """Screenshot management script for /screen skill.
 
 Operations: list, clean (7 days), delete, find
-Storage: /usr/share/claude/skills/screen/screenshots/screen-{timestamp}.png
+Storage: $CLAUDE_HOME/skills/screen/screenshots/screen-{timestamp}.png
 """
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-SCREENSHOTS_DIR = Path("/usr/share/claude/skills/screen/screenshots")
+SCREENSHOTS_DIR = Path(os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude")) / "skills" / "screen" / "screenshots"
 FILENAME_PREFIX = "screen-"
 FILENAME_SUFFIX = ".png"
 RETENTION_DAYS = 7

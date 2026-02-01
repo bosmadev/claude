@@ -13,61 +13,139 @@ context: fork
 
 ## Purpose
 
-Boot up the Node.js server and perform visual verification of the app via localhost or production domain:
-- Identify UI elements and interactions
-- Inspect network requests (DevTools)
-- Catch console errors and warnings
-- Verify visual regressions
-- Check responsive behavior
+Interactive launch tool with animated orange-themed UI providing:
+- Dev server modes (debug + standard, hot reload)
+- Production server mode (optimized build)
+- Cloudflare tunnel support for public access
+- ALL 4 browsers enabled by default
+- Interactive browser toggle menu
+- Automatic process cleanup and cache clearing
+- System stats display (CPU, RAM, Node memory)
 
 ## Help Command
 
 When arguments equal "help":
 
 ```
-/launch - Run debug mode and visual app verification
+/launch - Interactive launch tool with visual app verification
 
 Usage:
   /launch [options]
 
-Commands:
-  (no args)            Start server, visual verification
-  --only <browser>     Use single browser
-  help                 Show this help
+Interactive Menu:
+  [1] Dev Debug      Hot reload, DEBUG=true, all browsers
+  [2] Dev Standard   Hot reload, standard logging, all browsers
+  [3] Production     Build + start optimized server
+  [4] Tunnel         Production + Cloudflare tunnel
+  [B] Browsers       Toggle individual browsers on/off
+  [0] Exit
 
-Browsers (for app debugging):
-  chrome-mcp       - DevTools, network, console inspection (PRIMARY)
-  agent-browser    - Lightweight, fast screenshot capture
-  playwriter       - If app requires authenticated session
+CLI Flags:
+  --only=<browser>   Enable ONLY this browser
+  --skip=<browser>   Disable this browser (can repeat)
+
+Browsers (ALL enabled by default):
+  system         - System default browser (start / Start-Process)
+  playwriter     - Playwriter MCP (auth/sessions)
+  agent-browser  - Agent Browser (headless, fast)
+  chrome-mcp     - Chrome MCP (DevTools, inspection)
 
 Examples:
-  /launch
-  /launch --only chrome-mcp
+  /launch                        # Interactive menu
+  /launch --only=chrome-mcp      # Only Chrome MCP
+  /launch --skip=system          # Skip system browser
+  /launch --skip=system --skip=playwriter  # Multiple skips
 ```
 
 ---
 
 ## Invocation
 
-- `/launch` → Start server + visual verification
-- `/launch --only <browser>` → Single browser mode
-  - Valid values: `chrome-mcp`, `agent-browser`, `playwriter`
-- `/launch help` → Show usage information
+- `/launch` - Opens interactive menu with all modes
+- `/launch --only=<browser>` - Single browser mode
+  - Valid: `system`, `playwriter`, `agent-browser`, `chrome-mcp`
+- `/launch --skip=<browser>` - Skip specific browser(s)
+- `/launch help` - Show usage information
+
+## Interactive Menu Options
+
+| Key | Mode | Description |
+|-----|------|-------------|
+| **1** | Dev Debug | Hot reload, DEBUG=true, launches browsers, port 3000 |
+| **2** | Dev Standard | Hot reload, standard logging, launches browsers, port 3000 |
+| **3** | Production | Runs `pnpm build` then `pnpm start`, optimized, port 3000 |
+| **4** | Tunnel | Production build + Cloudflare tunnel to public URL |
+| **B** | Browsers | Opens browser toggle submenu |
+| **0** | Exit | Graceful shutdown |
+
+## Browser Configuration
+
+All 4 browsers are **enabled by default**:
+
+| Browser | Name | Description |
+|---------|------|-------------|
+| `system` | System Browser | Opens URL in system default (start / Start-Process) |
+| `playwriter` | Playwriter MCP | Chrome extension, maintains auth/sessions |
+| `agent-browser` | Agent Browser | Lightweight headless, fast screenshots |
+| `chrome-mcp` | Chrome MCP | Full DevTools access, network inspection |
+
+### Browser Toggle Menu
+
+Press `B` from main menu to toggle browsers:
+- Press `1-4` to toggle individual browsers
+- Press `A` to enable all
+- Press `N` to disable all
+- Press `0` to return to main menu
+
+### CLI Browser Selection
+
+```bash
+# Only use Chrome MCP
+pnpm launch --only=chrome-mcp
+
+# Skip system browser (runs headless only)
+pnpm launch --skip=system
+
+# Skip multiple browsers
+pnpm launch --skip=system --skip=playwriter
+```
+
+## Features
+
+### Animated Header
+- Orange gradient flowing animation at 30 FPS
+- Displays app name, version, and description
+- Crush-style decorative footer
+
+### System Stats
+Real-time display of:
+- Current time
+- CPU usage (color-coded: green/yellow/red)
+- RAM usage (percentage + used amount)
+- Node.js memory (RSS)
+
+### Process Management
+Before starting any server:
+1. Kills blocking processes (`next dev`, `next start`, etc.)
+2. Releases port 3000
+3. Clears `.next` build cache
 
 ## Browser Selection (App Debugging)
 
 | Browser | Use For |
 |---------|---------|
-| **Chrome MCP** | DevTools, network inspection, console logs, DOM debugging (PRIMARY) |
+| **Chrome MCP** | DevTools, network inspection, console logs, DOM debugging |
 | **agent-browser** | Quick screenshots, element snapshots, lightweight checks |
 | **Playwriter** | If the app requires login/authenticated session |
+| **System** | Visual verification in your daily driver browser |
 
 ### Selection Logic
 
 ```
-Need DevTools/network/console?  → Chrome MCP (default)
-Quick visual check?             → agent-browser
-App requires login?             → Playwriter
+Need DevTools/network/console?  - Chrome MCP
+Quick visual check?             - agent-browser
+App requires login?             - Playwriter
+Manual testing?                 - System browser
 ```
 
 ## Cross-Check Workflow
@@ -92,46 +170,27 @@ For critical visual verification, check with multiple browsers:
 **Recommendation:** [Human review needed / likely browser-specific / etc.]
 ```
 
-## Auto-Start with RALPH
-
-When RALPH is active, `/launch` automatically:
-1. Starts the dev server (`pnpm launch`)
-2. Initializes browser tools for visual verification
-3. Enables cross-check coordination
-
-For debugging specific browser issues, use `--only` flag to isolate:
-```bash
-/launch --only chrome-mcp  # Debug Chrome-specific issue
-```
-
-## Purpose
-
-Run the application in debug mode and perform visual verification in the browser and also by using Claude MCP in Chrome.
-
 ## Instructions
 
-1. **Run debug mode**
+1. **Run launch tool**
    ```bash
    pnpm launch
    ```
 
-2. **Monitor output**
+2. **Select mode** from interactive menu (1-4)
+
+3. **Monitor output**
    - Watch console for errors
-   - Check Antigravity browser
-   - Review network debug log
+   - Check browser windows
+   - Review network activity
 
-3. **Click around** - Test interactive elements and verify behavior
+4. **Click around** - Test interactive elements and verify behavior
 
-4. **Check for issues**
+5. **Check for issues**
    - Console errors
    - Network failures
    - UI glitches
    - Performance issues
-
-5. **Research improvements**
-   - Scout the internet using model tools
-   - Based on current context (brain, tasks, implementation plans)
-   - Make proposals for improvements
 
 ## What to Check
 
@@ -161,8 +220,11 @@ Run the application in debug mode and perform visual verification in the browser
 ```
 ## Launch Results
 
-### Browser Used
-[Which browser tool was selected and why]
+### Mode Used
+[Dev Debug / Dev Standard / Production / Tunnel]
+
+### Browsers Launched
+[List of browsers that were started]
 
 ### Console Issues
 - [List any console errors/warnings]
@@ -186,7 +248,21 @@ Run the application in debug mode and perform visual verification in the browser
 
 ## Browser Tool Reference
 
-### Browser 1: Chrome MCP (claude-in-chrome)
+### Browser 1: System Browser
+
+**Status:** Uses `start` / `Start-Process` to launch system default
+
+**Capabilities:**
+- Opens URL in user's preferred browser
+- Full browser features available
+- Manual interaction for testing
+
+**Usage:**
+Automatically opens `http://localhost:3000` when enabled.
+
+---
+
+### Browser 2: Chrome MCP (claude-in-chrome)
 
 **Status:** Configured via MCP plugin
 
@@ -223,9 +299,11 @@ mcp__claude-in-chrome__form_input(ref: "ref_2", value: "test@example.com", tabId
 
 ---
 
-### Browser 2: agent-browser
+### Browser 3: agent-browser
 
-**Status:** Installed at `/usr/share/claude/agent-browser-npm/`
+**Status:** Installed at `C:\Users\Dennis\.claude\agent-browser-npm\`
+
+> **Note:** agent-browser requires separate installation via npm. If not installed, use other browser options.
 
 **Capabilities:**
 - Lightweight headless Chromium (Playwright-based)
@@ -285,74 +363,6 @@ mcp__claude-in-chrome__form_input(ref: "ref_2", value: "test@example.com", tabId
 ~/.claude/bin/agent-browser wait "#element"        # Wait for element
 ~/.claude/bin/agent-browser wait 2000              # Wait 2 seconds
 ~/.claude/bin/agent-browser wait --text "Welcome"  # Wait for text
-```
-
----
-
-### Browser 3: Browser-Use
-
-**Status:** Python library integration
-
-**Capabilities:**
-- LLM decision loop for autonomous navigation
-- Natural language task descriptions
-- 15+ built-in action tools
-- Self-correcting workflows
-- Vision capabilities for complex pages
-
-**Installation:**
-
-```bash
-pip install browser-use
-playwright install chromium
-```
-
-**Usage (Python):**
-
-```python
-from browser_use import Agent
-import asyncio
-
-async def main():
-    agent = Agent(
-        task="Navigate to the login page and fill in test credentials"
-    )
-    result = await agent.run()
-    print(result)
-
-asyncio.run(main())
-```
-
-**Available Actions:**
-- `navigate(url)` - Go to URL
-- `click(element)` - Click element
-- `type(element, text)` - Type text
-- `scroll(direction)` - Scroll page
-- `screenshot()` - Capture screenshot
-- `extract_text(element)` - Get text content
-- `wait_for(condition)` - Wait for condition
-- `go_back()` / `go_forward()` - Navigation
-- `new_tab()` / `switch_tab(index)` / `close_tab()` - Tab management
-- `select_option(element, value)` - Dropdown selection
-- `hover(element)` - Mouse hover
-- `drag_and_drop(source, target)` - Drag operations
-
-**Configuration:**
-
-```python
-from browser_use import Agent, BrowserConfig
-
-config = BrowserConfig(
-    headless=True,
-    slow_mo=100,  # Slow down for debugging
-    viewport={"width": 1280, "height": 720}
-)
-
-agent = Agent(
-    task="Your task description",
-    browser_config=config,
-    max_steps=50,  # Limit autonomous actions
-)
 ```
 
 ---
@@ -446,5 +456,6 @@ mcp__playwriter__browser_take_screenshot(filename: "result.png")
 | App requires login/auth | Playwriter | Session persistence |
 | Form testing | Playwriter | Field type awareness |
 | Accessibility testing | Playwriter | Snapshot-based |
+| Manual user testing | System | Full browser features |
 
 **Note:** For web scraping/research (not app debugging), see `/scraper` skill or use the Web Research Fallback Chain in CLAUDE.md.

@@ -1,18 +1,19 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
-    "FORCE_COLOR": "1",
-    "CLAUDE_CODE_TMPDIR": "/mnt/claude-tmp"
+    "FORCE_COLOR": "1"
   },
   "attribution": {
     "commit": "",
     "pr": ""
   },
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
-      "Bash(spectacle --help:*)",
       "Bash(bash:*)",
       "Bash(pyright:*)",
+      "Bash(pip3 list:*)",
+      "Bash(pip3 show:*)",
       "Bash(du:*)",
       "Bash(gh auth status:*)",
       "Bash(xargs cat:*)",
@@ -22,11 +23,11 @@
       "Bash(tree:*)",
       "Bash(cat:*)",
       "Bash(head:*)",
+      "Bash(gh secret list:*)",
       "Bash(tail:*)",
       "Bash(echo:*)",
       "Bash(pwd:*)",
       "Bash(which:*)",
-      "Bash(whereis:*)",
       "Bash(file:*)",
       "Bash(wc:*)",
       "Bash(jq:*)",
@@ -35,8 +36,6 @@
       "Bash(python3:*)",
       "Bash(xxd:*)",
       "Bash(pgrep:*)",
-      "Bash(systemctl status:*)",
-      "Bash(systemctl --user status:*)",
       "Bash(claude:*)",
       "Bash(uv:*)",
       "Bash(pnpm:*)",
@@ -57,7 +56,6 @@
       "Bash(git show:*)",
       "Bash(git archive:*)",
       "Bash(git add:*)",
-      "Bash(fc-list:*)",
       "Bash(gh auth login:*)",
       "Bash(gh issue list:*)",
       "Bash(gh issue view:*)",
@@ -73,10 +71,7 @@
       "Bash(gh api:*)",
       "Bash(pip show:*)",
       "Bash(agent-browser:*)",
-      "Bash(getfacl:*)",
       "Skill",
-      "Bash(/usr/share/claude/bin/agent-browser:*)",
-      "Bash(/usr/share/claude/bin/install-agent-browser.sh:*)",
       "WebSearch",
       "WebFetch",
       "Read",
@@ -142,14 +137,9 @@
       "Bash(printenv:*)",
       "Bash(whoami:*)",
       "Bash(hostname:*)",
-      "Bash(uname:*)",
-      "Bash(lsof:*)",
       "Bash(ps:*)",
-      "Bash(top -bn1:*)",
-      "Bash(free:*)",
       "Bash(df:*)",
       "Bash(timeout:*)",
-      "Bash(xdg-open:*)",
       "Bash(code:*)",
       "Bash(less:*)",
       "Bash(more:*)",
@@ -198,17 +188,29 @@
       "Bash(rebar3:*)",
       "Bash(elm:*)",
       "Bash(deno:*)",
-      "Bash(bun:*)"
+      "Bash(bun:*)",
+      "Bash(where:*)",
+      "Bash(tasklist:*)",
+      "Bash(schtasks:*)",
+      "Bash(start:*)",
+      "Bash(powershell:*)",
+      "Bash(gh search:*)",
+      "Bash(powershell.exe*Get-Content*)",
+      "Bash(powershell.exe*Get-Process*)",
+      "Bash(powershell.exe*Get-Service*)",
+      "Bash(powershell.exe*Get-ChildItem*)",
+      "Bash(powershell.exe*Test-Path*)",
+      "Bash(powershell.exe*Where-Object*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(reg query:*)",
+      "Bash(cmd.exe /c *:*)"
     ],
     "deny": [],
     "ask": [
-      "Bash(> /dev/sda:*)",
       "Bash(mkfs:*)",
       "Bash(dd if=:*)",
-      "Bash(sudo:*)",
-      "Bash(su:*)",
       "Bash(passwd:*)",
-      "Bash(chown:*)",
       "Bash(curl:*)",
       "Bash(curl * | sh:*)",
       "Bash(curl * | bash:*)",
@@ -257,21 +259,32 @@
       "Bash(gh workflow run:*)",
       "Bash(kill:*)",
       "Bash(pkill:*)",
-      "Bash(rm /usr/share/claude/plans/*-agent-*:*)",
       "Bash(sed -i:*)",
-      "Bash(chmod:*)",
       "mcp__serena__execute_shell_command",
-      "ExitPlanMode"
+      "ExitPlanMode",
+      "Bash(del:*)",
+      "Bash(rmdir:*)",
+      "Bash(mv:*)",
+      "Bash(format:*)",
+      "Bash(dd:*)"
+      
     ],
     "defaultMode": "plan"
   },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "playwriter",
+    "context7",
+    "serena",
+    "vs-claude"
+  ],
   "hooks": {
     "Setup": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/scripts/token-guard.py check --quiet",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\token-guard.py check --quiet",
             "timeout": 60
           }
         ]
@@ -280,7 +293,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/setup.py validate-symlinks",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\setup.py validate-symlinks",
             "timeout": 30
           }
         ]
@@ -291,7 +304,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/ralph.py stop",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\ralph.py stop",
             "timeout": 30
           }
         ]
@@ -300,16 +313,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /usr/share/claudeCodeChange/tools/claudeChangeStop.js",
+            "command": "node C:\\Users\\Dennis\\.claudeCodeChange\\tools\\claudeChangeStop.js",
             "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /home/dennis/.claudeCodeChange/tools/claudeChangeStop.js"
           }
         ]
       }
@@ -319,7 +324,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/ralph.py session-start",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\ralph.py session-start",
             "timeout": 10
           }
         ]
@@ -330,7 +335,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/ralph.py pre-compact",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\ralph.py pre-compact",
             "timeout": 10
           }
         ]
@@ -342,7 +347,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/share/claude/hooks/auto-allow.sh",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\auto-allow.py",
             "timeout": 5
           }
         ]
@@ -352,7 +357,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/git.py commit-review",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\git.py pre-commit-checks",
             "timeout": 5
           }
         ]
@@ -362,12 +367,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/share/claude/hooks/auto-allow.sh",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\auto-allow.py",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "node /usr/share/claudeCodeChange/tools/claudeChangePreToolUse.js",
+            "command": "node C:\\Users\\Dennis\\.claudeCodeChange\\tools\\claudeChangePreToolUse.js",
             "timeout": 5
           }
         ]
@@ -377,17 +382,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/scripts/ralph.py hook-pretool",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\ralph.py hook-pretool",
             "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "MultiEdit|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /home/dennis/.claudeCodeChange/tools/claudeChangePreToolUse.js"
           }
         ]
       }
@@ -398,7 +394,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/git.py command-history",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\git.py command-history",
             "timeout": 5
           }
         ]
@@ -408,27 +404,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/git.py change-tracker",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\git.py change-tracker",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py guardian",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py guardian",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py plan-write-check",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py plan-write-check",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py hook-sync",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py hook-sync",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py insights-reminder",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py insights-reminder",
             "timeout": 5
           }
         ]
@@ -438,7 +434,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py ralph-enforcer",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py ralph-enforcer",
             "timeout": 10
           }
         ]
@@ -448,40 +444,70 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py ralph-agent-tracker",
-            "timeout": 5
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\ralph.py agent-tracker",
+            "timeout": 10
           }
         ]
-      }
-    ],
-    "UserPromptSubmit": [
+      },
       {
-        "matcher": "^/start",
+        "matcher": "Skill",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py skill-parser",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py skill-validator",
             "timeout": 5
           }
         ]
       },
       {
+        "matcher": "Skill",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /usr/share/claude/hooks/guards.py plan-comments",
-            "timeout": 5
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\post-review.py hook",
+            "timeout": 30
           }
         ]
       }
     ],
+    "UserPromptSubmit": [
+           {
+             "matcher": "^/(?!start\\b)",
+          "hooks": [
+                {
+              "type": "command",
+               "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py skill-interceptor",
+              "timeout": 5
+             }
+             ]
+          },
+         {
+            "matcher": "^/start",
+             "hooks": [
+              {
+              "type": "command",
+          "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py skill-parser",
+               "timeout": 5
+            }
+           ]
+       },
+         {
+           "hooks": [
+           {
+              "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py plan-comments",
+             "timeout": 5
+             }
+           ]
+          }
+      ],
     "Notification": [
       {
         "matcher": "permission_prompt",
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/share/claude/hooks/utils.sh notify",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\utils.py notify",
             "timeout": 10
           }
         ]
@@ -490,15 +516,44 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "/usr/share/claude/scripts/statusline.sh"
+    "command": "python C:\\Users\\Dennis\\.claude\\scripts\\statusline.py"
   },
-  "outputStyle": "Engineer",
   "enabledPlugins": {},
-  "gitCoAuthor": false,
-  "enabledMcpjsonServers": [
-    "playwriter",
-    "context7",
-    "serena"
-  ],
-  "enableAllProjectMcpServers": true
+  "outputStyle": "Engineer",
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "Derezzling",
+      "Rezzing",
+      "Entering the Grid",
+      "Compiling identity disc",
+      "Routing through I/O Tower",
+      "Scanning lightcycles",
+      "Initializing CLU",
+      "Querying the MCP",
+      "Traversing the Grid",
+      "Rectifying",
+      "Digitizing",
+      "End of line processing",
+      "Defragmenting disc",
+      "Booting Tron protocol",
+      "Cycling the light ribbon",
+      "Decrypting ISO signal",
+      "Interfacing with Flynn",
+      "Resequencing bits",
+      "Activating recognizer",
+      "Parsing the Sea of Simulation",
+      "Disc wars training",
+      "Opening the portal",
+      "Encoding on the Grid",
+      "Running program",
+      "Syncing identity disc",
+      "Gridwalking",
+      "Tracing data stream",
+      "Powering light jet",
+      "Uplink to I/O Tower",
+      "Resolving user request"
+    ]
+  },
+  "autoUpdatesChannel": "latest"
 }

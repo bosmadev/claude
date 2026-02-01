@@ -6,14 +6,16 @@ This module consolidates git-related hooks into a single file with
 mode dispatch based on command-line argument.
 
 Usage:
-  python3 git.py commit-review    # PreToolUse: Review git commit commands
-  python3 git.py change-tracker   # PostToolUse: Track file changes
-  python3 git.py command-history  # PostToolUse: Track bash commands
+  python3 git.py commit-review      # PreToolUse: Review git commit commands
+  python3 git.py change-tracker     # PostToolUse: Track file changes
+  python3 git.py command-history    # PostToolUse: Track bash commands
+  python3 git.py env-check          # PreToolUse: Check .env encryption
+  python3 git.py pre-commit-checks  # PreToolUse: Combined commit-review + env-check
 """
 
 import json
+import os
 import re
-import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -24,13 +26,37 @@ from pathlib import Path
 # Stdin Timeout - Prevent hanging on missing stdin
 # =============================================================================
 
-def timeout_handler(signum, frame):
-    """Silent exit on timeout - prevents hooks from hanging."""
-    sys.exit(0)
+# Cross-platform stdin timeout (SIGALRM not available on Windows)
+_stdin_timer = None
 
-# Set 5 second timeout for stdin read operations
-signal.signal(signal.SIGALRM, timeout_handler)
-signal.alarm(5)
+def _setup_timeout():
+    global _stdin_timer
+    if sys.platform == "win32":
+        import threading
+        _stdin_timer = threading.Timer(5, lambda: os._exit(0))
+        _stdin_timer.daemon = True
+        _stdin_timer.start()
+    else:
+        import signal
+
+        def timeout_handler(signum, frame):
+            """Silent exit on timeout - prevents hooks from hanging."""
+            sys.exit(0)
+
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(5)
+
+def _cancel_timeout():
+    global _stdin_timer
+    if sys.platform == "win32":
+        if _stdin_timer:
+            _stdin_timer.cancel()
+            _stdin_timer = None
+    else:
+        import signal
+        signal.alarm(0)
+
+_setup_timeout()
 
 
 # =============================================================================
@@ -173,6 +199,7 @@ def commit_review() -> None:
     """
     try:
         hook_input = json.loads(sys.stdin.read())
+        _cancel_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
 
@@ -180,18 +207,17 @@ def commit_review() -> None:
     command = tool_input.get("command", "")
 
     # Only intercept git commit commands
-    if not re.match(r"^git\s+commit", command):
+    if not re.match(r"^git\s+commit\b", command):
         sys.exit(0)
 
-    # Extract message from -m flag
-    msg_match = re.search(r'-m\s+["\']([^"\']+)["\']', command)
-    if msg_match:
-        msg = msg_match.group(1)
+    # Extract message - check HEREDOC first (more specific), then -m flag
+    heredoc_match = re.search(r'cat\s*<<[\'"]?EOF[\'"]?\n(.*?)\nEOF', command, re.DOTALL)
+    if heredoc_match:
+        msg = heredoc_match.group(1).strip()
     else:
-        # Try to extract from HEREDOC pattern
-        heredoc_match = re.search(r'cat\s*<<[\'"]?EOF[\'"]?\n(.*?)\nEOF', command, re.DOTALL)
-        if heredoc_match:
-            msg = heredoc_match.group(1).strip()
+        msg_match = re.search(r'-m\s+["\']([^"\']+)["\']', command)
+        if msg_match:
+            msg = msg_match.group(1)
         else:
             msg = "(No commit message provided - please add one)"
 
@@ -248,19 +274,7 @@ def find_git_root(path: str) -> Path | None:
 
 def find_git_root_from_cwd(cwd: str) -> Path | None:
     """Find the git repository root from current working directory."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return Path(result.stdout.strip())
-        return None
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return None
+    return find_git_root(cwd)
 
 
 def get_relative_path(file_path: str, repo_root: Path) -> str:
@@ -304,92 +318,186 @@ def get_action_verb(action_type: str) -> str:
     }.get(action_type, "Updated")
 
 
-def truncate_line(line: str, max_length: int = 80) -> str:
-    """Truncate line to max length with ellipsis if needed."""
-    if len(line) <= max_length:
-        return line
-    return line[:max_length - 3] + "..."
+# =============================================================================
+# Smart File Categorization - Path patterns to meaningful descriptions
+# =============================================================================
+
+# Category patterns: (regex, category_name, description_template)
+# description_template uses {files} for file list, {count} for count
+CATEGORY_PATTERNS: list[tuple[str, str, str]] = [
+    # API routes - group by feature
+    (r"^app/api/auth/", "api-auth", "authentication API ({files})"),
+    (r"^app/api/admin/", "api-admin", "admin API ({files})"),
+    (r"^app/api/gswarm/", "api-gswarm", "GSwarm API ({files})"),
+    (r"^app/api/dashboard/", "api-dashboard", "dashboard API ({files})"),
+    (r"^app/api/accounts/", "api-accounts", "accounts API ({files})"),
+    (r"^app/api/api-keys/", "api-keys", "API key management ({files})"),
+    (r"^app/api/projects/", "api-projects", "projects API ({files})"),
+    (r"^app/api/", "api-other", "API routes ({files})"),
+
+    # App pages and layouts
+    (r"^app/dashboard/components/", "dashboard-components", "dashboard components ({files})"),
+    (r"^app/dashboard/", "dashboard-pages", "dashboard pages ({files})"),
+    (r"^app/.*layout\.tsx$", "app-layouts", "app layouts"),
+    (r"^app/.*page\.tsx$", "app-pages", "app pages ({files})"),
+
+    # Components
+    (r"^components/ui/", "ui-components", "UI components ({files})"),
+    (r"^components/", "components", "components ({files})"),
+
+    # Library code
+    (r"^lib/.*/storage/", "lib-storage", "storage layer ({files})"),
+    (r"^lib/gswarm/", "lib-gswarm", "GSwarm core ({files})"),
+    (r"^lib/", "lib", "library utilities ({files})"),
+
+    # Config files
+    (r"^\.github/workflows/", "ci", "CI workflows ({files})"),
+    (r"^\.github/", "github", "GitHub templates ({files})"),
+    (r"^(package\.json|pnpm-lock\.yaml|yarn\.lock|package-lock\.json)$", "deps", "dependencies"),
+    (r"^(tsconfig.*\.json|biome\.json|\.eslintrc.*)$", "config-ts", "TypeScript/linting config"),
+    (r"^(\.gitignore|\.env.*|\.dockerignore)$", "config-git", "git/env config"),
+    (r"^python/", "python", "Python dependencies"),
+
+    # Tests
+    (r"^(tests?|__tests__|.*\.test\.|.*\.spec\.)", "tests", "tests ({files})"),
+
+    # Scripts
+    (r"^scripts/", "scripts", "build scripts ({files})"),
+
+    # Docs
+    (r"^(README|CHANGELOG|CONTRIBUTING|docs/)", "docs", "documentation"),
+
+    # Middleware/instrumentation
+    (r"^(middleware|instrumentation)\.ts$", "middleware", "middleware ({files})"),
+]
+
+
+def categorize_file(relative_path: str) -> tuple[str, str]:
+    """
+    Categorize a file based on its path.
+    Returns (category_key, description_template).
+    """
+    # Normalize to forward slashes so regex patterns match on Windows
+    normalized_path = relative_path.replace("\\", "/")
+    for pattern, category, desc_template in CATEGORY_PATTERNS:
+        if re.match(pattern, normalized_path):
+            return (category, desc_template)
+    # Fallback: use parent directory or filename
+    parts = relative_path.split("/")
+    if len(parts) > 1:
+        return (f"other-{parts[0]}", f"{parts[0]} files ({{files}})")
+    return ("other", "{files}")
+
+
+def get_short_name(relative_path: str) -> str:
+    """Extract a short meaningful name from a file path."""
+    filename = relative_path.split("/")[-1]
+    # Remove common suffixes for cleaner display
+    name = re.sub(r"\.(tsx?|jsx?|mjs|cjs)$", "", filename)
+    name = re.sub(r"\.route$", "", name)  # route.ts -> route -> (empty, use parent)
+    if name in ("route", "page", "layout", "index"):
+        # Use parent directory name instead
+        parts = relative_path.split("/")
+        if len(parts) >= 2:
+            parent = parts[-2]
+            if parent not in ("app", "api", "src"):
+                return parent
+    return name or filename
+
+
+def format_file_list(files: list[str], max_display: int = 5) -> str:
+    """Format a list of files for display, showing names not full paths."""
+    short_names = [get_short_name(f) for f in files]
+    # Dedupe while preserving order
+    seen = set()
+    unique = []
+    for name in short_names:
+        if name not in seen:
+            seen.add(name)
+            unique.append(name)
+
+    if len(unique) <= max_display:
+        return ", ".join(unique)
+    else:
+        shown = ", ".join(unique[:max_display])
+        remaining = len(unique) - max_display
+        return f"{shown} +{remaining} more"
 
 
 def update_commit_md(repo_root: Path, relative_path: str, action_type: str, description: str = "") -> None:
-    """Update commit.md with bullet-style entries using action verbs."""
+    """
+    Update commit.md with contextual, grouped entries.
+
+    Format:
+    - Added authentication API (login, logout, callback)
+    - Updated UI components (button, badge)
+    - Removed deprecated middleware
+    """
     commit_file = repo_root / ".claude" / "commit.md"
     commit_file.parent.mkdir(parents=True, exist_ok=True)
 
-    content = commit_file.read_text() if commit_file.exists() else ""
+    # Track which paths are already recorded
+    tracked_paths: set[str] = set()
 
-    # Parse existing entries: {verb: [(filename, full_entry)]}
-    verb_entries: dict[str, list[tuple[str, str]]] = {}
-    tracked_files: set[str] = set()
+    # Parse existing commit.md to recover tracked paths
+    if commit_file.exists():
+        content = commit_file.read_text(encoding="utf-8", errors="replace")
+        # Extract tracked paths from special comment markers
+        for match in re.finditer(r"<!-- tracked: (.+?) -->", content):
+            for path in match.group(1).split(","):
+                tracked_paths.add(path.strip())
 
-    for line in content.split("\n"):
-        line_stripped = line.strip()
-        if line_stripped.startswith("- "):
-            entry = line_stripped[2:]
-            # Parse: "Verb filename" or "Verb description with filename"
-            match = re.match(r"(Added|Updated|Fixed|Removed|Improved|Changed)\s+(.+)", entry)
-            if match:
-                verb, rest = match.groups()
-                if verb not in verb_entries:
-                    verb_entries[verb] = []
-                verb_entries[verb].append((rest, entry))
-                # Track filenames (words with dots that look like filenames)
-                for word in rest.replace(",", " ").split():
-                    if "." in word and not word.startswith("."):
-                        tracked_files.add(word)
-
-    # Generate new entry
-    filename = relative_path.split("/")[-1]
-    verb = get_action_verb(action_type)
-
-    # Skip if file already tracked
-    if filename in tracked_files:
+    # Skip if already tracked
+    if relative_path in tracked_paths:
         return
 
-    # Create entry
-    if description:
-        new_entry = f"{verb} {description}"
-    else:
-        new_entry = f"{verb} {filename}"
+    # Add to tracked
+    tracked_paths.add(relative_path)
 
-    # Add to appropriate verb group
-    if verb not in verb_entries:
-        verb_entries[verb] = []
-    verb_entries[verb].append((filename, new_entry))
+    # Build verb_categories from all tracked paths (rebuild from scratch for consistency)
+    verb_categories: dict[str, dict[str, list[str]]] = {}
+    for path in tracked_paths:
+        # Detect action type from git status
+        p_action = detect_action_type(str(repo_root / path))
+        p_verb = get_action_verb(p_action)
+        p_category, _ = categorize_file(path)
 
-    # Rebuild content - group by verb, merge related files
+        if p_verb not in verb_categories:
+            verb_categories[p_verb] = {}
+        if p_category not in verb_categories[p_verb]:
+            verb_categories[p_verb][p_category] = []
+        verb_categories[p_verb][p_category].append(path)
+
+    # Build new content
     new_content = ["# Pending Changes", ""]
 
     # Order: Added > Fixed > Updated > Improved > Changed > Removed
     verb_order = ["Added", "Fixed", "Updated", "Improved", "Changed", "Removed"]
 
     for verb in verb_order:
-        if verb not in verb_entries:
+        if verb not in verb_categories:
             continue
 
-        entries = verb_entries[verb]
-        if len(entries) == 1:
-            # Single entry - keep as-is
-            line = truncate_line(f"- {entries[0][1]}")
-            new_content.append(line)
-        elif len(entries) <= 4:
-            # 2-4 entries - list filenames if they're simple
-            filenames = [e[0] for e in entries if "." in e[0] and " " not in e[0]]
-            if len(filenames) == len(entries):
-                # All are simple filenames - merge
-                line = truncate_line(f"- {verb} {', '.join(filenames)}")
-                new_content.append(line)
-            else:
-                # Mixed - keep separate
-                for _, entry in entries:
-                    line = truncate_line(f"- {entry}")
-                    new_content.append(line)
-        else:
-            # 5+ entries - summarize
-            line = truncate_line(f"- {verb} {len(entries)} files")
-            new_content.append(line)
+        categories = verb_categories[verb]
+        # Sort categories for consistent output
+        for category in sorted(categories.keys()):
+            files = categories[category]
+            _, desc_template = categorize_file(files[0])
 
+            # Format the entry
+            file_display = format_file_list(files)
+            if "{files}" in desc_template:
+                entry_text = desc_template.format(files=file_display, count=len(files))
+            else:
+                entry_text = desc_template
+
+            new_content.append(f"- {verb} {entry_text}")
+
+    # Add tracking comment (hidden, for parsing)
     new_content.append("")
+    new_content.append(f"<!-- tracked: {', '.join(sorted(tracked_paths))} -->")
+    new_content.append("")
+
     commit_file.write_text("\n".join(new_content))
 
 
@@ -397,6 +505,7 @@ def change_tracker() -> None:
     """Track file changes and log to commit.md with bullet style."""
     try:
         hook_input = json.loads(sys.stdin.read())
+        _cancel_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
 
@@ -423,8 +532,10 @@ def change_tracker() -> None:
         "plans/",
         ".FUTURE.md",
     ]
+    # Normalize to forward slashes for consistent matching on Windows
+    normalized_path = relative_path.replace("\\", "/")
     for pattern in skip_patterns:
-        if pattern in relative_path:
+        if pattern in normalized_path:
             sys.exit(0)
 
     action_type = detect_action_type(file_path)
@@ -446,6 +557,7 @@ def command_history() -> None:
     """Track bash commands in per-project command-history.log."""
     try:
         hook_input = json.loads(sys.stdin.read())
+        _cancel_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
 
@@ -502,10 +614,100 @@ def command_history() -> None:
 # Main Entry Point
 # =============================================================================
 
+def check_env_encryption() -> None:
+    """
+    Check if .env files are encrypted with dotenvx before allowing git commit.
+
+    Pre-commit guard that:
+    1. Checks if package.json has env:encrypt script (dotenvx is configured)
+    2. If yes, scans staged .env files for encryption header
+    3. Blocks commit if unencrypted .env files are staged
+    """
+    try:
+        hook_input = json.loads(sys.stdin.read())
+        _cancel_timeout()
+    except json.JSONDecodeError:
+        return
+
+    tool_input = hook_input.get("tool_input", {})
+    command = tool_input.get("command", "")
+
+    # Only intercept git commit commands
+    if not re.match(r"^git\s+commit\b", command):
+        return
+
+    # Get project directory
+    cwd = hook_input.get("cwd", ".")
+    repo_root = find_git_root_from_cwd(cwd)
+    if not repo_root:
+        return
+
+    # Check if package.json has env:encrypt script (dotenvx configured)
+    package_json = repo_root / "package.json"
+    if not package_json.exists():
+        return
+
+    try:
+        pkg = json.loads(package_json.read_text(encoding="utf-8", errors="replace"))
+        scripts = pkg.get("scripts", {})
+        if "env:encrypt" not in scripts:
+            # No dotenvx configured, skip check
+            return
+    except (json.JSONDecodeError, OSError):
+        return
+
+    # Get staged files
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return
+        staged_files = result.stdout.strip().split("\n")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return
+
+    # Check staged .env files for encryption
+    unencrypted_envs = []
+    for file in staged_files:
+        if not file:
+            continue
+        # Match .env, .env.local, .env.production, etc.
+        if file.startswith(".env") or "/.env" in file:
+            env_path = repo_root / file
+            if env_path.exists():
+                try:
+                    content = env_path.read_text(encoding="utf-8", errors="replace")
+                    # dotenvx encrypted files start with #/---
+                    if not content.startswith("#/---"):
+                        unencrypted_envs.append(file)
+                except OSError:
+                    pass
+
+    if unencrypted_envs:
+        files_list = ", ".join(unencrypted_envs)
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": f"BLOCKED: Unencrypted .env files staged: {files_list}. Run `pnpm env:encrypt` first, then re-stage the encrypted files."
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
+
+    # All .env files are encrypted (or none staged), allow commit
+    return
+
+
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print("Usage: git.py [commit-review|change-tracker|command-history]", file=sys.stderr)
+        print("Usage: git.py [commit-review|change-tracker|command-history|env-check|pre-commit-checks]", file=sys.stderr)
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -515,6 +717,26 @@ def main() -> None:
         change_tracker()
     elif mode == "command-history":
         command_history()
+    elif mode == "env-check":
+        check_env_encryption()
+    elif mode == "pre-commit-checks":
+        # Combined mode: runs both commit-review and env-check in one process.
+        # Early-exits for non-git-commit commands before any heavy logic.
+        try:
+            hook_input = json.loads(sys.stdin.read())
+            _cancel_timeout()
+        except json.JSONDecodeError:
+            sys.exit(0)
+        command = hook_input.get("tool_input", {}).get("command", "")
+        if not re.match(r"^git\s+commit\b", command):
+            sys.exit(0)
+        # It's a git commit — run both checks by re-injecting stdin
+        import io
+        raw = json.dumps(hook_input)
+        sys.stdin = io.StringIO(raw)
+        check_env_encryption()
+        sys.stdin = io.StringIO(raw)
+        commit_review()
     else:
         print(f"Unknown mode: {mode}", file=sys.stderr)
         sys.exit(1)

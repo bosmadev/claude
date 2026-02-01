@@ -93,6 +93,29 @@ else
   WEEKLY_COLOR="${AURORA_RED}"
 fi
 
+# Daily cost (CET timezone, valid 24h across sessions)
+# Each session writes its cost to a per-session file; we sum all for daily total
+COST_DATE=$(TZ="Europe/Berlin" date +%Y-%m-%d)
+COST_DIR="$HOME/.claude/daily-cost"
+mkdir -p "$COST_DIR" 2>/dev/null
+
+# Read current session cost from Claude Code statusline JSON input
+SESSION_ID=$(echo "$input" | jq -r '.session_id // ""')
+SESSION_COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
+
+# Write current session's cost to per-session file (overwrites on each refresh)
+if [ -n "$SESSION_ID" ] && [ "$SESSION_COST" != "0" ] && [ "$SESSION_COST" != "null" ]; then
+  echo "$SESSION_COST" > "$COST_DIR/${COST_DATE}-${SESSION_ID}.cost" 2>/dev/null
+fi
+
+# Sum ALL session costs for today (cross-session daily total)
+DAILY_COST="0"
+if ls "$COST_DIR/${COST_DATE}-"*.cost >/dev/null 2>&1; then
+  DAILY_COST=$(cat "$COST_DIR/${COST_DATE}-"*.cost 2>/dev/null | awk '{s+=$1} END {printf "%.2f", s+0}')
+fi
+[ -z "$DAILY_COST" ] && DAILY_COST="0.00"
+COST_FMT=$(printf '%.2f' "$DAILY_COST" 2>/dev/null || echo "0.00")
+
 # Git info with OSC 8 clickable link, commit hash, ahead/behind chevrons, and status counts
 GIT=""
 if git -C "$CWD" rev-parse --git-dir >/dev/null 2>&1; then
@@ -103,9 +126,17 @@ if git -C "$CWD" rev-parse --git-dir >/dev/null 2>&1; then
   COMMIT_HASH=$(git -C "$CWD" rev-parse --short HEAD 2>/dev/null || echo "")
 
   # Ahead/behind with chevrons (» behind red, « ahead green, zeros grey)
+  # Try @{upstream} first, fall back to origin/<branch> if upstream ref is broken
   AHEAD_BEHIND=""
+  UPSTREAM_REF=""
   if git -C "$CWD" rev-parse @{upstream} >/dev/null 2>&1; then
-    COUNTS=$(git -C "$CWD" rev-list --left-right --count @{upstream}...HEAD 2>/dev/null || echo "0 0")
+    UPSTREAM_REF="@{upstream}"
+  elif git -C "$CWD" rev-parse "origin/${BRANCH}" >/dev/null 2>&1; then
+    UPSTREAM_REF="origin/${BRANCH}"
+  fi
+
+  if [ -n "$UPSTREAM_REF" ]; then
+    COUNTS=$(git -C "$CWD" rev-list --left-right --count "${UPSTREAM_REF}...HEAD" 2>/dev/null || echo "0 0")
     BEHIND=$(echo "$COUNTS" | awk '{print $1}')
     AHEAD=$(echo "$COUNTS" | awk '{print $2}')
 
@@ -186,5 +217,5 @@ else
 fi
 
 # Output with grey pipe separators
-# Example: Opus (⚡11) Engineer | 25%/59% | main@abc123 »1«3 [+0|~2|?5]
-printf "${SALMON}%s${RESET} ${DARK_GREY}(${RESET}${HOOK_COLOR}⚡%s${RESET}${DARK_GREY})${RESET} ${GREY}%s${RESET} ${DARK_GREY}|${RESET} ${CTX_COLOR}%s%%${RESET}${DARK_GREY}/${RESET}${WEEKLY_COLOR}%s%%${RESET} ${DARK_GREY}|${RESET} %b" "$MODEL" "$HOOKS" "$STYLE" "$PCT" "$WEEKLY" "$GIT"
+# Example: Opus ($0.00 | ⚡11) Engineer | 25%/59% | main@abc123 »1«3 [+0|~2|?5]
+printf "${SALMON}%s${RESET} ${DARK_GREY}(${RESET}${AURORA_GREEN}\$%s${RESET} ${DARK_GREY}|${RESET} ${HOOK_COLOR}⚡%s${RESET}${DARK_GREY})${RESET} ${GREY}%s${RESET} ${DARK_GREY}|${RESET} ${CTX_COLOR}%s%%${RESET}${DARK_GREY}/${RESET}${WEEKLY_COLOR}%s%%${RESET} ${DARK_GREY}|${RESET} %b" "$MODEL" "$COST_FMT" "$HOOKS" "$STYLE" "$PCT" "$WEEKLY" "$GIT"

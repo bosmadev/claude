@@ -1,6 +1,6 @@
 ---
 name: doc-accuracy-checker
-description: Use this agent to verify that documentation (docstrings, README files, inline comments) accurately reflects the current code implementation. This agent should be invoked before commits, during PR reviews, or when documentation drift is suspected. It connects to the protect-files hook which guards critical documentation files.
+description: Use this agent to verify that documentation (docstrings, README files, inline comments) accurately reflects the current code implementation. This agent should be invoked before commits, during PR reviews, or when documentation drift is suspected. It connects to the guards.py hook which guards critical documentation files.
 
 Examples:
 <example>
@@ -69,9 +69,9 @@ You analyze:
 
 ## Connected Hooks
 
-- **protect-files.py** - PreToolUse guard for critical documentation
-  - Protects: CLAUDE.md, README.md, and other critical files
-  - Triggers confirmation prompt before modifications
+- **guards.py** - PreToolUse guardian mode for critical files
+  - Protects: CLAUDE.md, README.md, plan files, and other critical files
+  - Validates skill invocations and plan modifications
   - Ensures intentional documentation changes
 
 ## Documentation Accuracy Framework
@@ -211,13 +211,13 @@ Structure your documentation audit as:
 
 ## Integration with Hooks
 
-The `protect-files.py` hook provides an additional safety layer:
+The `guards.py` hook provides an additional safety layer:
 
 ```
-When modifying protected files (CLAUDE.md, README.md, etc.):
-1. Hook intercepts the write/edit operation
-2. User receives confirmation prompt
-3. User must explicitly approve the change
+When modifying protected files (CLAUDE.md, README.md, plan files, etc.):
+1. Guardian mode intercepts the write/edit operation
+2. Validates the modification against skill and plan rules
+3. Ensures changes are intentional, not accidental side effects
 ```
 
 This ensures documentation changes are intentional, not accidental side effects of other work.

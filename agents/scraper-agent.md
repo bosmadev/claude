@@ -1,5 +1,5 @@
 ---
-name: scraper-agent
+name: web-scraper
 description: Use this agent for stealth web scraping tasks including anti-detection, proxy rotation, and data extraction. Invoke when you need to collect data from websites, handle CAPTCHAs, or work with sites that have bot protection. Connects to /scrape skill.
 
 Examples:
@@ -289,7 +289,7 @@ User: /scrape https://example.com/products --format json
 
 ## Tools Available
 
-- `mcp__plugin_playwright_playwright__*` - Browser automation
+- `mcp__playwright__execute` - Browser automation (navigate, click, snapshot, fill)
 - `Read` - Read configuration files
 - `Write` - Write output files
 - `Bash` - Run curl, wget for simple requests
