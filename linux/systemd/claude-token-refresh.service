@@ -6,8 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/share/claude/scripts/refresh-claude-token.sh
-Environment="CLAUDE_HOME=/usr/share/claude"
+ExecStart=~/.claude/scripts/refresh-claude-token.sh
+Environment="CLAUDE_HOME=~/.claude"
 # Note: For user-level service, HOME is set automatically
 # For system-level, override with: Environment="HOME=/home/username"
 StandardOutput=journal

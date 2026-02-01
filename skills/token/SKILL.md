@@ -1,3 +1,10 @@
+---
+name: token
+description: Manage Claude OAuth tokens and GitHub secrets
+argument-hint: "[status] | refresh [--force] | sync [all] | help"
+user-invocable: true
+context: fork
+---
 # Token Management Skill
 
 When invoked, immediately output: **SKILL_STARTED:** token
@@ -25,12 +32,12 @@ Manage Claude OAuth tokens and GitHub secrets.
 
 - OAuth access tokens expire in ~2 hours
 - Refresh tokens last ~1 year
-- systemd timer auto-refreshes every 30 minutes
+- Task Scheduler auto-refreshes every 30 minutes
 - GitHub Actions need fresh tokens in secrets
 
 ## Implementation
 
 ```bash
 # Run the unified token management script
-/usr/share/claude/scripts/claude-github.sh <command>
+python C:/Users/Dennis/.claude/scripts/claude-github.py <command>
 ```

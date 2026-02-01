@@ -20,6 +20,38 @@ from datetime import datetime
 from pathlib import Path
 
 
+def is_env_file(file_path: str) -> bool:
+    """Check if a file is an .env file."""
+    name = Path(file_path).name
+    return name == ".env" or name.startswith(".env.")
+
+
+def has_dotenvx(repo_root: Path) -> bool:
+    """Check if dotenvx is configured in the project."""
+    # Check for .env.keys file (dotenvx encrypted keys)
+    if (repo_root / ".env.keys").exists():
+        return True
+
+    # Check package.json for dotenvx scripts
+    package_json = repo_root / "package.json"
+    if package_json.exists():
+        try:
+            import json
+            data = json.loads(package_json.read_text())
+            scripts = data.get("scripts", {})
+            for script in scripts.values():
+                if "dotenvx" in str(script) or "env:encrypt" in str(script):
+                    return True
+            # Check devDependencies
+            dev_deps = data.get("devDependencies", {})
+            if "@dotenvx/dotenvx" in dev_deps:
+                return True
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    return False
+
+
 def get_repo_root(file_path: str) -> Path | None:
     """Detect git repository root from a file path."""
     path = Path(file_path).resolve()
@@ -150,6 +182,11 @@ def cmd_log(file_path: str, action: str, description: str) -> int:
 
     print(f"Logged: {action} {rel_path}")
     print(f"  -> {commit_log_path}")
+
+    # Warn about .env files when dotenvx is configured
+    if is_env_file(file_path) and has_dotenvx(repo_root):
+        print(f"\nNote: Run `pnpm env:encrypt` before committing")
+
     return 0
 
 

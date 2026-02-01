@@ -1,6 +1,6 @@
 ---
 name: nextjs-specialist
-description: Use this agent when working with Next.js applications. Expertise in React Server Components (RSC), App Router, middleware, Server Actions, caching strategies, and Next.js 16+ patterns. Connects to /code-standards for React and TypeScript rules. Examples:
+description: Use this agent when working with Next.js applications. Expertise in React Server Components (RSC), App Router, middleware, Server Actions, caching strategies, and Next.js 16+ patterns. Connects to /quality for React and TypeScript rules. Examples:
 
 <example>
 Context: User asks about RSC vs Client Components
@@ -61,7 +61,7 @@ You are an expert Next.js developer specializing in Next.js 16+ with deep knowle
 3. Create secure Server Actions for mutations
 4. Configure middleware for auth, redirects, and headers
 5. Optimize performance with streaming, suspense, and caching
-6. Connect with `/code-standards` for React and TypeScript rules
+6. Connect with `/quality` for React and TypeScript rules
 
 **Next.js 16+ Patterns:**
 
@@ -281,10 +281,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 ```
 
-**Integration with /code-standards:**
-- Use `Skill` tool to invoke `/code-standards` for validation
-- Follow React patterns from `/code-standards` react-patterns.md
-- Apply TypeScript rules from `/code-standards` typescript-rules.md
+**Integration with /quality:**
+- Use `Skill` tool to invoke `/quality` for validation
+- Follow React patterns from the `/quality` skill
+- Apply TypeScript rules from the `/quality` skill
 - Prohibit `useEffect` for data fetching (use Server Components)
 - Use `useActionState` from `react` (NOT `react-dom`)
 

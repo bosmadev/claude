@@ -31,6 +31,58 @@ log() {
 }
 
 # ============================================================================
+# REPO SEARCH PATHS - All locations to scan for git repos
+# ============================================================================
+# Can be overridden via CLAUDE_REPO_PATHS env var (colon-separated)
+if [ -n "$CLAUDE_REPO_PATHS" ]; then
+  IFS=':' read -ra REPO_SEARCH_PATHS <<< "$CLAUDE_REPO_PATHS"
+else
+  REPO_SEARCH_PATHS=(
+    "$HOME/Desktop"
+    "$HOME/.claude"
+    "$HOME/code"
+    "$HOME/repos"
+    "$HOME/projects"
+    "/usr/share/claude"
+    # Also check common non-root user paths
+    "/home/dennis/Desktop"
+    "/home/dennis/code"
+    "/home/dennis/repos"
+    "/home/dennis/projects"
+  )
+fi
+
+# Get local token timestamp (when credentials file was last modified)
+get_local_token_mtime() {
+  stat -c %Y "$CREDS_FILE" 2>/dev/null || echo "0"
+}
+
+# Get repo secret timestamp (returns epoch seconds, 0 if not found)
+get_repo_secret_mtime() {
+  local repo="$1"
+  local updated_at
+  updated_at=$(gh secret list --repo "$repo" 2>/dev/null | grep CLAUDE_CODE_OAUTH_TOKEN | awk '{print $2}')
+  if [ -n "$updated_at" ]; then
+    date -d "$updated_at" +%s 2>/dev/null || echo "0"
+  else
+    echo "0"
+  fi
+}
+
+# Find all repos across search paths
+find_all_repos() {
+  for search_path in "${REPO_SEARCH_PATHS[@]}"; do
+    [ -d "$search_path" ] || continue
+    find "$search_path" -maxdepth 3 -name ".git" -type d 2>/dev/null | while read -r gitdir; do
+      REPO_PATH=$(dirname "$gitdir")
+      cd "$REPO_PATH" 2>/dev/null || continue
+      REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
+      [ -n "$REPO" ] && echo "$REPO"
+    done
+  done | sort -u
+}
+
+# ============================================================================
 # STATUS - Show token status across repos
 # ============================================================================
 cmd_status() {
@@ -52,6 +104,7 @@ cmd_status() {
   # Calculate expiry
   NOW_MS=$(($(date +%s) * 1000))
   TIME_UNTIL_EXPIRY_SEC=$(( (EXPIRES_AT - NOW_MS) / 1000 ))
+  LOCAL_MTIME=$(get_local_token_mtime)
 
   echo "Local Token:"
   if [ "$TIME_UNTIL_EXPIRY_SEC" -lt 0 ]; then
@@ -70,19 +123,20 @@ cmd_status() {
     echo "  ${RED}✗ No refresh token${RESET}"
   fi
 
-  # Check systemd timer
+  # Check systemd timer (both user and system level)
   echo ""
   echo "Auto-refresh Timer:"
   if systemctl --user is-active claude-token-refresh.timer >/dev/null 2>&1; then
     NEXT=$(systemctl --user show claude-token-refresh.timer --property=NextElapseUSecRealtime --value 2>/dev/null | head -1)
     if [ -n "$NEXT" ] && [ "$NEXT" != "n/a" ]; then
-      # Convert microseconds to readable format
       NEXT_SEC=$((NEXT / 1000000))
       NEXT_DATE=$(date -d "@$NEXT_SEC" '+%H:%M:%S' 2>/dev/null || echo "soon")
-      echo "  ${GREEN}✓ Active - next refresh at $NEXT_DATE${RESET}"
+      echo "  ${GREEN}✓ Active (user) - next refresh at $NEXT_DATE${RESET}"
     else
-      echo "  ${GREEN}✓ Active${RESET}"
+      echo "  ${GREEN}✓ Active (user)${RESET}"
     fi
+  elif systemctl is-active claude-token-refresh.timer >/dev/null 2>&1; then
+    echo "  ${GREEN}✓ Active (system)${RESET}"
   else
     echo "  ${YELLOW}⚠ Not active${RESET}"
     echo "  Start with: systemctl --user start claude-token-refresh.timer"
@@ -90,22 +144,24 @@ cmd_status() {
 
   # Scan repos with CLAUDE_CODE_OAUTH_TOKEN
   echo ""
-  echo "GitHub Repositories with Claude Token:"
+  echo "GitHub Repositories:"
+  echo "  ${GREY}(scanning: ${REPO_SEARCH_PATHS[*]})${RESET}"
+  echo ""
 
-  REPOS=$(find ~/Desktop ~/.claude ~/code 2>/dev/null -maxdepth 3 -name ".git" -type d | while read gitdir; do
-    REPO_PATH=$(dirname "$gitdir")
-    cd "$REPO_PATH" 2>/dev/null || continue
-    REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
-    [ -n "$REPO" ] && echo "$REPO"
-  done | sort -u)
+  REPOS=$(find_all_repos)
 
   if [ -z "$REPOS" ]; then
     echo "  ${GREY}No repos found${RESET}"
   else
     for REPO in $REPOS; do
-      # Check if secret exists (will fail silently if no access)
-      if gh secret list --repo "$REPO" 2>/dev/null | grep -q CLAUDE_CODE_OAUTH_TOKEN; then
-        echo "  ${GREEN}✓ $REPO${RESET}"
+      SECRET_MTIME=$(get_repo_secret_mtime "$REPO")
+      if [ "$SECRET_MTIME" -gt 0 ]; then
+        if [ "$SECRET_MTIME" -lt "$LOCAL_MTIME" ]; then
+          AGO=$(( ($(date +%s) - SECRET_MTIME) / 3600 ))
+          echo "  ${YELLOW}⚠ $REPO${RESET} (stale - ${AGO}h old, needs sync)"
+        else
+          echo "  ${GREEN}✓ $REPO${RESET} (up-to-date)"
+        fi
       else
         echo "  ${GREY}○ $REPO${RESET} (no token or no access)"
       fi
@@ -179,7 +235,7 @@ cmd_refresh() {
 }
 
 # ============================================================================
-# SYNC - Push token to GitHub secrets
+# SYNC - Push token to GitHub secrets (with stale detection)
 # ============================================================================
 cmd_sync() {
   if [ ! -f "$CREDS_FILE" ]; then
@@ -194,23 +250,53 @@ cmd_sync() {
     exit 1
   fi
 
-  if [ "$1" = "--all" ]; then
-    echo "Syncing token to all repositories..."
+  LOCAL_MTIME=$(get_local_token_mtime)
+  FORCE_SYNC=false
+  SYNC_ALL=false
 
-    REPOS=$(find ~/Desktop ~/.claude ~/code 2>/dev/null -maxdepth 3 -name ".git" -type d | while read gitdir; do
-      REPO_PATH=$(dirname "$gitdir")
-      cd "$REPO_PATH" 2>/dev/null || continue
-      REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
-      [ -n "$REPO" ] && echo "$REPO"
-    done | sort -u)
+  # Parse arguments
+  for arg in "$@"; do
+    case "$arg" in
+      --all) SYNC_ALL=true ;;
+      --force) FORCE_SYNC=true ;;
+    esac
+  done
+
+  if [ "$SYNC_ALL" = true ]; then
+    echo "Syncing token to all repositories..."
+    echo "  ${GREY}(scanning: ${REPO_SEARCH_PATHS[*]})${RESET}"
+    echo ""
+
+    REPOS=$(find_all_repos)
+    SYNCED=0
+    SKIPPED=0
+    FAILED=0
 
     for REPO in $REPOS; do
+      SECRET_MTIME=$(get_repo_secret_mtime "$REPO")
+
+      # Skip if already up-to-date (unless --force)
+      if [ "$FORCE_SYNC" = false ] && [ "$SECRET_MTIME" -ge "$LOCAL_MTIME" ] && [ "$SECRET_MTIME" -gt 0 ]; then
+        echo "${GREY}  ○ $REPO (up-to-date, skipped)${RESET}"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+      fi
+
       if gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo "$REPO" --body "$TOKEN" 2>/dev/null; then
-        echo "${GREEN}✓ $REPO${RESET}"
+        if [ "$SECRET_MTIME" -eq 0 ]; then
+          echo "${GREEN}  ✓ $REPO (new)${RESET}"
+        else
+          echo "${GREEN}  ✓ $REPO (updated)${RESET}"
+        fi
+        SYNCED=$((SYNCED + 1))
       else
-        echo "${YELLOW}⚠ $REPO (failed or no access)${RESET}"
+        echo "${YELLOW}  ⚠ $REPO (failed or no access)${RESET}"
+        FAILED=$((FAILED + 1))
       fi
     done
+
+    echo ""
+    echo "Summary: ${GREEN}${SYNCED} synced${RESET}, ${GREY}${SKIPPED} skipped${RESET}, ${YELLOW}${FAILED} failed${RESET}"
   else
     # Current repo only
     REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
@@ -218,6 +304,14 @@ cmd_sync() {
     if [ -z "$REPO" ]; then
       echo "${RED}✗ Not in a GitHub repo - run from repo directory or use --all${RESET}"
       exit 1
+    fi
+
+    SECRET_MTIME=$(get_repo_secret_mtime "$REPO")
+
+    # Check if sync needed (unless --force)
+    if [ "$FORCE_SYNC" = false ] && [ "$SECRET_MTIME" -ge "$LOCAL_MTIME" ] && [ "$SECRET_MTIME" -gt 0 ]; then
+      echo "${GREY}○ $REPO already up-to-date (use --force to sync anyway)${RESET}"
+      exit 0
     fi
 
     if gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo "$REPO" --body "$TOKEN" 2>/dev/null; then
@@ -287,18 +381,24 @@ cmd_help() {
   echo "Usage: claude-github.sh <command> [options]"
   echo ""
   echo "Commands:"
-  echo "  status              Show token status and repo list"
-  echo "  refresh [--force]   Refresh local OAuth token"
-  echo "  sync [--all]        Push token to GitHub secrets"
-  echo "  init                Initialize repo with Claude workflow"
+  echo "  status                    Show token status and repo list"
+  echo "  refresh [--force]         Refresh local OAuth token"
+  echo "  sync [--all] [--force]    Push token to GitHub secrets"
+  echo "  init                      Initialize repo with Claude workflow"
+  echo ""
+  echo "Options:"
+  echo "  --all       Sync to all repos (searches ~/Desktop, ~/code, /usr/share/claude, etc.)"
+  echo "  --force     Sync even if repo secret is already up-to-date"
   echo ""
   echo "Examples:"
-  echo "  claude-github.sh status           # Check token expiry"
-  echo "  claude-github.sh refresh          # Refresh if needed"
-  echo "  claude-github.sh refresh --force  # Force refresh"
-  echo "  claude-github.sh sync             # Sync to current repo"
-  echo "  claude-github.sh sync --all       # Sync to all repos"
-  echo "  claude-github.sh init             # Setup Claude in current repo"
+  echo "  claude-github.sh status             # Check token expiry + stale repos"
+  echo "  claude-github.sh refresh            # Refresh if expiring soon"
+  echo "  claude-github.sh refresh --force    # Force refresh now"
+  echo "  claude-github.sh sync               # Sync to current repo (if stale)"
+  echo "  claude-github.sh sync --force       # Force sync to current repo"
+  echo "  claude-github.sh sync --all         # Sync to all stale repos"
+  echo "  claude-github.sh sync --all --force # Force sync to all repos"
+  echo "  claude-github.sh init               # Setup Claude in current repo"
 }
 
 # ============================================================================

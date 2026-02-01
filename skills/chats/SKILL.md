@@ -2,7 +2,7 @@
 name: chats
 description: Manage Claude Code chats - list, rename, delete, and clean up old chats. Use when viewing chat history, cleaning up disk space, or resuming previous work.
 user-invocable: true
-context: main
+context: fork
 ---
 
 # Chats Manager
@@ -56,7 +56,7 @@ Examples:
 
 ## Data Source
 
-Chats are stored in `~/.claude/projects/*/sessions-index.json` files.
+Chats are stored in `%USERPROFILE%\.claude\projects\*\sessions-index.json` files.
 
 Each `sessions-index.json` contains:
 ```json
@@ -223,25 +223,25 @@ The delete command handles three argument types:
 
    | Item | Path Pattern |
    |------|-------------|
-   | screenshots | `/usr/share/claude/skills/screen/screenshots/screen-*.png` |
-   | plans | `/usr/share/claude/plans/*.md` |
-   | debug | `~/.claude/debug/*` |
-   | todos | `~/.claude/todos/*` |
-   | tasks | `~/.claude/tasks/*` (use `find -mindepth 1 -maxdepth 1 -type d` for count) |
-   | file-history | `~/.claude/file-history/*` |
-   | paste-cache | `~/.claude/paste-cache/*` |
-   | shell-snapshots | `~/.claude/shell-snapshots/*` |
-   | session-env | `~/.claude/session-env/*` |
-   | command-history | `~/.claude/command-history.log` |
-   | ralph/ | `~/.claude/ralph/` (state.json, activity.log, checkpoints/, guardian/) |
-   | ralph-legacy | `~/.claude/ralph-state.json`, `~/.claude/ralph-activity.log`, `~/.claude/ralph-checkpoints/` |
+   | screenshots | `%USERPROFILE%\.claude\skills\screen\screenshots\screen-*.png` |
+   | plans | `%USERPROFILE%\.claude\plans\*.md` |
+   | debug | `%USERPROFILE%\.claude\debug\*` |
+   | todos | `%USERPROFILE%\.claude\todos\*` |
+   | tasks | `%USERPROFILE%\.claude\tasks\*` (use `Get-ChildItem -Directory` for count) |
+   | file-history | `%USERPROFILE%\.claude\file-history\*` |
+   | paste-cache | `%USERPROFILE%\.claude\paste-cache\*` |
+   | shell-snapshots | `%USERPROFILE%\.claude\shell-snapshots\*` |
+   | session-env | `%USERPROFILE%\.claude\session-env\*` |
+   | command-history | `%USERPROFILE%\.claude\command-history.log` |
+   | ralph/ | `%USERPROFILE%\.claude\ralph\` (state.json, activity.log, checkpoints\, guardian\) |
+   | ralph-legacy | `%USERPROFILE%\.claude\ralph-state.json`, `%USERPROFILE%\.claude\ralph-activity.log`, `%USERPROFILE%\.claude\ralph-checkpoints\` |
    | project .claude/ | See "Project Directory Cleanup" below |
 
 8. **Project Directory Cleanup** - Scan known project directories for `.claude/` folders:
 
    ```bash
    # Scan common project locations
-   for base in ~/projects ~/repos ~/code ~/work; do
+   for base in ~/projects ~/repos ~/code ~/work ~/Desktop; do
      find "$base" -maxdepth 2 -type d -name ".claude" 2>/dev/null
    done
    ```
@@ -314,11 +314,11 @@ Clean non-essential Claude Code cache directories to free disk space.
 
 | Directory | Contents | Impact |
 |-----------|----------|--------|
-| ~/.claude/cache/ | Temporary cache files | None - regenerated as needed |
-| ~/.claude/debug/ | Debug and error logs | Lose debug history |
-| ~/.claude/file-history/ | File change history | Lose undo history for files |
-| ~/.claude/shell-snapshots/ | Shell state snapshots | None - regenerated |
-| ~/.claude/paste-cache/ | Clipboard cache | None - temporary |
+| %USERPROFILE%\.claude\cache\ | Temporary cache files | None - regenerated as needed |
+| %USERPROFILE%\.claude\debug\ | Debug and error logs | Lose debug history |
+| %USERPROFILE%\.claude\file-history\ | File change history | Lose undo history for files |
+| %USERPROFILE%\.claude\shell-snapshots\ | Shell state snapshots | None - regenerated |
+| %USERPROFILE%\.claude\paste-cache\ | Clipboard cache | None - temporary |
 
 ### NOT Cleaned (Important Data)
 
@@ -387,7 +387,7 @@ Show only chats from a specific project:
 - `delete all` requires typing "yes" to confirm
 - Preserve sessions-index.json structure (only modify entries array)
 - Use `jq` for JSON parsing, ISO 8601 for date comparison
-- Project directories use path encoding (e.g., `-home-dennis-Desktop-project`)
+- Project directories use path encoding (e.g., `-C-Users-dennis-Desktop-project`)
 - Always update both .jsonl file AND sessions-index.json entry
 - Sort by `modified` date descending (newest first)
 
@@ -402,10 +402,11 @@ Interactive manager for browsing, viewing, and deleting commit.md files across a
 ### Project Detection
 
 Scan these directories for Git repositories and worktrees:
-- `~/projects`
-- `~/repos`
-- `~/code`
-- `~/work`
+- `%USERPROFILE%\projects`
+- `%USERPROFILE%\repos`
+- `%USERPROFILE%\code`
+- `%USERPROFILE%\work`
+- `%USERPROFILE%\Desktop`
 
 ### Display Format
 
@@ -431,7 +432,7 @@ Interactive manager for browsing, viewing, and deleting plan files.
 
 ### Plan Storage
 
-Plan files are stored in: `/usr/share/claude/plans/`
+Plan files are stored in: `%USERPROFILE%\.claude\plans\`
 
 ### Display Format
 

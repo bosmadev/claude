@@ -290,7 +290,9 @@ def cmd_generate(file_path: str) -> int:
         print("Error: Cannot create PR from main/master branch", file=sys.stderr)
         return 1
 
-    pending_path = repo_root / "pending-pr.md"
+    claude_dir = repo_root / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+    pending_path = claude_dir / "pending-pr.md"
 
     if pending_path.exists():
         print(f"Warning: pending-pr.md already exists at {pending_path}")

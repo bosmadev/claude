@@ -2,7 +2,7 @@
 name: commit
 description: Create commits with branch-aware naming ({branch}-{increment}). Reads from .claude/commit.md and generates .claude/pending-commit.md for review before committing.
 user-invocable: true
-context: main
+context: fork
 ---
 
 # Commit Workflow
@@ -66,6 +66,13 @@ Action Verbs (used in commit.md):
   Improved   Enhancements, better UX, performance
   Changed    Altered existing behavior
 
+Environment:
+  check-env            Check .env encryption status
+  encrypt              Run pnpm env:encrypt if dotenvx enabled
+
+Note: If dotenvx is configured (env:encrypt in package.json),
+.env files are automatically encrypted before commit generation.
+
 Examples:
   /commit                    # Generate commit from change log
   /commit confirm            # Execute the commit
@@ -101,8 +108,8 @@ git branch --show-current
 For git worktrees, extracts branch from the folder name:
 
 ```
-/home/user/project/b101  -> branch: b101
-/home/user/gswarm-api/main -> branch: main
+C:\Users\user\project\b101  -> branch: b101
+C:\Users\user\gswarm-api\main -> branch: main
 ```
 
 Detection logic:
@@ -134,24 +141,33 @@ basename "$(git rev-parse --show-toplevel)"
    # Extract N and increment
    ```
 
-5. **Generate .claude/pending-commit.md**:
+5. **Auto-encrypt .env files (if dotenvx configured)**
+   ```bash
+   # Check if project uses dotenvx
+   if grep -q '"env:encrypt"' package.json 2>/dev/null; then
+       echo "Detected dotenvx - encrypting .env files..."
+       pnpm env:encrypt
+
+       # Stage encrypted .env files (if any exist)
+       git add .env .env.local .env.production .env.keys 2>/dev/null || true
+   fi
+   ```
+
+   **Why auto-encrypt:**
+   - Prevents blocked commits from env-check hook
+   - Ensures .env files are always encrypted before staging
+   - Runs silently if no dotenvx configured
+
+6. **Generate .claude/pending-commit.md**:
 
 ```markdown
-# Pending Commit
-
-## Message
-
 {branch}-{increment}
-
-## Changes
 
 - Added new-file.ts
 - Updated existing-file.ts
 - Fixed bug in handler.ts
 
-## Body (optional)
-
-{extended description if needed}
+Extended description here if needed.
 
 ---
 
@@ -162,77 +178,96 @@ basename "$(git rev-parse --show-toplevel)"
 - Edit this file to modify the commit message
 ```
 
-**Note:** Only include fields that map directly to `git commit`:
-- **Message** → `git commit -m "message"` (uses branch-increment format)
-- **Changes** → Bullet list with action verbs (Added, Updated, Fixed, etc.)
-- **Body** → Optional extended description (appended to message)
+**Note:** The format uses NO markdown headings - just plain text:
+- **Line 1** → Commit subject (`{branch}-{increment}`)
+- **Lines 2+** → Bullet list with action verbs (Added, Updated, Fixed, etc.)
+- **After bullets** → Optional extended description (blank line, then body text)
 
-Do NOT include non-git fields like "Commit ID", "Version", or "Type" as separate sections.
+Do NOT include markdown headings like `## Message`, `## Changes`, or `## Body`.
 
 ### Phase 2: Confirm Commit
 
 When user runs `/commit confirm`:
 
 1. **Read .claude/pending-commit.md**
-2. **Extract Message and Body sections**
-   - Parse `## Message` section for commit subject
-   - Parse `## Body` section for extended description (if present)
+2. **Parse simple format (no headings)**
+   - **First line** = commit subject
+   - **Everything after first blank line** = commit body (optional)
+
+   Example pending-commit.md:
+   ```
+   main-42
+
+   - Added auth.ts, jwt.ts, types/auth.ts
+   - Updated middleware/index.ts
+   ```
+   Parsed as:
+   - Subject: `main-42`
+   - Body: `- Added auth.ts...` (everything after blank line)
+
 3. **Validate all files are staged**
    ```bash
    git status --porcelain
    ```
-4. **Execute the commit with Message + Body**
+4. **Check for unencrypted .env files (BLOCKING)**
+
+   Before executing the commit, validate that no staged .env files are unencrypted when dotenvx is enabled:
+
+   ```bash
+   # Check if dotenvx is enabled (has env:encrypt script)
+   if grep -q '"env:encrypt"' package.json 2>/dev/null; then
+       # Get list of staged .env files
+       staged_env=$(git diff --cached --name-only | grep -E '\.env')
+
+       for file in $staged_env; do
+           if [ -f "$file" ]; then
+               # Check if file has dotenvx encryption header
+               if ! head -1 "$file" | grep -q '#/---'; then
+                   echo "BLOCKED: Unencrypted .env file staged: $file"
+                   echo "Run: pnpm env:encrypt && git add $file"
+                   exit 1
+               fi
+           fi
+       done
+   fi
+   ```
+
+   **If unencrypted .env files found:**
+   - BLOCK the commit immediately
+   - Display error: "BLOCKED: Unencrypted .env file staged: {filename}"
+   - Instruct user: "Run `pnpm env:encrypt` then re-stage the files"
+   - Do NOT proceed to execute the commit
+
+5. **Execute the commit with Subject + Body**
    ```bash
    # IMPORTANT: Always include Body if present
    git commit -m "$(cat <<'EOF'
-   {Message}
+   {Subject}
 
    {Body}
    EOF
    )"
    ```
-   **Note:** The commit message MUST include both Message and Body sections separated by a blank line. Never omit the Body if it exists in pending-commit.md.
+   **Note:** The commit message MUST include both Subject and Body separated by a blank line. Never omit the Body if it exists in pending-commit.md.
 
-5. **Verify success**
+6. **Verify success**
    ```bash
    git log -1 --oneline
    ```
-6. **Prompt to clean up**
-   - Ask: "Delete .claude/pending-commit.md and clear .claude/commit.md? (yes/no)"
-   - If yes, remove both files
-6. **Post-commit cleanup reminder**
-   - After successful commit, always remind user to clean up any pending files:
-   - Check for and offer to delete: `.claude/pending-commit.md`, `.claude/pending-pr.md`
+7. **Push to remote (ALWAYS)**
+   After every successful commit, immediately push (non-force):
+   ```bash
+   git push origin HEAD
+   ```
+   - If push fails due to diverged history, report the error and suggest: `git pull --rebase origin <branch>` then retry push
+   - **Never force push** — let the user resolve merge conflicts manually
+   - This ensures commits are never stranded locally
+
+8. **Clean up**
+   - Delete `.claude/pending-commit.md`
    - Clear `.claude/commit.md` contents
+   - Check for and offer to delete `.claude/pending-pr.md` if it exists
    - This prevents stale pending files from causing confusion in future commits
-
-### Phase 2.5: Push After Commit (REQUIRED for Ralph)
-
-**CRITICAL:** When running under Ralph autonomous mode, commits MUST be pushed before signaling completion. The stop hook will block if unpushed commits exist.
-
-After successful commit, immediately push:
-
-```bash
-# Push to current branch (works for any branch)
-git push origin HEAD
-
-# Or explicitly for main branch
-git push origin main
-```
-
-**Why this matters:**
-- Ralph stop hook validates no unpushed commits exist
-- Unpushed commits block `TASK_DONE` signal
-- Other agents may be waiting on pushed changes
-- Prevents lost work if session terminates
-
-**Push verification:**
-```bash
-# Check for unpushed commits
-git log origin/$(git branch --show-current)..HEAD --oneline
-
-# Should return empty if all pushed
-```
 
 ### Phase 3: Abort
 
@@ -301,25 +336,16 @@ User: /commit
 
 Claude: Generated .claude/pending-commit.md:
 
-## Message
-
 main-42
-
-## Changes
 
 - Added auth.ts, jwt.ts, types/auth.ts
 - Updated middleware/index.ts
-
----
 
 Run `/commit confirm` to create this commit, or `/commit abort` to cancel.
 
 User: /commit confirm
 
-Claude: Commit created successfully!
-
-Commit: main-42
-Hash: a1b2c3d
+Claude: Commit created: main-42 (a1b2c3d)
 
 Delete .claude/pending-commit.md and clear .claude/commit.md? (yes/no)
 
@@ -328,11 +354,11 @@ User: yes
 Claude: Cleaned up commit files.
 ```
 
-## Integration with commit-tracker
+## Integration with Change Tracking
 
-This skill works best when paired with `/commit-tracker`:
+The change-tracker hook in `hooks/git.py` automatically logs file changes to `.claude/commit.md`:
 
-1. **During development**: Changes are automatically logged to `.claude/commit.md`
+1. **During development**: Changes are automatically logged to `.claude/commit.md` by the git hook
 2. **When ready to commit**: Run `/commit` to generate .claude/pending-commit.md
 3. **Review and adjust**: Edit the pending file if needed
 4. **Commit**: Run `/commit confirm`
@@ -380,6 +406,8 @@ rm -f .claude/pending-pr.md
 | Pending commit exists | Ask to overwrite or abort |
 | Unpushed commits exist | Push with `git push origin HEAD` before signaling done |
 | Push rejected | Pull with rebase: `git pull --rebase origin main` then push |
+| dotenvx detected but encrypt fails | Run manually with `pnpm env:encrypt` and check errors |
+| Unencrypted .env staged | Encrypt first with `pnpm env:encrypt` |
 
 ## Safety Rules
 
@@ -389,6 +417,123 @@ rm -f .claude/pending-pr.md
 - Validate staged changes match commit.md before committing
 - Use HEREDOC for commit messages to preserve formatting
 - **Push commits before completion** (Ralph stop hook blocks on unpushed commits)
+- **Encrypt .env files before committing** (env-check hook blocks unencrypted .env files)
+
+## .env Encryption Pre-Check
+
+Before generating `pending-commit.md`, the skill automatically encrypts `.env` files if dotenvx is configured.
+
+### How dotenvx is Detected
+
+1. Reads `package.json` in the repository root
+2. Checks for `scripts.env:encrypt` property
+3. If present, encryption is enabled for the project
+
+```json
+{
+  "scripts": {
+    "env:encrypt": "dotenvx encrypt"
+  }
+}
+```
+
+### When Encryption Runs
+
+Encryption runs **before** generating `.claude/pending-commit.md`:
+
+1. User runs `/commit`
+2. Skill detects dotenvx via `package.json`
+3. Runs `pnpm env:encrypt` (or `npm run env:encrypt`)
+4. Stages encrypted `.env` files
+5. Generates `pending-commit.md` with encrypted files included
+
+### Files That Get Encrypted
+
+All `.env*` files in the repository root:
+
+| File Pattern | Example |
+|--------------|---------|
+| `.env` | Main environment file |
+| `.env.local` | Local overrides |
+| `.env.development` | Development settings |
+| `.env.production` | Production secrets |
+| `.env.staging` | Staging environment |
+| `.env.test` | Test configuration |
+
+**Note:** Only unencrypted files are processed. Already-encrypted files (containing `#/---` header) are skipped.
+
+### How to Skip Encryption
+
+To disable automatic encryption:
+
+1. **Remove the script** from `package.json`:
+   ```json
+   {
+     "scripts": {
+       // Remove or comment out this line
+       // "env:encrypt": "dotenvx encrypt"
+     }
+   }
+   ```
+
+2. **Alternative**: Don't stage `.env` files:
+   ```bash
+   git reset HEAD .env .env.local
+   ```
+
+---
+
+## .env Encryption Pre-Commit Check
+
+If the project uses dotenvx (has `env:encrypt` script in package.json), the commit will be **blocked** if any staged `.env` files are unencrypted.
+
+### How It Works
+
+1. Hook checks if `package.json` has `env:encrypt` script
+2. If yes, scans staged `.env*` files for encryption header (`#/---`)
+3. Blocks commit if unencrypted .env files are found
+
+### Fix Blocked Commits
+
+```bash
+# Encrypt all .env files
+pnpm env:encrypt
+
+# Re-stage the encrypted files
+git add .env .env.local .env.production
+
+# Retry commit
+git commit -m "message"
+```
+
+### Skip Check (Not Recommended)
+
+The check only applies to projects with dotenvx configured. To skip:
+- Remove `env:encrypt` script from package.json (disables check permanently)
+- Or don't stage .env files (commit other files first)
+
+## Dotenvx Integration Workflow
+
+When dotenvx is configured in the project:
+
+### Detection
+The skill checks `package.json` for `env:encrypt` script at two points:
+1. **Pre-generation**: Before creating pending-commit.md
+2. **Pre-commit**: Before executing `git commit`
+
+### Automatic Encryption
+If dotenvx is detected and unencrypted .env files exist:
+1. Runs `pnpm env:encrypt` automatically
+2. Re-stages the encrypted files
+3. Proceeds with commit generation
+
+### Manual Override
+To skip automatic encryption:
+- Remove `env:encrypt` from package.json scripts
+- Or use `.env.example` files (ignored by encryption check)
+
+### Verification
+Check encryption status: `python commit-helper.py check-env .`
 
 ---
 

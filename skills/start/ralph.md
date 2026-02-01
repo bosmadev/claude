@@ -114,7 +114,7 @@ CLAUDE_CODE_TASK_LIST_ID="$(basename "$(git rev-parse --show-toplevel 2>/dev/nul
 export CLAUDE_CODE_TASK_LIST_ID
 ```
 
-**Where tasks are stored:** `~/.claude/tasks/${CLAUDE_CODE_TASK_LIST_ID}/`
+**Where tasks are stored:** `%USERPROFILE%\.claude\tasks\${CLAUDE_CODE_TASK_LIST_ID}\`
 
 This enables:
 - All agents share the same task list
@@ -166,7 +166,7 @@ STATE_EOF
 **CRITICAL:** Do NOT spawn agents manually. Use the ralph.py orchestrator:
 
 ```bash
-python3 /usr/share/claude/scripts/ralph.py loop [AGENTS] [ITERATIONS] \
+python C:/Users/Dennis/.claude/scripts/ralph.py loop [AGENTS] [ITERATIONS] \
     --review-agents [REVIEW_AGENTS] \
     --review-iterations [REVIEW_ITERATIONS] \
     [--skip-review] \
@@ -314,22 +314,21 @@ Each agent runs these analysis tools:
 
 ## TODO Comment Format
 
-For each issue found, add a comment:
+For each issue found, add a comment using priority-based format:
 
 ```
-// TODO-{category}: {description} - Review agent {your_id}
+// TODO-P1: {description} - Review agent {your_id}   // Critical: security, crashes
+// TODO-P2: {description} - Review agent {your_id}   // High: bugs, performance
+// TODO-P3: {description} - Review agent {your_id}   // Medium: refactoring, docs
 ```
 
-### Categories
+### Priority Mapping
 
-| Category | Use When |
-|----------|----------|
-| `fix` | Bug, logic error, incorrect behavior |
-| `refactor` | Code smell, poor structure |
-| `perf` | Performance issue, inefficient algorithm |
-| `style` | Style violation, naming |
-| `docs` | Missing/incorrect documentation |
-| `test` | Missing test coverage |
+| Finding Type | Priority |
+|--------------|----------|
+| Security vulnerabilities, crashes | P1 |
+| Bugs, logic errors, performance | P2 |
+| Code smells, refactoring, docs, tests | P3 |
 
 ## Report to Shared Log
 
@@ -338,9 +337,9 @@ After reviewing, report to `.claude/review-agents.md`:
 ```markdown
 ## Agent {your_id} - Iteration {N}
 
-| File | Line | Category | Comment |
+| File | Line | Priority | Comment |
 |------|------|----------|---------|
-| src/components/Button.tsx | 42 | fix | Missing null check |
+| src/components/Button.tsx | 42 | P2 | Missing null check |
 
 **Files reviewed:** {count}
 **TODOs added:** {count}
@@ -495,7 +494,7 @@ RALPH_GUARDIAN_DISABLED=true claude
 
 ## Related Files
 
-- `plan-guardian-hook.sh` - PostToolUse hook for sampling
+- `scripts/guards.py` - PostToolUse hook for sampling (guardian and plan-write-check modes)
 - `.claude/ralph/guardian/digest.json` - Auto-generated plan digest
 - `.claude/ralph/guardian/config.json` - Guardian configuration
 - `.claude/ralph/guardian/log.json` - Warning history

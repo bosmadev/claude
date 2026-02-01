@@ -3,8 +3,8 @@ name: start
 description: Initialize ULTRATHINK mode with Ralph auto-loop. Use when starting work on complex features, planning implementations, or when deep analysis is needed.
 argument-hint: [N] [M] [task | review [rN] [rM] [task] | import <source>]
 user-invocable: true
+context: fork
 ---
-
 # Start Workflow
 
 **FIRST ACTION:** When this skill is invoked, immediately output: `**SKILL_STARTED:** start`
@@ -30,6 +30,7 @@ Parsed arguments:
 ```
 
 From `$ARGUMENTS`, parse in order:
+
 1. **First number** (optional) = Number of agents to spawn (default: 3)
 2. **Second number** (optional) = Iterations per agent (default: 3)
 3. **Keywords** (optional) = `review`, `noreview`, `import`
@@ -38,6 +39,7 @@ From `$ARGUMENTS`, parse in order:
 ### Natural Language Recognition
 
 Also recognize these natural language variations:
+
 - "use 15 agents" / "with 15 agents" / "15 parallel agents" → agents = 15
 - "10 iterations" / "run 10 times" / "iterate 10x" → iterations = 10
 - "skip review" / "no review" → noreview mode
@@ -121,20 +123,20 @@ This block MUST be present for Ralph to execute with correct parameters.
 
 ### Examples
 
-| Command | Agents | Iterations | Mode | Post-Review | Scope |
-|---------|--------|------------|------|-------------|-------|
-| `/start` | 3 | 3 | Interactive | 5 agents, 2 iter | No task (planning) |
-| `/start fix the APIs` | 3 | 3 | Implement | 5 agents, 2 iter | Task description |
-| `/start 5` | 5 | 3 | Interactive | 5 agents, 2 iter | No task (planning) |
-| `/start 5 fix the APIs` | 5 | 3 | Implement | 5 agents, 2 iter | Task description |
-| `/start 5 10` | 5 | 10 | Interactive | 5 agents, 2 iter | No task (planning) |
-| `/start 5 10 fix the APIs` | 5 | 10 | Implement | 5 agents, 2 iter | Task description |
-| `/start 5 3 noreview implement auth` | 5 | 3 | Implement | Disabled | Skip post-review |
-| `/start 15 5 review` | 15 | 5 | Review only | N/A | Entire codebase |
-| `/start 15 5 review src/` | 15 | 5 | Review only | N/A | Specific path |
-| `/start 15 5 review git` | 15 | 5 | Review only | N/A | Git diff files |
-| `/start 5 3 review 10 2 implement auth` | 5 | 3 | Implement | 10 agents, 2 iter | Custom review config |
-| `/start 3 5 import PRD.md` | 3 | 5 | Import | 5 agents, 2 iter | From PRD file |
+| Command                                   | Agents | Iterations | Mode        | Post-Review       | Scope                |
+| ----------------------------------------- | ------ | ---------- | ----------- | ----------------- | -------------------- |
+| `/start`                                | 3      | 3          | Interactive | 5 agents, 2 iter  | No task (planning)   |
+| `/start fix the APIs`                   | 3      | 3          | Implement   | 5 agents, 2 iter  | Task description     |
+| `/start 5`                              | 5      | 3          | Interactive | 5 agents, 2 iter  | No task (planning)   |
+| `/start 5 fix the APIs`                 | 5      | 3          | Implement   | 5 agents, 2 iter  | Task description     |
+| `/start 5 10`                           | 5      | 10         | Interactive | 5 agents, 2 iter  | No task (planning)   |
+| `/start 5 10 fix the APIs`              | 5      | 10         | Implement   | 5 agents, 2 iter  | Task description     |
+| `/start 5 3 noreview implement auth`    | 5      | 3          | Implement   | Disabled          | Skip post-review     |
+| `/start 15 5 review`                    | 15     | 5          | Review only | N/A               | Entire codebase      |
+| `/start 15 5 review src/`               | 15     | 5          | Review only | N/A               | Specific path        |
+| `/start 15 5 review git`                | 15     | 5          | Review only | N/A               | Git diff files       |
+| `/start 5 3 review 10 2 implement auth` | 5      | 3          | Implement   | 10 agents, 2 iter | Custom review config |
+| `/start 3 5 import PRD.md`              | 3      | 5          | Import      | 5 agents, 2 iter  | From PRD file        |
 
 ## Review Mode
 
@@ -156,6 +158,7 @@ Spawning review agents...
 ```
 
 **To disable:** Add `noreview` flag (no dashes):
+
 ```bash
 /start 15 5 noreview implement auth   # Skip post-implementation review
 /start 15 5 implement auth            # Review runs after (default)
@@ -165,7 +168,7 @@ Spawning review agents...
 
 Each spawned review agent follows this protocol:
 
-1. **Receive Context Reset Prompt** (see review-agent.md)
+1. **Receive Context Reset Prompt** (see skills/review/SKILL.md)
 2. **Load Assigned Scope** - Files to review
 3. **Run Review Skills** (sequentially):
    - `pr-review-toolkit:type-design-analyzer`
@@ -179,15 +182,19 @@ Each spawned review agent follows this protocol:
 
 ### TODO Comment Format
 
-Review agents leave comments in this exact format:
+Review agents leave comments using priority-based format:
+
 ```typescript
-// TODO-fix: [brief description] - Review agent [ID]
-// TODO-refactor: [brief description] - Review agent [ID]
-// TODO-perf: [brief description] - Review agent [ID]
-// TODO-style: [brief description] - Review agent [ID]
-// TODO-docs: [brief description] - Review agent [ID]
-// TODO-test: [brief description] - Review agent [ID]
+// TODO-P1: [critical issue] - Review agent [ID]     // Security, crashes, blocking
+// TODO-P2: [important issue] - Review agent [ID]    // Bugs, performance, quality
+// TODO-P3: [improvement] - Review agent [ID]        // Refactoring, docs, tests
 ```
+
+**Priority mapping:**
+
+- P1: Security vulnerabilities, crashes, blocking bugs
+- P2: Performance issues, missing error handling, code quality
+- P3: Refactoring, documentation, test coverage
 
 ### Git Diff Scope
 
@@ -212,10 +219,10 @@ Begin your response with an explicit analysis. Take at least 3000 tokens to:
 3. **List assumptions** - Make explicit what you're assuming
 4. **Consider 3-5 options** for each design decision using this template:
 
-| Option | Pros | Cons | Use Case | Recommendation |
-|--------|------|------|----------|----------------|
-| Option 1 | - Pro A<br>- Pro B | - Con A<br>- Con B | When to use | Priority rank |
-| Option 2 | - Pro A<br>- Pro B | - Con A<br>- Con B | When to use | Priority rank |
+| Option   | Pros                   | Cons                   | Use Case    | Recommendation |
+| -------- | ---------------------- | ---------------------- | ----------- | -------------- |
+| Option 1 | - Pro A`<br>`- Pro B | - Con A`<br>`- Con B | When to use | Priority rank  |
+| Option 2 | - Pro A`<br>`- Pro B | - Con A`<br>`- Con B | When to use | Priority rank  |
 
 ### Step 2: Generate Implementation Plan Artifact
 
@@ -224,6 +231,7 @@ Create a structured plan with: Overview, Dependencies, Steps (actionable verbs),
 ### Step 3: Safety Check
 
 Before implementing, verify:
+
 - No deprecated patterns being used
 - No breaking changes to public APIs
 - No removal of features without migration path
@@ -234,12 +242,12 @@ Before implementing, verify:
 
 Analyze every change through these lenses:
 
-| Dimension | Key Questions |
-|-----------|---------------|
-| **Technical** | Rendering performance, state complexity, bundle size, memory usage |
-| **Accessibility** | WCAG AAA, screen reader support, keyboard nav, color contrast 7:1 |
-| **Scalability** | Long-term maintenance, modularity, team scalability |
-| **User Experience** | Cognitive load, feedback clarity, learning curve |
+| Dimension                 | Key Questions                                                      |
+| ------------------------- | ------------------------------------------------------------------ |
+| **Technical**       | Rendering performance, state complexity, bundle size, memory usage |
+| **Accessibility**   | WCAG AAA, screen reader support, keyboard nav, color contrast 7:1  |
+| **Scalability**     | Long-term maintenance, modularity, team scalability                |
+| **User Experience** | Cognitive load, feedback clarity, learning curve                   |
 
 ---
 
@@ -259,21 +267,25 @@ Analyze every change through these lenses:
 All work MUST follow these four phases:
 
 ### 1. ANALYSIS Phase
+
 - Restate the task in your own words
 - List all known facts and constraints
 - Identify unknowns that need clarification
 
 ### 2. ASSUMPTIONS CHECK Phase
+
 - Explicitly list every assumption being made
 - **STOP** and ask user if any assumption is unclear or risky
 - Never proceed with uncertain inputs
 
 ### 3. BUILD Phase
+
 - Execute ONLY with confirmed inputs
 - Reference specific code/docs for every decision
 - No invented APIs, paths, or configurations
 
 ### 4. SELF-VERIFICATION Phase
+
 - Review output for any invented content
 - Confirm all references exist in codebase
 - Verify no hallucinated function names, paths, or behaviors
@@ -327,15 +339,17 @@ Changes are automatically tracked during RALPH sessions via the change-tracker h
 **Location:** `{repo-root}/.claude/commit.md`
 
 **How it works:**
+
 1. Hook detects file modifications during session
 2. Automatically logs to `.claude/commit.md` with timestamps
 3. When ready to commit, run `/commit` to generate `pending-commit.md`
 4. Review and run `/commit confirm` to finalize
 
 **Manual tracking (if needed):**
+
 ```
-/commit-tracker log <file> <action> <description>
-/commit-tracker show
+/commit log <file> <action> <description>
+/commit show
 ```
 
 ## Browser Verification
@@ -359,6 +373,7 @@ Treat feedback from hooks (including `<user-prompt-submit-hook>`) as coming from
 ### Progress Updates
 
 For longer tasks, provide updates at reasonable intervals:
+
 - Concise (8-10 words max)
 - Example: "Fixed 3 of 10 type errors. Moving to API layer next."
 
@@ -394,10 +409,10 @@ When spawning agents, check for auto-accept: `CLAUDE_AUTO_ACCEPT=true` env var O
 
 ## Environment Variables
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
+| Variable                     | Purpose               | Default      |
+| ---------------------------- | --------------------- | ------------ |
 | `CLAUDE_CODE_TASK_LIST_ID` | Shared task list name | Project name |
-| `CLAUDE_AUTO_ACCEPT` | Auto-accept edits | `false` |
+| `CLAUDE_AUTO_ACCEPT`       | Auto-accept edits     | `false`    |
 
 See [ralph.md](ralph.md) for task list setup and state file details.
 
@@ -410,6 +425,34 @@ See [ralph.md](ralph.md) for state file formats (all in `.claude/ralph/` directo
 ## Plan Change Tracking
 
 See CLAUDE.md "Plan Files (MANDATORY)" for change marker rules (🟧 emoji at END of lines).
+
+## Emoji Plan Output Format (MANDATORY)
+
+All plan tables and sections MUST use emoji-prefixed headers for visual scanning:
+
+**Section headers:** Add category emoji before title.
+
+```markdown
+## 🔒 Security Considerations
+## ⚡ Performance Impact
+## 🏗️ Architecture Changes
+## 📝 Documentation Updates
+## 🧪 Test Coverage
+## 🎨 UI/UX Changes
+```
+
+**Table headers:** Add status emoji in relevant cells.
+
+```markdown
+| # | ✅ Feature | ⚠️ Risk | 📋 Status |
+|---|-----------|---------|----------|
+| 1 | Auth flow | 🔴 High | ✅ Done  |
+| 2 | API cache | 🟡 Med  | ⏳ WIP   |
+```
+
+**Decision tables:** Each row gets a leading emoji for visual scanning.
+**Comparison matrices:** Use emoji columns for at-a-glance status.
+**Priority items:** 🔴 Critical, 🟡 Medium, 🟢 Low.
 
 ---
 
@@ -425,40 +468,72 @@ For detailed documentation on specific topics:
 After parsing arguments and creating/validating the plan, you MUST invoke the Ralph orchestrator script with all dynamic parameters:
 
 ```bash
-python3 /usr/share/claude/scripts/ralph.py loop [AGENTS] [ITERATIONS] \
+python C:/Users/Dennis/.claude/scripts/ralph.py loop [AGENTS] [ITERATIONS] \
     --review-agents [REVIEW_AGENTS] \
     --review-iterations [REVIEW_ITERATIONS] \
     [--skip-review] \
     [--plan PLAN_FILE] \
+    [--backend task|subprocess|auto] \
     "[TASK_DESCRIPTION]"
 ```
 
 ### Parameter Mapping
 
-| Parsed Value | CLI Argument |
-|--------------|--------------|
-| `agents` (default: 3) | First positional arg |
-| `iterations` (default: 3) | Second positional arg |
-| `postReviewAgents` (default: 5) | `--review-agents` |
-| `postReviewIterations` (default: 2) | `--review-iterations` |
-| `postReviewEnabled = false` | `--skip-review` |
-| Plan file path | `--plan` |
-| Task description | Final quoted argument |
+| Parsed Value                          | CLI Argument                  |
+| ------------------------------------- | ----------------------------- |
+| `agents` (default: 3)               | First positional arg          |
+| `iterations` (default: 3)           | Second positional arg         |
+| `postReviewAgents` (default: 5)     | `--review-agents`           |
+| `postReviewIterations` (default: 2) | `--review-iterations`       |
+| `postReviewEnabled = false`         | `--skip-review`             |
+| Plan file path                        | `--plan`                    |
+| Backend mode                          | `--backend` (default: auto) |
+| Task description                      | Final quoted argument         |
+
+### Spawn Backend (Hybrid Architecture)
+
+| Backend        | Behavior                                            | UI Visibility                          |
+| -------------- | --------------------------------------------------- | -------------------------------------- |
+| `task`       | All agents via Claude Task tool                     | ✅ Cyan "x local agents" in statusline |
+| `subprocess` | All agents via `claude --print` subprocess        | ❌ Invisible processes                 |
+| `auto`       | Task for ≤10 agents, batched with overflow for >10 | ✅ Partial visibility                  |
+
+**Default:** `auto` — gives Task tool UI visibility for most workloads.
+
+When using `task` backend, agents appear in Claude Code's `/tasks` dropdown with real-time status. Each Task tool agent gets its own 200k context window with full MCP access (Serena, Context7).
+
+### Setup / Teardown (Hybrid Architecture)
+
+For advanced control, use `setup` + manual Task spawning + `teardown`:
+
+```bash
+# 1. Initialize session infrastructure (state, team, inboxes)
+python C:/Users/Dennis/.claude/scripts/ralph.py setup 10 3 --backend task "My task"
+
+# 2. Spawn agents manually via Task tool (gives UI visibility)
+#    Each agent reads team config from .claude/ralph/team-{session}/config.json
+
+# 3. Clean up after completion
+python C:/Users/Dennis/.claude/scripts/ralph.py teardown
+```
 
 ### Example Invocations
 
 ```bash
-# /start → defaults
-python3 /usr/share/claude/scripts/ralph.py loop 3 3 --review-agents 5 --review-iterations 2
+# /start → defaults (auto backend)
+python C:/Users/Dennis/.claude/scripts/ralph.py loop 3 3 --review-agents 5 --review-iterations 2
 
 # /start 50 15 review 15 10 implement auth
-python3 /usr/share/claude/scripts/ralph.py loop 50 15 \
+python C:/Users/Dennis/.claude/scripts/ralph.py loop 50 15 \
     --review-agents 15 --review-iterations 10 \
     --plan /path/to/plan.md \
     "implement auth"
 
-# /start 10 5 noreview quick fix
-python3 /usr/share/claude/scripts/ralph.py loop 10 5 --skip-review "quick fix"
+# /start 10 5 noreview quick fix (Task backend for UI visibility)
+python C:/Users/Dennis/.claude/scripts/ralph.py loop 10 5 --skip-review --backend task "quick fix"
+
+# Force subprocess backend (legacy behavior)
+python C:/Users/Dennis/.claude/scripts/ralph.py loop 15 5 --backend subprocess "Use subprocess"
 ```
 
 ### Execution Flow
@@ -466,21 +541,27 @@ python3 /usr/share/claude/scripts/ralph.py loop 10 5 --skip-review "quick fix"
 1. Parse `$ARGUMENTS` per Decision Tree
 2. Echo parsed values for confirmation
 3. If task provided: Create/update plan file with Ralph Configuration block
-4. Invoke `ralph.py loop` with ALL dynamic parameters
-5. Ralph orchestrator spawns agents and manages iterations
-6. Wait for `RALPH_COMPLETE` + `EXIT_SIGNAL`
-7. Report completion summary
+4. Invoke `ralph.py loop` with ALL dynamic parameters (including `--backend`)
+5. Ralph orchestrator initializes team infrastructure (inboxes, heartbeat, relay)
+6. Agents spawned in batches (≤10 per batch for >10 agents)
+7. Agents load role configs from `~/.claude\agents\` via round-robin
+8. Inter-agent coordination via file-based inbox system (Hybrid Gamma)
+9. Wait for `RALPH_COMPLETE` + `EXIT_SIGNAL`
+10. Report completion summary
 
 **CRITICAL:** Do NOT spawn agents manually via Task tool. Let ralph.py handle orchestration - it manages:
-- Parallel agent spawning
-- Iteration tracking
-- Stuck detection
+
+- Parallel agent spawning with batching (>10 agents)
+- Agent config assignment (19 configs in ~/.claude `\agents\ `)
+- Inter-agent inboxes and heartbeat monitoring
+- Task reclamation (crashed agent's work re-assigned)
+- Iteration tracking and stuck detection
 - Post-review phase
-- Completion signals
+- Completion signals and structured shutdown
 
 ## Related Skills
 
 - **`/commit`** - Create commits from `.claude/commit.md` with branch-aware naming
-- **`/commit-tracker`** - Manually log file changes (auto-tracked by hooks)
+- **`/commit log`** - Manually log file changes (auto-tracked by hooks)
 - **`/screen`** - Capture screenshots for visual verification
 - **`/code-standards`** - Run Biome, Knip, accessibility, and architecture checks

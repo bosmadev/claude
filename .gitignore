@@ -12,6 +12,7 @@ downloads/
 plans/
 tasks/
 node_modules/
+daily-cost/
 __pycache__/
 .venv/
 venv/
@@ -47,3 +48,6 @@ plugins/**/.orphaned_at
 .usage-cache
 .expected-hooks
 settings.json.*
+nul
+~deploy.yml
+.statusline-last

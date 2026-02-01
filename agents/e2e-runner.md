@@ -68,11 +68,8 @@ You handle:
 - **Bash**: Run Playwright commands and tests
 - **Read**: Examine existing tests and application code
 - **Write**: Create and update test files
-- **MCP Playwright tools**: Direct browser automation
-  - `mcp__plugin_playwright_playwright__browser_navigate`
-  - `mcp__plugin_playwright_playwright__browser_click`
-  - `mcp__plugin_playwright_playwright__browser_snapshot`
-  - `mcp__plugin_playwright_playwright__browser_fill_form`
+- **MCP Playwright tool**: Direct browser automation
+  - `mcp__playwright__execute` - Execute Playwright commands (navigate, click, snapshot, fill)
 
 ## Connected Skills
 
@@ -260,9 +257,9 @@ Use `/launch` for visual verification workflows:
 ### Browser Snapshot for Test Development
 
 ```typescript
-// Use MCP tools to explore page structure
-await mcp__plugin_playwright_playwright__browser_navigate({ url: 'http://localhost:3000' });
-await mcp__plugin_playwright_playwright__browser_snapshot({});
+// Use MCP Playwright tool to explore page structure
+await mcp__playwright__execute({ command: 'navigate', url: 'http://localhost:3000' });
+await mcp__playwright__execute({ command: 'snapshot' });
 // Use snapshot to identify correct selectors
 ```
 

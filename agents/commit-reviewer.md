@@ -268,6 +268,54 @@ git log --oneline -20 | grep -vE "^[a-f0-9]+ (feat|fix|docs|style|refactor|test|
 git diff --cached --stat
 ```
 
+## TODO Insertion Protocol
+
+During review, you MUST insert TODO comments directly into source code for every finding. Do not just report issues -- leave actionable markers in the code itself.
+
+### TODO Format
+
+Use priority-tagged comments with agent attribution:
+
+```
+// TODO-P1: [Critical issue description] - commit-reviewer
+// TODO-P2: [Important issue description] - commit-reviewer
+// TODO-P3: [Improvement suggestion] - commit-reviewer
+```
+
+**Priority Levels:**
+
+| Priority | When to Use | Example |
+|----------|-------------|---------|
+| `TODO-P1` | Committed secrets, breaking change without docs, data loss risk | `// TODO-P1: Hardcoded API key committed - rotate and use env var - commit-reviewer` |
+| `TODO-P2` | Missing conventional commit type, mixed concerns in commit | `// TODO-P2: This file contains unrelated changes - split into separate commit - commit-reviewer` |
+| `TODO-P3` | Minor commit hygiene improvement | `// TODO-P3: Consider adding JSDoc for this new public function - commit-reviewer` |
+
+### Insertion Rules
+
+1. **Insert at the exact location** of the issue (above the problematic line)
+2. **Use the Edit tool or Serena tools** (`mcp__serena__replace_symbol_body`, `mcp__serena__insert_before_symbol`) to insert comments
+3. **Use the correct comment syntax** for the file type:
+   - TypeScript/JavaScript: `// TODO-P1: ...`
+   - Python: `# TODO-P1: ...`
+   - HTML/JSX: `{/* TODO-P1: ... */}`
+   - CSS: `/* TODO-P1: ... */`
+4. **Include file path and line reference** in your review log entry
+5. **Never auto-fix the issue** -- only insert the TODO comment describing what needs to change and why
+6. **One TODO per issue** -- do not combine multiple issues into a single comment
+
+### Review Log Reporting
+
+After inserting TODOs, report each insertion to the shared review log at `.claude/review-agents.md`:
+
+```markdown
+| File | Line | Priority | Issue | Agent |
+|------|------|----------|-------|-------|
+| src/config/auth.ts | 8 | P1 | Hardcoded API key - use env var | commit-reviewer |
+| src/api/users.ts | 12 | P2 | Unrelated UI changes mixed with API changes | commit-reviewer |
+```
+
+If you find zero issues, still confirm in the log that the review was completed with no findings.
+
 ## Best Practices Summary
 
 1. **Atomic commits**: One logical change per commit

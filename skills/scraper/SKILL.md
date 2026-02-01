@@ -3,7 +3,7 @@ name: scraper
 description: Web scraping with CyberScraper integration. Features anti-detection, AI extraction, Tor routing, browser pool selection, and multi-page support.
 argument-hint: <url> [--stealth|--tor|--browser <name>|--ai "prompt"|--captcha|--pages N|--cache|--verify|--export json|csv|xlsx]
 user-invocable: true
-context: main
+context: fork
 ---
 
 # /scraper Skill
@@ -15,17 +15,17 @@ Enterprise-grade web scraping with CyberScraper Deep integration, intelligent br
 ## Usage
 
 ```
-/scrape help                           Show this help
-/scrape <url>                          Auto-select browser, stealth default
-/scrape <url> --stealth                Explicit stealth mode (Patchright)
-/scrape <url> --tor                    Via Tor network with circuit isolation
-/scrape <url> --pages 1-10             Multi-page scraping (pagination)
-/scrape <url> --cache                  Use cached version if available
-/scrape <url> --browser <name>         Force specific browser
-/scrape <url> --verify                 Cross-browser verification
-/scrape <url> --export json|csv|xlsx   Export format (default: json)
-/scrape <url> --ai "extract prices"    AI-powered content extraction
-/scrape <url> --captcha                Pause for manual CAPTCHA solving
+/scraper help                           Show this help
+/scraper <url>                          Auto-select browser, stealth default
+/scraper <url> --stealth                Explicit stealth mode (Patchright)
+/scraper <url> --tor                    Via Tor network with circuit isolation
+/scraper <url> --pages 1-10             Multi-page scraping (pagination)
+/scraper <url> --cache                  Use cached version if available
+/scraper <url> --browser <name>         Force specific browser
+/scraper <url> --verify                 Cross-browser verification
+/scraper <url> --export json|csv|xlsx   Export format (default: json)
+/scraper <url> --ai "extract prices"    AI-powered content extraction
+/scraper <url> --captcha                Pause for manual CAPTCHA solving
 ```
 
 ## Arguments
@@ -106,16 +106,16 @@ When `$ARGUMENTS` is empty or "help", display usage guide.
 
 ```bash
 # Patchright (Stealth)
-cyberscraper scrape "$URL" --browser patchright --stealth --output "/tmp/scrape.json"
+cyberscraper scrape "$URL" --browser patchright --stealth --output "$TEMP/scrape.json"
 
 # Playwriter (Auth)
-playwriter execute "$URL" --storage-state "$SESSION_FILE" --output "/tmp/scrape.json"
+playwriter execute "$URL" --storage-state "$SESSION_FILE" --output "$TEMP/scrape.json"
 
 # Browser-Use (Cloudflare)
-browser-use scrape "$URL" --autonomous --solve-captcha --output "/tmp/scrape.json"
+browser-use scrape "$URL" --autonomous --solve-captcha --output "$TEMP/scrape.json"
 
 # Tor Mode
-cyberscraper scrape "$URL" --proxy "socks5://127.0.0.1:9050" --new-circuit --output "/tmp/scrape.json"
+cyberscraper scrape "$URL" --proxy "socks5://127.0.0.1:9050" --new-circuit --output "$TEMP/scrape.json"
 ```
 
 ---

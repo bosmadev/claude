@@ -1,1 +1,1 @@
-CLAUDE.md
+C:/Users/Dennis/.claude/CLAUDE.md

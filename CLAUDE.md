@@ -1,4 +1,4 @@
-# Claude Code Configuration 
+# Claude Code Configuration
 
 #### Based on claude-code: 2.1.20
 
@@ -9,43 +9,43 @@
 ## Directory Structure
 
 ```
-/usr/share/claude/
-├── .github/                    # GitHub templates and workflows
+~/.claude\
+├── .github\                    # GitHub templates and workflows
 │   ├── PULL_REQUEST_TEMPLATE.md
-│   ├── ISSUE_TEMPLATE/
+│   ├── ISSUE_TEMPLATE\
 │   │   ├── bug_report.md
 │   │   └── feature_request.md
-│   └── workflows/claude.yml
-├── agents/                     # Agent configuration files
+│   └── workflows\claude.yml
+├── agents\                     # Agent configuration files
 │   ├── api-reviewer.md
 │   ├── build-error-resolver.md
 │   ├── commit-reviewer.md
-│   └── ... (16 total)
-├── hooks/                      # Claude Code hook handlers
+│   └── ... (19 files total)
+├── hooks\                      # Claude Code hook handlers
 │   ├── guards.py              # Skill parser, plan validation
 │   ├── ralph.py               # Ralph protocol hooks (wrapper)
 │   ├── git.py                 # Git safety hooks
-│   └── utils.sh               # Shared shell utilities
-├── output-styles/              # Response formatting styles
+│   └── utils.py               # Shared desktop utilities
+├── output-styles\              # Response formatting styles
 │   └── Engineer.md            # Dense technical output
-├── scripts/                    # CLI utilities
-│   ├── statusline.sh          # Terminal status display
+├── scripts\                    # CLI utilities
+│   ├── statusline.py          # Terminal status display
 │   ├── ralph.py               # Ralph unified implementation
-│   └── claude-github.sh       # GitHub integration
-├── skills/                     # Skill definitions (/commands)
-│   ├── chats/                 # /chats - Chat management
-│   ├── commit/                # /commit - Git commits
-│   ├── launch/                # /launch - Browser debug
-│   ├── openpr/                # /openpr - Pull requests
-│   ├── quality/               # /quality - Linting/checks
-│   ├── repotodo/              # /repotodo - TODO processor
-│   ├── review/                # /review - Code review
-│   ├── reviewplan/            # /reviewplan - Plan comments
-│   ├── scraper/               # /scraper - Web scraping
-│   ├── screen/                # /screen - Screenshots
-│   ├── start/                 # /start - Ralph autonomous dev
-│   ├── token/                 # /token - Token management
-│   └── youtube/               # /youtube - Transcriptions
+│   └── claude-github.py       # GitHub integration
+├── skills\                     # Skill definitions (/commands)
+│   ├── chats\                 # /chats - Chat management
+│   ├── commit\                # /commit - Git commits
+│   ├── launch\                # /launch - Browser debug
+│   ├── openpr\                # /openpr - Pull requests
+│   ├── quality\               # /quality - Linting/checks
+│   ├── repotodo\              # /repotodo - TODO processor
+│   ├── review\                # /review - Code review
+│   ├── reviewplan\            # /reviewplan - Plan comments
+│   ├── scraper\               # /scraper - Web scraping
+│   ├── screen\                # /screen - Screenshots
+│   ├── start\                 # /start - Ralph autonomous dev
+│   ├── token\                 # /token - Token management
+│   └── youtube\               # /youtube - Transcriptions
 ├── CLAUDE.md                   # Main configuration
 ├── settings.json               # Hook registrations
 └── README.md                   # Documentation
@@ -84,7 +84,7 @@ All plans in `/plans/` MUST follow Plan Change Tracking:
 3. Update "Last Updated" timestamp
 4. If `USER:` comments found - process, remove, mark changed line with 🟧 at end
 
-**Change Marker Format:**
+**Change Marker Format (Markdown-Safe Rules):**
 
 ```markdown
 ### Section Title 🟧    <- Correct: marker at END
@@ -92,6 +92,25 @@ Some changed content 🟧
 
 🟧 ### Title            <- WRONG: breaks markdown heading
 ```
+
+**Element-specific rules:**
+
+| Element        | Rule                                                      | Example                              |
+| -------------- | --------------------------------------------------------- | ------------------------------------ |
+| Headings       | Marker at END of heading text                             | `### Section Title 🟧`             |
+| Paragraphs     | Marker at END of line                                     | `Some changed content 🟧`          |
+| Lists          | After item text                                           | `- Item description 🟧`            |
+| Tables (cells) | INSIDE last cell, before closing `\|`                    | `\| value \| changed 🟧 \|`           |
+| Table headers  | INSIDE last header cell, before closing `\|`             | `\| Col A \| Col B 🟧 \|`             |
+| Separator rows | NEVER mark (`\|---\|---\|` rows)                           | Leave untouched                      |
+| Code blocks    | NEVER inside fences -- mark the line ABOVE the code block | `Changed code below 🟧` then fence |
+| Inline code    | Marker OUTSIDE backticks                                  | `` `value` 🟧 ``                     |
+
+**Marker Lifecycle:**
+
+1. **Strip first**: Remove ALL existing 🟧 markers from the entire document
+2. **Then mark**: Add 🟧 only to lines changed in this edit pass
+3. **Result**: Only current changes are marked; stale markers never accumulate
 
 **Never ask user:**
 
@@ -101,6 +120,13 @@ Some changed content 🟧
 
 **To process USER comments:** Run `/reviewplan`
 
+**Emoji formatting (all plans):**
+
+- Section headers get category emojis (🔒🏗️⚡📝🧪🎨)
+- Table rows get status emojis (✅⚠️❌🟢🟡🔴)
+- Decision tables use emoji-first compact format
+- Comparison matrices use emoji column headers
+
 ## Token Refresh (4-Layer Defense)
 
 Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sleep:
@@ -109,9 +135,9 @@ Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sle
 ┌─────────────────────────────────────────────────────────────────┐
 │                     TOKEN REFRESH LAYERS                        │
 ├─────────────────────────────────────────────────────────────────┤
-│ Layer 1: systemd Timer    → Every 30 min, Persistent=true       │
-│ Layer 2: Resume Hook      → Triggers on wake from sleep         │
-│ Layer 3: Login Hook       → Background check on shell login     │
+│ Layer 1: Task Scheduler  → Every 30 min, "Start when available" │
+│ Layer 2: Resume Trigger   → Power resume event trigger          │
+│ Layer 3: Login Profile    → Check on PowerShell profile load    │
 │ Layer 4: Pre-op Check     → Validates before Claude operations  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -124,29 +150,29 @@ Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sle
 **Morning Workflow:**
 
 1. Wake from sleep → Layer 2 triggers refresh (5s delay for network)
-2. Open terminal → Layer 3 runs background check
+2. Open PowerShell → Layer 3 runs background check via profile
 3. Start Claude → Layer 4 validates before first operation
-4. Timer catches up → Layer 1 continues 30-min cycle
+4. Task Scheduler catches up → Layer 1 continues 30-min cycle
 
 **Scripts:**
 
-| Script                              | Purpose                                     |
-| ----------------------------------- | ------------------------------------------- |
-| `scripts/claude-github.sh`        | Main token management (status/refresh/sync) |
-| `scripts/refresh-claude-token.sh` | Wrapper for systemd (handles network wait)  |
-| `scripts/token-guard.py`          | Pre-operation validation (Layer 4)          |
-| `scripts/install-token-timer.sh`  | Install systemd units                       |
+| Script                              | Purpose                                           |
+| ----------------------------------- | ------------------------------------------------- |
+| `scripts\claude-github.py`        | Main token management (status/refresh/sync)       |
+| `scripts\refresh-claude-token.py` | Wrapper for Task Scheduler (handles network wait) |
+| `scripts\token-guard.py`          | Pre-operation validation (Layer 4)                |
+| `scripts\install-token-timer.py`  | Install Task Scheduler entries                    |
 
 **Troubleshooting:**
 
-| Issue               | Solution                                                           |
-| ------------------- | ------------------------------------------------------------------ |
-| Token expired       | Run:`/usr/share/claude/scripts/claude-github.sh refresh --force` |
-| Timer not running   | Check:`systemctl status claude-token-refresh.timer`              |
-| Resume hook missing | Run:`systemctl enable claude-token-resume.service`               |
-| Manual refresh      | Run:`claude auth login`                                          |
-| Debug logs          | View:`~/.claude/debug/token-refresh.log`                         |
-| Check all layers    | Run:`systemctl status claude-token-{refresh,resume}.*`           |
+| Issue               | Solution                                                                        |
+| ------------------- | ------------------------------------------------------------------------------- |
+| Token expired       | Run:`python ~/.claude\scripts\claude-github.py refresh --force` |
+| Timer not running   | Check:`schtasks /Query /TN "ClaudeTokenRefresh"`                              |
+| Resume hook missing | Run:`schtasks /Create /TN "ClaudeTokenResume" /SC ONEVENT /EC System`         |
+| Manual refresh      | Run:`claude auth login`                                                       |
+| Debug logs          | View:`%USERPROFILE%\.claude\debug\token-refresh.log`                          |
+| Check all layers    | Run:`schtasks /Query /TN "ClaudeToken*"`                                      |
 
 ## Web Research Fallback Chain
 
@@ -188,7 +214,7 @@ When fetching web content (research, scouting, documentation), use this fallback
 
 ### Smart Browser Router
 
-Use `/usr/share/claude/scripts/browser-router.py` for programmatic browser selection:
+Use `~/.claude\scripts\browser-router.py` for programmatic browser selection:
 
 ```python
 from browser_router import select_browser
@@ -258,7 +284,7 @@ Ralph agents use atomic task claiming to prevent idle agents:
 ```python
 # In ralph.py - atomic task claiming with file lock
 def claim_next_task(agent_id: str) -> Optional[Task]:
-    with FileLock("/.claude/ralph/queue.lock"):
+    with FileLock(".claude/ralph/queue.lock"):
         queue = load_queue()
         for task in queue:
             if task.status == "pending" and not task.claimed_by:
@@ -317,6 +343,7 @@ graph TD
 ### Layer 5: Push Gate (Must Push Before Completion)
 
 Ralph agents MUST push their work to remote before signaling completion. This prevents:
+
 - Lost work from uncommitted/unpushed changes
 - Orphaned local branches that never reach the repository
 - Silent failures where agents claim success but work is stranded
@@ -347,15 +374,16 @@ graph TD
 **Agent Requirements:**
 
 1. Before emitting `ULTRATHINK_COMPLETE`, verify:
+
    - All changes are committed
    - All commits are pushed to remote branch
    - Use `git status` and `git log origin/branch..HEAD` to check
-
 2. If unpushed commits exist:
+
    - Push to remote: `git push -u origin <branch>`
    - Only then signal completion
-
 3. Hook validation (`ralph.py`):
+
    - Checks for unpushed commits on completion signal
    - Blocks completion if push required
    - Injects reminder to push first
@@ -421,14 +449,22 @@ graph TD
 | `/openpr [branch]` | Create PR to branch |
 | `/openpr help`     | Show usage          |
 
-### /repotodo - Process TODO Comments
+### /repotodo - Process TODO Comments by Priority
 
-| Command                 | Description                   |
-| ----------------------- | ----------------------------- |
-| `/repotodo list`      | List all TODOs by category    |
-| `/repotodo <cat> all` | Process ALL TODOs of category |
-| `/repotodo <cat> [N]` | Process N TODOs of category   |
-| `/repotodo help`      | Show usage                    |
+| Command                    | Description                                      |
+| -------------------------- | ------------------------------------------------ |
+| `/repotodo list`         | List all TODOs by priority                       |
+| `/repotodo P1 all`       | Process all P1 (critical) TODOs                  |
+| `/repotodo P1 [N]`       | Process N P1 TODOs                               |
+| `/repotodo P2 all`       | Process all P2 (high priority) TODOs             |
+| `/repotodo P3 all`       | Process all P3 (medium priority) TODOs           |
+| `/repotodo low all`      | Process all low priority (plain TODO:)           |
+| `/repotodo all`          | Process ALL TODOs (P1 → P2 → P3 → low)        |
+| `/repotodo verify`       | Check alignment: review findings vs source TODOs |
+| `/repotodo verify --fix` | Verify + inject missing TODOs from findings      |
+| `/repotodo help`         | Show usage                                       |
+
+**TODO Format:** `TODO-P1:`, `TODO-P2:`, `TODO-P3:`, or plain `TODO:`
 
 ### /reviewplan - Process Plan USER Comments
 

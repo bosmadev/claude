@@ -278,7 +278,7 @@ RALPH Integration Points:
 - `Write` - Create/update workflow files
 - `Bash` - Run CLI commands (gh, kubectl, terraform)
 - `Grep` - Search for configuration patterns
-- `mcp__plugin_github_github__*` - GitHub API for workflow management
+- `Bash(gh:*)` - GitHub CLI for workflow management (e.g., `gh run list`, `gh workflow view`)
 
 ## Diagnostic Commands
 

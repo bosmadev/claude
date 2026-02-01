@@ -16,7 +16,6 @@ Environment Variables:
 
 import json
 import os
-import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -26,22 +25,33 @@ from pathlib import Path
 # Stdin Timeout - Prevent hanging on missing stdin
 # =============================================================================
 
-def timeout_handler(signum, frame):
-    """Silent exit on timeout - prevents hooks from hanging."""
-    sys.exit(0)
+# Cross-platform stdin timeout (SIGALRM not available on Windows)
+if sys.platform == "win32":
+    import threading
+    _timeout_timer = threading.Timer(30, lambda: os._exit(0))
+    _timeout_timer.daemon = True
+    _timeout_timer.start()
+else:
+    import signal
 
+    def timeout_handler(signum, frame):
+        """Silent exit on timeout - prevents hooks from hanging."""
+        sys.exit(0)
 
-signal.signal(signal.SIGALRM, timeout_handler)
-signal.alarm(30)  # 30 second timeout for setup operations
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(30)  # 30 second timeout for setup operations
 
 
 # =============================================================================
 # Constants
 # =============================================================================
 
-CLAUDE_CONFIG_DIR = Path("/usr/share/claude")
+CLAUDE_CONFIG_DIR = Path(os.environ.get(
+    "CLAUDE_HOME",
+    "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude"
+))
 HOME_CLAUDE_SYMLINK = Path.home() / ".claude"
-ROOT_CLAUDE_SYMLINK = Path("/root/.claude")
+ROOT_CLAUDE_SYMLINK = None if sys.platform == "win32" else Path("/root/.claude")
 
 # MCP servers to check connectivity
 MCP_SERVERS = ["serena", "context7", "playwriter"]
@@ -99,25 +109,27 @@ def validate_symlinks() -> dict:
     else:
         results["warnings"].append(f"Home symlink missing: {HOME_CLAUDE_SYMLINK}")
 
-    # Check /root/.claude if running as root or if it exists
-    if os.getuid() == 0 or ROOT_CLAUDE_SYMLINK.exists():
-        if ROOT_CLAUDE_SYMLINK.exists():
-            if ROOT_CLAUDE_SYMLINK.is_symlink():
-                target = ROOT_CLAUDE_SYMLINK.resolve()
-                if target == CLAUDE_CONFIG_DIR.resolve():
-                    results["checks"].append(
-                        f"Root symlink valid: {ROOT_CLAUDE_SYMLINK} -> {CLAUDE_CONFIG_DIR}"
-                    )
+    # Check /root/.claude if running as root or if it exists (Linux only)
+    if sys.platform != "win32" and ROOT_CLAUDE_SYMLINK is not None:
+        is_root = os.getuid() == 0
+        if is_root or ROOT_CLAUDE_SYMLINK.exists():
+            if ROOT_CLAUDE_SYMLINK.exists():
+                if ROOT_CLAUDE_SYMLINK.is_symlink():
+                    target = ROOT_CLAUDE_SYMLINK.resolve()
+                    if target == CLAUDE_CONFIG_DIR.resolve():
+                        results["checks"].append(
+                            f"Root symlink valid: {ROOT_CLAUDE_SYMLINK} -> {CLAUDE_CONFIG_DIR}"
+                        )
+                    else:
+                        results["warnings"].append(
+                            f"Root symlink points elsewhere: {ROOT_CLAUDE_SYMLINK} -> {target}"
+                        )
                 else:
                     results["warnings"].append(
-                        f"Root symlink points elsewhere: {ROOT_CLAUDE_SYMLINK} -> {target}"
+                        f"Root path is not a symlink: {ROOT_CLAUDE_SYMLINK}"
                     )
-            else:
-                results["warnings"].append(
-                    f"Root path is not a symlink: {ROOT_CLAUDE_SYMLINK}"
-                )
-        elif os.getuid() == 0:
-            results["warnings"].append(f"Root symlink missing: {ROOT_CLAUDE_SYMLINK}")
+            elif is_root:
+                results["warnings"].append(f"Root symlink missing: {ROOT_CLAUDE_SYMLINK}")
 
     # Check essential files exist
     essential_files = [
@@ -227,12 +239,20 @@ def check_tmpdir() -> dict:
         else:
             results["recommendation"] = f"CLAUDE_CODE_TMPDIR does not exist: {tmpdir}"
     else:
-        results["recommendation"] = (
-            "Consider setting CLAUDE_CODE_TMPDIR to a RAM-backed tmpfs for faster file operations:\n"
-            "  1. Add to /etc/fstab: tmpfs /mnt/claude-tmp tmpfs size=512m,mode=1777 0 0\n"
-            "  2. Mount: sudo mount /mnt/claude-tmp\n"
-            "  3. Export: echo 'export CLAUDE_CODE_TMPDIR=/mnt/claude-tmp' >> ~/.bashrc"
-        )
+        if sys.platform == "win32":
+            results["recommendation"] = (
+                "Consider setting CLAUDE_CODE_TMPDIR to a RAM disk for faster file operations:\n"
+                "  1. Install a RAM disk tool (e.g., ImDisk) and create a 512 MB RAM drive (e.g., R:\\)\n"
+                "  2. Set environment variable: setx CLAUDE_CODE_TMPDIR R:\\claude-tmp\n"
+                "  3. Create directory: mkdir R:\\claude-tmp"
+            )
+        else:
+            results["recommendation"] = (
+                "Consider setting CLAUDE_CODE_TMPDIR to a RAM-backed tmpfs for faster file operations:\n"
+                "  1. Add to /etc/fstab: tmpfs /mnt/claude-tmp tmpfs size=512m,mode=1777 0 0\n"
+                "  2. Mount: sudo mount /mnt/claude-tmp\n"
+                "  3. Export: echo 'export CLAUDE_CODE_TMPDIR=/mnt/claude-tmp' >> ~/.bashrc"
+            )
 
     return results
 

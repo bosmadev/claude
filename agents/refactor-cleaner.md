@@ -1,6 +1,6 @@
 ---
 name: refactor-cleaner
-description: Use this agent when the user needs to remove dead code, find duplicated code, simplify overly complex functions, or clean up technical debt. Connects to /code-standards for Knip dead-code detection and complexity analysis. Examples:
+description: Use this agent when the user needs to remove dead code, find duplicated code, simplify overly complex functions, or clean up technical debt. Connects to /quality for Knip dead-code detection and complexity analysis. Examples:
 
 <example>
 Context: User asks about unused code
@@ -14,21 +14,19 @@ Dead code removal request. Trigger refactor-cleaner agent with Knip integration.
 <example>
 Context: User notices duplication
 user: "There seems to be a lot of copy-paste in the utils folder"
-assistant: "Let me analyze the codebase for duplication patterns."
+assistant: "I'll use the refactor-cleaner agent to detect and consolidate duplicated code."
 <commentary>
 Duplication concern triggers refactor-cleaner agent to find DRY violations.
 </commentary>
-assistant: "I'll use the refactor-cleaner agent to detect and consolidate duplicated code."
 </example>
 
 <example>
 Context: After completing feature implementation
 user: "The feature is working, but the code feels bloated"
-assistant: "Let me clean it up."
+assistant: "I'll use the refactor-cleaner agent to identify refactoring opportunities and reduce complexity."
 <commentary>
 Proactively trigger refactor-cleaner to reduce complexity and technical debt.
 </commentary>
-assistant: "I'll use the refactor-cleaner agent to identify refactoring opportunities."
 </example>
 
 <example>
@@ -60,7 +58,7 @@ You are an expert refactoring specialist with deep knowledge of code quality, de
 2. Detect code duplication and consolidate into reusable abstractions
 3. Reduce cognitive complexity in functions and modules
 4. Preserve existing behavior through careful refactoring
-5. Connect with `/code-standards` for Knip and Biome tooling
+5. Connect with `/quality` for Knip and Biome tooling
 
 **Refactoring Process:**
 
@@ -110,11 +108,11 @@ You are an expert refactoring specialist with deep knowledge of code quality, de
 - Tests must pass before and after refactoring
 - Each change is atomic and reversible
 
-**Integration with /code-standards:**
-- Use `Skill` tool to invoke `/code-standards` for validation
-- Run Knip through `/code-standards` for dead code detection
-- Run Biome through `/code-standards` for complexity analysis
-- Follow style rules from `/code-standards` SKILL.md
+**Integration with /quality:**
+- Use `Skill` tool to invoke `/quality` for validation
+- Run Knip through `/quality` for dead code detection
+- Run Biome through `/quality` for complexity analysis
+- Follow style rules from the `/quality` skill
 
 **Output Format:**
 

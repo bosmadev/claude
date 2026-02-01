@@ -5,15 +5,28 @@ Browser Router - Unified multi-browser selection for web automation.
 This module provides intelligent browser selection based on URL requirements
 like authentication, captcha handling, stealth mode, and CDP access.
 
+DEFAULT BEHAVIOR (launch.ts alignment):
+All 4 primary browsers are enabled by default in launch scripts:
+1. System Browser  - Opens URL in user's default browser
+2. Playwriter MCP  - Auth flows, session management, CDP
+3. agent-browser   - Headless automation with stealth
+4. chrome-mcp      - Debugging and inspection
+
+Additional browsers (WebFetch, Browser-Use, CyberScraper) are available
+for specialized use cases but not launched by default.
+
 Browser Capability Matrix:
-| Browser        | Auth | Stealth | Captcha | CDP | Best For              |
-|----------------|------|---------|---------|-----|-----------------------|
-| WebFetch       | No   | No      | No      | No  | Simple public pages   |
-| agent-browser  | No   | Yes     | No      | Yes | Headless automation   |
-| Playwriter MCP | Yes  | Yes     | No      | Yes | Auth flows, sessions  |
-| Browser-Use    | Yes  | Yes     | Yes     | Yes | Cloudflare bypass     |
-| CyberScraper   | Yes  | Yes++   | Yes     | Yes | Bot detection evasion |
-| Chrome MCP     | Yes  | No      | No      | Yes | Debugging, inspection |
+| Browser        | Auth | Stealth | Captcha | CDP | Default | Best For              |
+|----------------|------|---------|---------|-----|---------|----------------------|
+| System         | Yes* | No      | No      | No  | Yes     | User's default browser|
+| Playwriter MCP | Yes  | Yes     | No      | Yes | Yes     | Auth flows, sessions  |
+| agent-browser  | No   | Yes     | No      | Yes | Yes     | Headless automation   |
+| chrome-mcp     | Yes  | No      | No      | Yes | Yes     | Debugging, inspection |
+| WebFetch       | No   | No      | No      | No  | No      | Simple public pages   |
+| Browser-Use    | Yes  | Yes     | Yes     | Yes | No      | Cloudflare bypass     |
+| CyberScraper   | Yes  | Yes++   | Yes     | Yes | No      | Bot detection evasion |
+
+* System browser auth depends on user's logged-in state
 
 Usage:
     from browser_router import select_browser, BrowserCapabilities
@@ -27,8 +40,12 @@ Usage:
         {"auth": True, "captcha": True, "stealth": True}
     )
 
+    # Get default browsers (aligned with launch.ts)
+    defaults = get_default_browsers()
+
     # CLI usage
     python3 browser-router.py select https://example.com --auth --stealth
+    python3 browser-router.py defaults  # Show default browser configuration
     python3 browser-router.py test  # Run self-tests
 """
 
@@ -47,12 +64,15 @@ from urllib.parse import urlparse
 
 class Browser(str, Enum):
     """Available browser tools for web automation."""
-    WEBFETCH = "webfetch"
-    AGENT_BROWSER = "agent-browser"
-    PLAYWRITER = "playwriter"
-    BROWSER_USE = "browser-use"
-    CYBERSCRAPER = "cyberscraper"
-    CHROME_MCP = "chrome-mcp"
+    # Default browsers (enabled by launch.ts)
+    SYSTEM = "system"  # User's default browser (xdg-open)
+    PLAYWRITER = "playwriter"  # Auth flows, sessions, CDP
+    AGENT_BROWSER = "agent-browser"  # Headless with stealth
+    CHROME_MCP = "chrome-mcp"  # Debugging, inspection
+    # Additional browsers (not enabled by default)
+    WEBFETCH = "webfetch"  # Simple page fetching
+    BROWSER_USE = "browser-use"  # Cloudflare bypass
+    CYBERSCRAPER = "cyberscraper"  # Bot detection evasion
 
 
 @dataclass
@@ -64,28 +84,23 @@ class BrowserCapabilities:
     captcha: bool = False
     cdp: bool = False
     priority: int = 0  # Higher = preferred when capabilities match
+    default_enabled: bool = False  # Enabled by default in launch.ts
     description: str = ""
 
 
 # Browser capability definitions
+# Ordered by: default browsers first, then additional browsers
 BROWSER_CAPABILITIES: dict[Browser, BrowserCapabilities] = {
-    Browser.WEBFETCH: BrowserCapabilities(
-        name=Browser.WEBFETCH,
-        auth=False,
+    # === DEFAULT BROWSERS (enabled by launch.ts) ===
+    Browser.SYSTEM: BrowserCapabilities(
+        name=Browser.SYSTEM,
+        auth=True,  # Depends on user's logged-in state
         stealth=False,
         captcha=False,
         cdp=False,
-        priority=10,
-        description="Fast, simple public page fetching"
-    ),
-    Browser.AGENT_BROWSER: BrowserCapabilities(
-        name=Browser.AGENT_BROWSER,
-        auth=False,
-        stealth=True,
-        captcha=False,
-        cdp=True,
-        priority=20,
-        description="Headless automation with stealth"
+        priority=5,  # Low priority for automation - user's browser
+        default_enabled=True,
+        description="User's default system browser (xdg-open)"
     ),
     Browser.PLAYWRITER: BrowserCapabilities(
         name=Browser.PLAYWRITER,
@@ -94,7 +109,39 @@ BROWSER_CAPABILITIES: dict[Browser, BrowserCapabilities] = {
         captcha=False,
         cdp=True,
         priority=30,
+        default_enabled=True,
         description="Auth flows and session management"
+    ),
+    Browser.AGENT_BROWSER: BrowserCapabilities(
+        name=Browser.AGENT_BROWSER,
+        auth=False,
+        stealth=True,
+        captcha=False,
+        cdp=True,
+        priority=20,
+        default_enabled=True,
+        description="Headless automation with stealth"
+    ),
+    Browser.CHROME_MCP: BrowserCapabilities(
+        name=Browser.CHROME_MCP,
+        auth=True,
+        stealth=False,
+        captcha=False,
+        cdp=True,
+        priority=15,  # Good for debugging
+        default_enabled=True,
+        description="Debugging and inspection"
+    ),
+    # === ADDITIONAL BROWSERS (not enabled by default) ===
+    Browser.WEBFETCH: BrowserCapabilities(
+        name=Browser.WEBFETCH,
+        auth=False,
+        stealth=False,
+        captcha=False,
+        cdp=False,
+        priority=10,
+        default_enabled=False,
+        description="Fast, simple public page fetching"
     ),
     Browser.BROWSER_USE: BrowserCapabilities(
         name=Browser.BROWSER_USE,
@@ -103,6 +150,7 @@ BROWSER_CAPABILITIES: dict[Browser, BrowserCapabilities] = {
         captcha=True,
         cdp=True,
         priority=40,
+        default_enabled=False,
         description="Cloudflare and captcha bypass"
     ),
     Browser.CYBERSCRAPER: BrowserCapabilities(
@@ -112,18 +160,51 @@ BROWSER_CAPABILITIES: dict[Browser, BrowserCapabilities] = {
         captcha=True,
         cdp=True,
         priority=50,
+        default_enabled=False,
         description="Advanced bot detection evasion"
     ),
-    Browser.CHROME_MCP: BrowserCapabilities(
-        name=Browser.CHROME_MCP,
-        auth=True,
-        stealth=False,
-        captcha=False,
-        cdp=True,
-        priority=5,  # Low priority - debugging tool
-        description="Debugging and inspection"
-    ),
 }
+
+
+# =============================================================================
+# Default Browser Configuration (aligned with launch.ts)
+# =============================================================================
+
+def get_default_browsers() -> list[Browser]:
+    """
+    Get browsers that are enabled by default in launch.ts.
+
+    These are the 4 browsers launched automatically:
+    1. System Browser - User's default browser
+    2. Playwriter MCP - Auth flows, sessions
+    3. agent-browser - Headless automation
+    4. chrome-mcp - Debugging
+
+    Returns:
+        List of default-enabled Browser enum values.
+    """
+    return [
+        browser for browser, caps in BROWSER_CAPABILITIES.items()
+        if caps.default_enabled
+    ]
+
+
+def get_additional_browsers() -> list[Browser]:
+    """
+    Get browsers that are NOT enabled by default.
+
+    These require explicit enabling:
+    - WebFetch - Simple page fetching
+    - Browser-Use - Cloudflare bypass
+    - CyberScraper - Bot detection evasion
+
+    Returns:
+        List of additional (non-default) Browser enum values.
+    """
+    return [
+        browser for browser, caps in BROWSER_CAPABILITIES.items()
+        if not caps.default_enabled
+    ]
 
 
 # =============================================================================
@@ -283,13 +364,18 @@ def select_browser_with_fallback(
     primary = select_browser(url, requirements)
 
     # Build fallback chain based on primary selection
+    # Default browsers: system, playwriter, agent-browser, chrome-mcp
+    # Additional: webfetch, browser-use, cyberscraper
     fallback_chains = {
-        Browser.WEBFETCH: [Browser.WEBFETCH, Browser.AGENT_BROWSER, Browser.PLAYWRITER],
-        Browser.AGENT_BROWSER: [Browser.AGENT_BROWSER, Browser.PLAYWRITER, Browser.BROWSER_USE],
+        # Default browsers
+        Browser.SYSTEM: [Browser.SYSTEM, Browser.PLAYWRITER, Browser.CHROME_MCP],
         Browser.PLAYWRITER: [Browser.PLAYWRITER, Browser.BROWSER_USE, Browser.CYBERSCRAPER],
+        Browser.AGENT_BROWSER: [Browser.AGENT_BROWSER, Browser.PLAYWRITER, Browser.BROWSER_USE],
+        Browser.CHROME_MCP: [Browser.CHROME_MCP, Browser.PLAYWRITER, Browser.AGENT_BROWSER],
+        # Additional browsers
+        Browser.WEBFETCH: [Browser.WEBFETCH, Browser.AGENT_BROWSER, Browser.PLAYWRITER],
         Browser.BROWSER_USE: [Browser.BROWSER_USE, Browser.CYBERSCRAPER, Browser.CHROME_MCP],
         Browser.CYBERSCRAPER: [Browser.CYBERSCRAPER, Browser.BROWSER_USE, Browser.CHROME_MCP],
-        Browser.CHROME_MCP: [Browser.CHROME_MCP, Browser.PLAYWRITER, Browser.AGENT_BROWSER],
     }
 
     return fallback_chains.get(primary, [primary])
@@ -306,12 +392,13 @@ def get_verification_pair(primary: Browser) -> Browser:
     Pairing matrix:
     | Primary       | Secondary     | Use Case                         |
     |---------------|---------------|----------------------------------|
-    | WebFetch      | agent-browser | Public pages, JS rendering check |
-    | agent-browser | Playwriter    | Headless vs headed comparison    |
+    | System        | Playwriter    | User browser vs automated        |
     | Playwriter    | Browser-Use   | Auth flow verification           |
+    | agent-browser | Playwriter    | Headless vs headed comparison    |
+    | chrome-mcp    | Playwriter    | Debug with full-featured backup  |
+    | WebFetch      | agent-browser | Public pages, JS rendering check |
     | Browser-Use   | CyberScraper  | Bot detection consistency        |
     | CyberScraper  | Browser-Use   | Cross-check stealth engines      |
-    | Chrome MCP    | Playwriter    | Debug with full-featured backup  |
 
     Args:
         primary: The primary browser being used.
@@ -320,12 +407,15 @@ def get_verification_pair(primary: Browser) -> Browser:
         Recommended secondary browser for verification.
     """
     pairs = {
-        Browser.WEBFETCH: Browser.AGENT_BROWSER,
-        Browser.AGENT_BROWSER: Browser.PLAYWRITER,
+        # Default browsers
+        Browser.SYSTEM: Browser.PLAYWRITER,
         Browser.PLAYWRITER: Browser.BROWSER_USE,
+        Browser.AGENT_BROWSER: Browser.PLAYWRITER,
+        Browser.CHROME_MCP: Browser.PLAYWRITER,
+        # Additional browsers
+        Browser.WEBFETCH: Browser.AGENT_BROWSER,
         Browser.BROWSER_USE: Browser.CYBERSCRAPER,
         Browser.CYBERSCRAPER: Browser.BROWSER_USE,
-        Browser.CHROME_MCP: Browser.PLAYWRITER,
     }
     return pairs.get(primary, Browser.CHROME_MCP)
 
@@ -433,6 +523,9 @@ def main():
     # List command
     subparsers.add_parser("list", help="List all browsers and capabilities")
 
+    # Defaults command (aligned with launch.ts)
+    subparsers.add_parser("defaults", help="Show default browser configuration (launch.ts)")
+
     args = parser.parse_args()
 
     if args.command == "select":
@@ -476,17 +569,37 @@ def main():
 
     elif args.command == "list":
         print("Browser Capabilities:\n")
-        print(f"{'Browser':<15} {'Auth':<6} {'Stealth':<8} {'Captcha':<8} {'CDP':<5} Description")
-        print("-" * 80)
+        print(f"{'Browser':<15} {'Auth':<6} {'Stealth':<8} {'Captcha':<8} {'CDP':<5} {'Default':<8} Description")
+        print("-" * 95)
         for browser, caps in BROWSER_CAPABILITIES.items():
+            default_marker = "Yes" if caps.default_enabled else "No"
             print(
                 f"{browser.value:<15} "
                 f"{'Yes' if caps.auth else 'No':<6} "
                 f"{'Yes' if caps.stealth else 'No':<8} "
                 f"{'Yes' if caps.captcha else 'No':<8} "
                 f"{'Yes' if caps.cdp else 'No':<5} "
+                f"{default_marker:<8} "
                 f"{caps.description}"
             )
+
+    elif args.command == "defaults":
+        print("Default Browsers (enabled by launch.ts):\n")
+        defaults = get_default_browsers()
+        for browser in defaults:
+            caps = BROWSER_CAPABILITIES[browser]
+            print(f"  - {browser.value:<15} {caps.description}")
+
+        print("\nAdditional Browsers (require explicit enabling):\n")
+        additional = get_additional_browsers()
+        for browser in additional:
+            caps = BROWSER_CAPABILITIES[browser]
+            print(f"  - {browser.value:<15} {caps.description}")
+
+        print("\nTo use in launch.ts:")
+        print("  pnpm launch                     # All 4 default browsers")
+        print("  pnpm launch --only=playwriter   # Only Playwriter")
+        print("  pnpm launch --skip=chrome-mcp   # Skip Chrome MCP")
 
     else:
         parser.print_help()
