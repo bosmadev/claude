@@ -1,5 +1,6 @@
 ---
 name: python-specialist
+specialty: python
 description: Use this agent when working with Python code. Expertise in FastAPI, async patterns, type hints, Pydantic validation, and Python best practices. Connects to /quality for correctness rules. Examples:
 
 <example>

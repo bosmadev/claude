@@ -1,5 +1,7 @@
 ---
 name: database-reviewer
+specialty: database
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent to review database queries, schema design, and data access patterns for performance issues, N+1 queries, missing indexes, and transaction safety. Invoke after writing database-related code, before PR creation, or when investigating query performance issues.
 
 Examples:

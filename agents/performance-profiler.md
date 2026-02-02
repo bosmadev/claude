@@ -1,5 +1,6 @@
 ---
 name: performance-profiler
+specialty: profiling
 description: Use this agent for performance analysis, complexity auditing, memory usage optimization, and async pattern review. This agent should be invoked when code performance needs evaluation, before optimizing hot paths, or when investigating slowdowns. It connects to the /quality skill for complexity rules and performance-related linting.
 
 Examples:

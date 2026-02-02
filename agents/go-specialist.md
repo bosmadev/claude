@@ -1,5 +1,6 @@
 ---
 name: go-specialist
+specialty: go
 description: Use this agent when working with Go code. Expertise in Go idioms, concurrency patterns (goroutines, channels), error handling, interfaces, and performance optimization. Connects to /quality for correctness rules. Examples:
 
 <example>

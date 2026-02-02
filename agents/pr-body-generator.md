@@ -1,5 +1,6 @@
 ---
 name: pr-body-generator
+specialty: pr-generation
 description: Use this agent to generate comprehensive PR summaries from commit history. Analyzes commits, groups changes by type, and creates well-structured PR descriptions. Connects to /openpr skill.
 
 Examples:

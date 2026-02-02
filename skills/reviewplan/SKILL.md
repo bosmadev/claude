@@ -3,7 +3,6 @@ name: reviewplan
 description: Process USER comments in plan files. Scans /plans/ for USER comments and applies changes with 🟧 markers.
 argument-hint: "[path]"
 user-invocable: true
-context: fork
 ---
 
 # /reviewplan - Plan Comment Processor

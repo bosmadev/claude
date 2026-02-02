@@ -1,9 +1,8 @@
 ---
 name: review
 description: "Code review: multi-aspect analysis OR PR review. Use '/review' for code quality, '/review pr [N]' for pull requests, '/review security' for OWASP audit."
-argument-hint: "[agents] [iterations] [scope|pr number|security]"
+argument-hint: "[agents] [iterations] [opus|sonnet|haiku] [working|impact|branch|staged|pr]"
 user-invocable: true
-context: fork
 ---
 
 # /review - Multi-Aspect Code Review
@@ -20,45 +19,67 @@ Unified code review that runs ALL aspects by default. Spawns parallel review age
 
 Displays usage information and examples.
 
-## Usage
+## Usage & Defaults
 
-### Default (5 agents, 2 iterations, all aspects)
+| Parameter | Default | Range |
+|-----------|---------|-------|
+| Agents | 10 | 1-10 (hard cap) |
+| Iterations | 3 | 1-5 |
+| Model | Sonnet 4.5 | opus / sonnet / haiku |
+| Scope | working | working / impact / branch / staged / path / pr |
 
-```
-/review
-```
-
-Runs all review aspects on git diff files.
-
-### With Agent and Iteration Count
-
-```
-/review 10 3
-```
-
-Runs 10 agents with 3 iterations each on all aspects.
-
-### With Scope
+### Override Syntax
 
 ```
-/review 5 2 staged          # Only staged files
-/review 5 2 src/components/  # Specific directory
-/review 5 2 path/to/file.ts  # Specific file
+/review                          → 10 agents, 3 iterations, Sonnet 4.5, working scope
+/review N                        → N agents, 3 iterations, Sonnet 4.5
+/review N M                      → N agents, M iterations, Sonnet 4.5
+/review N M opus                 → N agents, M iterations, Opus 4.5
+/review N M haiku                → N agents, M iterations, Haiku
+/review working                  → 10 agents, working tree only (R1)
+/review impact                   → 10 agents, working tree + Serena impact radius (R2)
+/review branch                   → 10 agents, full branch diff since main (R3)
+/review 5 2 opus branch          → 5 agents, 2 iter, Opus, full branch diff
+/review pr                       → Current branch PR
+/review pr 123                   → PR #123
+/review security                 → Security-focused OWASP audit
+/review security --owasp         → Full OWASP Top 10 audit
 ```
 
-### PR Review
+## Model Routing (3-Layer System)
 
+This skill runs in the **main Opus conversation** (no `context: fork`). It spawns review Task agents with explicit model routing via L3 per-agent override:
+
+| Layer | Mechanism | Effect |
+|-------|-----------|--------|
+| L1: Global Default | `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` (SessionStart) | Subagents default to Sonnet |
+| L3: Per-Agent Override | `model="sonnet"` in Task() calls | Each review agent uses parsed model |
+
+**Implementation:** When spawning Task agents, pass the parsed model explicitly:
 ```
-/review pr                   # Current branch PR
-/review pr 123               # PR #123
+Task(subagent_type="general-purpose", model=parsed_model, ...)
 ```
 
-## Default Values
+## Scope Definitions
 
-- **Agents:** 5
-- **Iterations:** 2
-- **Scope:** git (uncommitted changes)
-- **Aspects:** ALL (no aspect filtering)
+### R1: Working Tree Only (`working`, default)
+```
+Scope: git diff --name-only (unstaged) + git diff --cached --name-only (staged)
+Agents review ONLY files with uncommitted modifications.
+```
+
+### R2: Impact Radius (`impact`)
+```
+Scope: git diff files
+     + files that import/reference changed files (1-hop via Serena)
+     + mcp__serena__find_referencing_symbols for changed symbols
+```
+
+### R3: Full Branch Diff (`branch`)
+```
+Scope: git diff main...HEAD --name-only (all changes since branch creation)
+     + all files touched in any commit on this branch
+```
 
 ## Review Aspects (ALL Run by Default)
 
@@ -138,34 +159,60 @@ Output the skill started signal immediately, before any other processing:
 
 ```
 Parse arguments left-to-right:
-1. If "pr" -> PR review mode
-2. First number -> agent count (default: 5)
-3. Second number -> iteration count (default: 2)
-4. Remaining text -> scope (default: "git")
+1. If "help" → show usage and exit
+2. If "pr" → PR review mode (next arg = PR number or current branch)
+3. If "security" → security-focused mode
+4. First number → agent count (default: 10, hard cap: 10)
+5. Second number → iteration count (default: 3)
+6. Model keyword → "opus" | "sonnet" | "haiku" (default: "sonnet")
+7. Scope keyword → "working" | "impact" | "branch" | "staged" (default: "working")
+8. Remaining path → file or directory scope override
 ```
 
 ### Step 2: Get Files to Review
 
 ```bash
-# For git scope
-FILES=$(git diff --name-only)
+# For working scope (default)
+FILES=$(git diff --name-only && git diff --cached --name-only)
 
 # For staged scope
 FILES=$(git diff --cached --name-only)
+
+# For impact scope
+FILES=$(git diff --name-only)
+# PLUS: Use mcp__serena__find_referencing_symbols for each changed symbol
+
+# For branch scope
+FILES=$(git diff main...HEAD --name-only)
 
 # For PR scope
 gh pr diff [PR_NUMBER] --name-only
 
 # For path scope
-find "$SCOPE" -type f \( -name "*.ts" -o -name "*.tsx" \)
+find "$SCOPE" -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \)
 ```
 
 ### Step 3: Spawn Review Agents
 
+Spawn agents using the **Task tool** with explicit model parameter:
+
+```
+Task(
+  subagent_type="general-purpose",
+  model=parsed_model,       # "sonnet" default, "opus"/"haiku" if overridden
+  description="Review: [aspect] [files]",
+  prompt="...",
+)
+```
+
 Each agent receives:
-- Files to review
+- Files to review (distributed across agents)
 - All review aspects checklist
 - Context from CLAUDE.md and README.md
+
+**Agent naming convention:** `ralph-review-{aspect}-{n}` (e.g., `ralph-review-security-1`)
+
+**Hard cap:** Maximum 10 agents regardless of input. If user requests >10, cap at 10.
 
 Agents work in parallel analyzing:
 1. Code quality and bugs
@@ -177,7 +224,13 @@ Agents work in parallel analyzing:
 7. Test coverage
 8. Performance problems
 
-### Step 4: Generate Report
+### Step 4: TODO Comment Enforcement (MANDATORY)
+
+All `/review` agents **MUST** leave TODO-P1/P2/P3 inline comments in source files. This is non-negotiable.
+
+Review agents do NOT auto-fix issues. They REPORT findings as TODO comments.
+
+### Step 5: Generate Report
 
 Output to `.claude/review-agents.md`:
 
@@ -189,6 +242,7 @@ Output to `.claude/review-agents.md`:
 **Scope:** [scope]
 **Agents:** [N]
 **Iterations:** [M]
+**Model:** [model]
 
 ## Findings by Category
 
@@ -235,6 +289,19 @@ Review agents leave inline comments using priority-based format:
 | Documentation gaps | P3 |
 | Test coverage | P3 |
 
+## Two Review Modes (Context-Dependent)
+
+This skill is the **manual review** mode (`/review` command). It differs from plan-spawned reviews after `/start`:
+
+| Aspect | This Skill (/review) | Plan-Spawned (after /start) |
+|--------|---------------------|---------------------------|
+| Model | Sonnet 4.5 (default) | Opus 4.5 |
+| Agents | 10 (default) | 2-5 (dynamic) |
+| Iterations | 3 (default) | 2-3 |
+| TODOs | MUST leave TODO-P1/P2/P3 | NEVER leave TODOs |
+| Behavior | Report only | Auto-fix + AskUserQuestion |
+| Max Agents | 10 (hard cap) | 10 (hard cap) |
+
 ## PR Review Mode
 
 When using `/review pr`:
@@ -255,14 +322,20 @@ Includes summary of existing PR discussion and unresolved comments.
 ## Examples
 
 ```bash
-# Quick review of uncommitted changes (all aspects)
+# Default review (10 agents, 3 iter, Sonnet, working tree)
 /review
 
-# Thorough review with more agents
-/review 10 3
+# Thorough Opus review of full branch
+/review 10 3 opus branch
+
+# Quick Haiku scan
+/review 3 1 haiku
 
 # Review only staged files
 /review 5 2 staged
+
+# Impact-radius review
+/review impact
 
 # Review a specific file
 /review 3 1 src/components/Button.tsx
@@ -275,6 +348,10 @@ Includes summary of existing PR discussion and unresolved comments.
 
 # Review specific PR
 /review pr 123
+
+# Security audit
+/review security
+/review security --owasp
 ```
 
 ## Serena-Powered Semantic Analysis
@@ -370,3 +447,5 @@ All review report tables MUST use emoji-prefixed headers for visual scanning:
 - Use `/repotodo` to process findings
 - Re-run `/review` after fixes to verify
 - Prefer Serena tools for semantic code analysis
+- Hard cap: 10 agents maximum
+- Default model: Sonnet 4.5 (cost-effective for bulk scanning)

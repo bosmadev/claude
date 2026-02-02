@@ -1,5 +1,6 @@
 ---
 name: nextjs-specialist
+specialty: nextjs
 description: Use this agent when working with Next.js applications. Expertise in React Server Components (RSC), App Router, middleware, Server Actions, caching strategies, and Next.js 16+ patterns. Connects to /quality for React and TypeScript rules. Examples:
 
 <example>

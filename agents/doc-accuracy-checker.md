@@ -1,5 +1,7 @@
 ---
 name: doc-accuracy-checker
+specialty: documentation
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent to verify that documentation (docstrings, README files, inline comments) accurately reflects the current code implementation. This agent should be invoked before commits, during PR reviews, or when documentation drift is suspected. It connects to the guards.py hook which guards critical documentation files.
 
 Examples:

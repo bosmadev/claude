@@ -1,6 +1,6 @@
 # Claude Code Configuration
 
-#### Based on claude-code: 2.1.20
+#### Based on claude-code: 2.1.29
 
 **Stack:** Next.js 16.1+, React 19+, Node.js 25+, Python 3.14+, FastAPI, TypeScript 5.9.3+, Tailwind CSS v4+, Shadcn UI, Radix, Playwright, Vitest, Biome 2.3.10+, Knip 5.77.1+, uv 0.9.18+, pnpm 10.26.2+.
 
@@ -20,7 +20,8 @@
 │   ├── api-reviewer.md
 │   ├── build-error-resolver.md
 │   ├── commit-reviewer.md
-│   └── ... (19 files total)
+│   ├── verify-fix.md          # Verify+Fix phase agent
+│   └── ... (20 files total)
 ├── hooks\                      # Claude Code hook handlers
 │   ├── guards.py              # Skill parser, plan validation
 │   ├── ralph.py               # Ralph protocol hooks (wrapper)
@@ -41,8 +42,8 @@
 │   ├── repotodo\              # /repotodo - TODO processor
 │   ├── review\                # /review - Code review
 │   ├── reviewplan\            # /reviewplan - Plan comments
-│   ├── scraper\               # /scraper - Web scraping
 │   ├── screen\                # /screen - Screenshots
+│   ├── serena-workflow\       # /serena-workflow - Serena guide
 │   ├── start\                 # /start - Ralph autonomous dev
 │   ├── token\                 # /token - Token management
 │   └── youtube\               # /youtube - Transcriptions
@@ -180,102 +181,29 @@ When fetching web content (research, scouting, documentation), use this fallback
 
 ```
 1. WebFetch(url)              → Fast, public URLs
-2. agent-browser snapshot     → Headless, most sites work
-3. playwriter navigate        → If auth/session needed
-4. browser-use               → If Cloudflare/captcha
-5. cyberscraper --patchright → If bot detection
-6. chrome-mcp                → Debug why failing
+2. Playwriter navigate        → If auth/session needed
+3. claude-in-chrome            → Debug/inspect via DevTools
 ```
 
 ### Browser Selection
 
-| Scenario            | Browser                   |
-| ------------------- | ------------------------- |
-| Simple public page  | WebFetch or agent-browser |
-| Requires login/auth | Playwriter                |
-| Cloudflare/captcha  | Browser-Use               |
-| Bot detection       | Patchright (cyberscraper) |
-| Debug/inspect       | Chrome MCP                |
+| Scenario            | Browser          |
+| ------------------- | ---------------- |
+| Simple public page  | WebFetch         |
+| Requires login/auth | Playwriter       |
+| Debug/inspect       | claude-in-chrome |
 
 **For subagents fetching web content:** Always include this fallback chain in prompts.
 
 ### Browser Capability Matrix
 
-| Browser        | Auth | Stealth | Captcha | CDP | Best For              |
-| -------------- | ---- | ------- | ------- | --- | --------------------- |
-| WebFetch       | No   | No      | No      | No  | Simple public pages   |
-| agent-browser  | No   | Yes     | No      | Yes | Headless automation   |
-| Playwriter MCP | Yes  | Yes     | No      | Yes | Auth flows, sessions  |
-| Browser-Use    | Yes  | Yes     | Yes     | Yes | Cloudflare bypass     |
-| CyberScraper   | Yes  | Yes++   | Yes     | Yes | Bot detection evasion |
-| Chrome MCP     | Yes  | No      | No      | Yes | Debugging, inspection |
+| Browser          | Auth | CDP | Best For              |
+| ---------------- | ---- | --- | --------------------- |
+| WebFetch         | No   | No  | Simple public pages   |
+| Playwriter MCP   | Yes  | Yes | Auth flows, sessions  |
+| claude-in-chrome | Yes  | Yes | DevTools, inspection  |
 
 **Note:** Serena is for CODE ANALYSIS only - NOT a browser. Ralph hooks/scripts and skills MUST use Serena for semantic code operations.
-
-### Smart Browser Router
-
-Use `~/.claude\scripts\browser-router.py` for programmatic browser selection:
-
-```python
-from browser_router import select_browser
-browser = select_browser("https://example.com", {"auth": True, "stealth": True})
-```
-
-```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#0c0c14', 'primaryTextColor': '#fcd9b6', 'primaryBorderColor': '#c2410c', 'lineColor': '#ea580c', 'secondaryColor': '#18181b', 'background': '#09090b', 'mainBkg': '#0c0c14', 'edgeLabelBackground': '#18181b'}}}%%
-graph TD
-    A["URL + Requirements"] --> B(["Captcha?"])
-    B -->|Yes| C(["Stealth?"])
-    C -->|Yes| D["CyberScraper"]
-    C -->|No| E["Browser-Use"]
-    B -->|No| F(["Auth?"])
-    F -->|Yes| G["Playwriter MCP"]
-    F -->|No| H(["Stealth?"])
-    H -->|Yes| I["agent-browser"]
-    H -->|No| J["WebFetch"]
-    K["Chrome MCP"] -.->|Debug| D & E & G & I & J
-
-    style A fill:#0c0c14,stroke:#ea580c,stroke-width:3px,color:#fcd9b6
-    style B fill:#18181b,stroke:#fb923c,stroke-width:3px,color:#fff7ed
-    style C fill:#18181b,stroke:#fb923c,stroke-width:3px,color:#fff7ed
-    style F fill:#18181b,stroke:#fb923c,stroke-width:3px,color:#fff7ed
-    style H fill:#18181b,stroke:#fb923c,stroke-width:3px,color:#fff7ed
-    style D fill:#09090b,stroke:#16a34a,stroke-width:3px,color:#dcfce7
-    style E fill:#09090b,stroke:#16a34a,stroke-width:3px,color:#dcfce7
-    style G fill:#09090b,stroke:#16a34a,stroke-width:3px,color:#dcfce7
-    style I fill:#09090b,stroke:#16a34a,stroke-width:3px,color:#dcfce7
-    style J fill:#09090b,stroke:#16a34a,stroke-width:3px,color:#dcfce7
-    style K fill:#1e1b4b,stroke:#8b5cf6,stroke-width:3px,color:#f3e8ff
-```
-
-### Dual Verification Flow
-
-For critical checks, use two different browsers to cross-verify results:
-
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-graph TD
-    A["Start Verification"] --> B["WebFetch: Quick check"]
-    B --> C{"JS Needed?"}
-    C -->|No| D["Primary Result"]
-    C -->|Yes| E["agent-browser: JS render"]
-    E --> D
-    D --> F["Playwriter: Secondary check"]
-    F --> G{"Results Match?"}
-    G -->|Yes| H["Verified"]
-    G -->|No| I["Chrome MCP: Debug"]
-    I --> J["Screenshots + Report"]
-```
-
-### Browser Pairing Matrix
-
-| Primary       | Secondary     | Use Case                         |
-| ------------- | ------------- | -------------------------------- |
-| WebFetch      | agent-browser | Public pages, JS rendering check |
-| agent-browser | Playwriter    | Headless vs headed comparison    |
-| Playwriter    | Browser-Use   | Auth flow verification           |
-| Browser-Use   | CyberScraper  | Bot detection consistency        |
-| Any           | Chrome MCP    | Debug discrepancies              |
 
 ### Work-Stealing Queue
 
@@ -390,17 +318,107 @@ graph TD
 
 **Exception:** Read-only agents (reviewers, analyzers) that make no commits bypass this gate.
 
+### Layer 7: VERIFY+FIX Phase
+
+After implementation agents complete, VERIFY+FIX agents run before review:
+
+```
+PLAN → IMPLEMENT → VERIFY+FIX → REVIEW → COMPLETE
+```
+
+**VERIFY+FIX agents:**
+- Run build checks, type checks, lint
+- Use Serena for symbol integrity verification
+- Auto-fix simple issues (imports, types, formatting)
+- Escalate complex issues via AskUserQuestion
+- Do NOT leave TODO comments — fix or escalate
+- Config: `agents/verify-fix.md`
+
+### Hook Registration Table
+
+All hooks registered in `settings.json`:
+
+| Hook Event | Matcher | Handler | Timeout | Phase |
+|-----------|---------|---------|---------|-------|
+| Setup | - | `token-guard.py check` | 60s | 1 |
+| Setup | - | `setup.py validate-symlinks` | 30s | 1 |
+| Stop | - | `ralph.py stop` | 30s | 1 |
+| Stop | - | `claudeChangeStop.js` | 5s | 1 |
+| SessionStart | startup\|resume | `utils.py model-capture` | 5s | 2 |
+| SessionStart | - | `ralph.py session-start` | 10s | 1 |
+| PreCompact | - | `ralph.py pre-compact` | 10s | 1 |
+| PreToolUse | Read | `auto-allow.py` | 5s | 1 |
+| PreToolUse | Bash | `git.py pre-commit-checks` | 5s | 1 |
+| PreToolUse | MultiEdit\|Edit\|Write | `auto-allow.py` | 5s | 1 |
+| PreToolUse | MultiEdit\|Edit\|Write | `claudeChangePreToolUse.js` | 5s | 1 |
+| PreToolUse | Task | `ralph.py hook-pretool` | 10s | 1 |
+| PostToolUse | Bash | `git.py command-history` | 5s | 1 |
+| PostToolUse | Edit\|Write | `git.py change-tracker` | 5s | 1 |
+| PostToolUse | Edit\|Write | `guards.py guardian` | 5s | 1 |
+| PostToolUse | Edit\|Write | `guards.py plan-write-check` | 5s | 1 |
+| PostToolUse | Edit\|Write | `guards.py hook-sync` | 5s | 1 |
+| PostToolUse | Edit\|Write | `guards.py insights-reminder` | 5s | 1 |
+| PostToolUse | ExitPlanMode | `guards.py ralph-enforcer` | 10s | 1 |
+| PostToolUse | Task | `ralph.py agent-tracker` | 10s | 1 |
+| PostToolUse | Skill | `guards.py skill-validator` | 5s | 1 |
+| PostToolUse | Skill | `post-review.py hook` | 30s | 2 |
+| UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | 1 |
+| UserPromptSubmit | ^/start | `guards.py skill-parser` | 5s | 1 |
+| UserPromptSubmit | - | `guards.py plan-comments` | 5s | 1 |
+| SubagentStart | - | `ralph.py hook-subagent-start` | 10s | 3 |
+| SubagentStop | - | `ralph.py hook-subagent-stop` | 10s | 3 |
+| Notification | permission_prompt | `utils.py notify` | 10s | 1 |
+
+### Agent Frontmatter Fields
+
+Agent config files (`agents/*.md`) support these frontmatter fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Agent identifier (required) |
+| `specialty` | string | Domain specialty for auto-assignment |
+| `disallowedTools` | list | Tools this agent cannot use (reviewers: `[Write, Edit, MultiEdit]`) |
+| `description` | string | When to invoke this agent |
+
+**Auto-assignment:** `match_agent_to_task()` in ralph.py scores tasks against `AGENT_SPECIALTIES` keyword lists to assign the best-fit agent config.
+
+### Performance Tracking
+
+Ralph tracks per-agent metrics via `PerformanceTracker`:
+
+| Metric | Description |
+|--------|-------------|
+| `cost_usd` | API cost per agent |
+| `num_turns` | API round-trips per agent |
+| `duration_seconds` | Wall-clock time per agent |
+| `avg_cost_per_agent` | Mean cost across completed agents |
+
+Progress file: `.claude/ralph/progress.json` (includes `performance` summary)
+
+### Budget Guard
+
+Use `--budget` flag to cap total spending:
+
+```bash
+ralph.py loop 10 3 --budget 5.00 "Implement feature"
+```
+
+When cumulative cost exceeds the budget, remaining agents are skipped with `BUDGET` status.
+
 ## Skill Commands Reference
 
 ### /start - Ralph Autonomous Development
 
 | Command                                    | Description                              |
 | ------------------------------------------ | ---------------------------------------- |
-| `/start`                                 | 3 agents, 3 iterations, enters plan mode |
+| `/start`                                 | 3 agents, 3 iterations, Opus, plan mode  |
 | `/start [task]`                          | 3 agents, 3 iterations with task         |
 | `/start [N]`                             | N agents, 3 iterations                   |
 | `/start [N] [M]`                         | N agents, M iterations                   |
 | `/start [N] [M] [task]`                  | N agents, M iterations with task         |
+| `/start sonnet [task]`                   | Sonnet plan → Opus impl                 |
+| `/start sonnet all [task]`               | Sonnet ALL phases (budget mode)          |
+| `/start [N] [M] sonnet [task]`           | N agents, M iter, Sonnet plan → Opus    |
 | `/start [N] [M] noreview [task]`         | Skip post-implementation review          |
 | `/start [N] [M] review [rN] [rM] [task]` | Custom review: rN agents, rM iterations  |
 | `/start [N] [M] import <source>`         | Import from PRD/YAML/GitHub              |
@@ -410,14 +428,19 @@ graph TD
 
 ### /review - Multi-Aspect Code Review
 
-| Command                      | Description                              |
-| ---------------------------- | ---------------------------------------- |
-| `/review`                  | Run ALL aspects (5 agents, 2 iterations) |
-| `/review [N] [M]`          | N agents, M iterations                   |
-| `/review pr [number]`      | Review specific PR                       |
-| `/review security`         | Security-focused OWASP audit             |
-| `/review security --owasp` | Full OWASP Top 10 audit                  |
-| `/review help`             | Show usage                               |
+| Command                           | Description                                |
+| --------------------------------- | ------------------------------------------ |
+| `/review`                       | 10 agents, 3 iter, Sonnet 4.5, working tree |
+| `/review [N] [M]`               | N agents, M iterations, Sonnet 4.5         |
+| `/review [N] [M] opus`          | N agents, M iterations, Opus 4.5           |
+| `/review [N] [M] haiku`         | N agents, M iterations, Haiku              |
+| `/review working`               | Working tree only (R1)                     |
+| `/review impact`                | Working tree + Serena impact radius (R2)   |
+| `/review branch`                | Full branch diff since main (R3)           |
+| `/review pr [number]`           | Review specific PR                         |
+| `/review security`              | Security-focused OWASP audit               |
+| `/review security --owasp`      | Full OWASP Top 10 audit                    |
+| `/review help`                  | Show usage                                 |
 
 ### /quality - Code Quality and Configuration
 
@@ -430,16 +453,16 @@ graph TD
 | `/quality rule "<text>"` | Add behavior rule                        |
 | `/quality help`          | Show usage                               |
 
-### /commit - Git Commit Workflow
+### /commit - Git Commit Workflow (scope-prefix style)
 
-| Command             | Description                |
-| ------------------- | -------------------------- |
-| `/commit`         | Generate pending-commit.md |
-| `/commit confirm` | Execute pending commit     |
-| `/commit abort`   | Cancel pending commit      |
-| `/commit show`    | Show pending changes       |
-| `/commit clear`   | Clear change log           |
-| `/commit help`    | Show usage                 |
+| Command             | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `/commit`         | Generate pending-commit.md (scope: description) |
+| `/commit confirm` | Execute pending commit + auto-cleanup          |
+| `/commit abort`   | Cancel pending commit                          |
+| `/commit show`    | Show pending changes                           |
+| `/commit clear`   | Clear change log                               |
+| `/commit help`    | Show usage                                     |
 
 ### /openpr - Create Pull Request
 
@@ -498,7 +521,7 @@ graph TD
 | Command                      | Description                                          |
 | ---------------------------- | ---------------------------------------------------- |
 | `/launch`                  | Start server + visual verification                   |
-| `/launch --only <browser>` | Single browser (chrome-mcp/agent-browser/playwriter) |
+| `/launch --only <browser>` | Single browser (chrome-mcp/playwriter/system) |
 | `/launch help`             | Show usage                                           |
 
 ### /screen - Screenshot Management
@@ -522,16 +545,6 @@ graph TD
 | `/youtube delete <id>` | Delete transcription |
 | `/youtube delete all`  | Delete all           |
 | `/youtube help`        | Show usage           |
-
-### /scraper - Web Scraping
-
-| Command                         | Description         |
-| ------------------------------- | ------------------- |
-| `/scraper <url>`              | Auto-select browser |
-| `/scraper <url> --stealth`    | Stealth mode        |
-| `/scraper <url> --tor`        | Route through Tor   |
-| `/scraper <url> --pages 1-10` | Multi-page          |
-| `/scraper help`               | Show usage          |
 
 ### /token - Claude GitHub Token Management
 
@@ -593,3 +606,30 @@ Use these checkpoints during complex tasks:
 | `mcp__serena__think_about_collected_information` | After gathering context     |
 | `mcp__serena__think_about_task_adherence`        | Before making changes       |
 | `mcp__serena__think_about_whether_you_are_done`  | Before reporting completion |
+
+## 3-Layer Model Routing
+
+Token-efficient model assignment via permanent, native mechanisms:
+
+| Layer | Mechanism | Scope | Effect |
+|-------|-----------|-------|--------|
+| **L1: Global Default** | `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` in `settings.json` env | ALL subagents | All forked skills run as Sonnet |
+| **L2: Skill Fork** | `context: fork` in SKILL.md frontmatter | The skill itself | Skill runs as Sonnet subagent (via L1) |
+| **L3: Per-Agent Override** | `model="opus"` in `Task()` calls | Individual agents | Overrides L1 for agents needing Opus |
+
+### Skills Model Assignment
+
+| Skill | Fork? | Model | Rationale |
+|-------|-------|-------|-----------|
+| `/start` | No | Opus (main) | Complex orchestration, spawns Opus agents (L3) |
+| `/repotodo` | No | Opus (main) | Critical code changes across files |
+| `/quality` | No | Opus (main) | Security/architecture analysis |
+| `/reviewplan` | No | Opus (main) | Spawns research agents |
+| `/review` | No fork | Opus (main) | Spawns Task agents with model="sonnet" |
+| `/commit` | Fork | Sonnet (L1) | Pattern matching, no code changes |
+| `/openpr` | Fork | Sonnet (L1) | Reads commits, generates PR body |
+| `/chats` | Fork | Sonnet (L1) | List/rename/delete operations |
+| `/screen` | Fork | Sonnet (L1) | Screenshot management |
+| `/youtube` | Fork | Sonnet (L1) | Transcription management |
+| `/launch` | Fork | Sonnet (L1) | Browser verification |
+| `/token` | Fork | Sonnet (L1) | Token status/refresh |

@@ -1,5 +1,7 @@
 ---
 name: a11y-reviewer
+specialty: accessibility
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent for accessibility compliance checking, WCAG AAA validation, screen reader compatibility testing, and inclusive design review. This agent should be invoked when reviewing UI components for accessibility, ensuring keyboard navigation works, or verifying color contrast meets standards. It provides actionable fixes for accessibility violations.
 
 Examples:

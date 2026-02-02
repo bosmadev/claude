@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Create commits with branch-aware naming ({branch}-{increment}). Reads from .claude/commit.md and generates .claude/pending-commit.md for review before committing.
+description: Create commits with scope-prefix style. Reads from .claude/commit.md and generates .claude/pending-commit.md for review before committing.
 user-invocable: true
 context: fork
 ---
@@ -9,7 +9,7 @@ context: fork
 
 **When invoked, immediately output:** `**SKILL_STARTED:** commit`
 
-Create git commits with branch-aware naming and action verb bullet style.
+Create git commits with scope-prefix style and action verb bullet format.
 
 ## Usage
 
@@ -41,7 +41,7 @@ Create git commits with branch-aware naming and action verb bullet style.
 When arguments equal "help":
 
 ```
-/commit - Create commits with branch-aware naming
+/commit - Create commits with scope-prefix style
 
 Usage:
   /commit [command]
@@ -85,38 +85,24 @@ Examples:
 
 ## Naming Convention
 
-Commits follow the format: `{branch}-{increment}`
+Commits use scope-prefix style — no branch numbering. Squash-merge collapses them anyway.
 
-| Branch | First Commit | Second Commit |
-|--------|--------------|---------------|
-| `main` | `main-1` | `main-2` |
-| `b101` | `b101-1` | `b101-2` |
-| `feature/login` | `feature-login-1` | `feature-login-2` |
+**Format:** `scope: descriptive summary`
 
-## Branch Detection
+| Scope | When to Use | Example |
+|-------|-------------|---------|
+| `feat` | New features or functionality | `feat: add user avatar component` |
+| `fix` | Bug fixes | `fix: resolve token expiry race condition` |
+| `refactor` | Code restructuring, no behavior change | `refactor: extract auth middleware` |
+| `cleanup` | Removing dead code, simplifying | `cleanup: remove unused browser integrations` |
+| `docs` | Documentation only | `docs: update API endpoint reference` |
+| `config` | Configuration, CI, tooling | `config: add Haiku model to CI workflow` |
+| `test` | Test additions or fixes | `test: add E2E tests for checkout flow` |
+| `perf` | Performance improvements | `perf: parallelize git status queries` |
 
-The skill detects the current branch from two sources:
-
-### 1. Git Branch (Primary)
-
-```bash
-git branch --show-current
-```
-
-### 2. Worktree Folder Name (Fallback)
-
-For git worktrees, extracts branch from the folder name:
-
-```
-C:\Users\user\project\b101  -> branch: b101
-C:\Users\user\gswarm-api\main -> branch: main
-```
-
-Detection logic:
-```bash
-# Get the worktree directory name
-basename "$(git rev-parse --show-toplevel)"
-```
+For large commits spanning multiple scopes, pick the dominant one or use a general scope:
+- `config: Windows migration + Serena workflow integration`
+- `cleanup: browser removal + statusline restructure`
 
 ## Workflow
 
@@ -134,12 +120,10 @@ basename "$(git rev-parse --show-toplevel)"
    - Try `git branch --show-current`
    - If detached HEAD or empty, use worktree folder name
 
-4. **Calculate increment**
-   ```bash
-   # Find last commit matching {branch}-{N} pattern
-   git log --oneline --all | grep -E "^[a-f0-9]+ ${branch}-[0-9]+" | head -1
-   # Extract N and increment
-   ```
+4. **Generate scope-prefix subject**
+   - Analyze changes to determine dominant scope (feat/fix/refactor/cleanup/config/docs/test/perf)
+   - Write descriptive summary after the colon
+   - No branch numbering — squash-merge collapses commits
 
 5. **Auto-encrypt .env files (if dotenvx configured)**
    ```bash
@@ -161,7 +145,7 @@ basename "$(git rev-parse --show-toplevel)"
 6. **Generate .claude/pending-commit.md**:
 
 ```markdown
-{branch}-{increment}
+scope: descriptive summary of changes
 
 - Added new-file.ts
 - Updated existing-file.ts
@@ -179,7 +163,7 @@ Extended description here if needed.
 ```
 
 **Note:** The format uses NO markdown headings - just plain text:
-- **Line 1** → Commit subject (`{branch}-{increment}`)
+- **Line 1** → Commit subject (`scope: description`)
 - **Lines 2+** → Bullet list with action verbs (Added, Updated, Fixed, etc.)
 - **After bullets** → Optional extended description (blank line, then body text)
 
@@ -196,13 +180,13 @@ When user runs `/commit confirm`:
 
    Example pending-commit.md:
    ```
-   main-42
+   feat: add JWT authentication
 
    - Added auth.ts, jwt.ts, types/auth.ts
    - Updated middleware/index.ts
    ```
    Parsed as:
-   - Subject: `main-42`
+   - Subject: `feat: add JWT authentication`
    - Body: `- Added auth.ts...` (everything after blank line)
 
 3. **Validate all files are staged**
@@ -304,24 +288,6 @@ For semantic context (Fixed, Improved, Changed), manually specify in description
 
 ## Implementation Details
 
-### Get Last Commit Number
-
-```bash
-#!/bin/bash
-branch="$1"
-# Sanitize branch name for commit ID (replace / with -)
-safe_branch=$(echo "$branch" | tr '/' '-')
-
-# Search commit messages for pattern
-last_num=$(git log --oneline -100 | grep -oE "^[a-f0-9]+ ${safe_branch}-([0-9]+)" | head -1 | grep -oE '[0-9]+$')
-
-if [ -z "$last_num" ]; then
-    echo 1
-else
-    echo $((last_num + 1))
-fi
-```
-
 ### Parse Commit Log
 
 Read `.claude/commit.md` to extract:
@@ -336,7 +302,7 @@ User: /commit
 
 Claude: Generated .claude/pending-commit.md:
 
-main-42
+feat: add JWT authentication
 
 - Added auth.ts, jwt.ts, types/auth.ts
 - Updated middleware/index.ts
@@ -345,13 +311,9 @@ Run `/commit confirm` to create this commit, or `/commit abort` to cancel.
 
 User: /commit confirm
 
-Claude: Commit created: main-42 (a1b2c3d)
-
-Delete .claude/pending-commit.md and clear .claude/commit.md? (yes/no)
-
-User: yes
-
-Claude: Cleaned up commit files.
+Claude: Commit created: feat: add JWT authentication (a1b2c3d)
+Pushed to origin/main.
+Cleaned up commit files (pending-commit.md deleted, commit.md cleared).
 ```
 
 ## Integration with Change Tracking

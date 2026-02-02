@@ -1,5 +1,6 @@
 ---
 name: build-error-resolver
+specialty: build
 description: Use this agent to diagnose and resolve build errors, TypeScript compilation failures, and dependency issues. This agent should be invoked when builds fail, TypeScript reports errors, or dependency resolution breaks. It connects to the /start skill's RALPH mode for autonomous error resolution loops.
 
 Examples:

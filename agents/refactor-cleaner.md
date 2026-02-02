@@ -1,5 +1,6 @@
 ---
 name: refactor-cleaner
+specialty: refactoring
 description: Use this agent when the user needs to remove dead code, find duplicated code, simplify overly complex functions, or clean up technical debt. Connects to /quality for Knip dead-code detection and complexity analysis. Examples:
 
 <example>
