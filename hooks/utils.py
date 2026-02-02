@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""Desktop Utilities Hook - Focus and notification handlers.
+"""Desktop Utilities Hook - Focus, notification, and model capture handlers.
 
 Cross-platform replacement for utils.sh. Supports Windows (ctypes/PowerShell)
 and Linux (wmctrl/xdotool/notify-send/paplay).
 
 Usage:
-    utils.py focus [cwd]   # Focus appropriate window
-    utils.py notify        # Show notification with sound (reads JSON from stdin)
+    utils.py focus [cwd]      # Focus appropriate window
+    utils.py notify           # Show notification with sound (reads JSON from stdin)
+    utils.py model-capture    # Capture model ID from SessionStart hook (reads JSON from stdin)
 """
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Platform detection
@@ -349,6 +352,106 @@ def do_notify() -> None:
 
 
 # ===========================================================================
+# Model capture mode (SessionStart hook)
+# ===========================================================================
+
+# Model ID patterns:
+#   claude-opus-4-5-20251101   → Opus 4.5
+#   claude-sonnet-5-20260201   → Sonnet 5
+#   claude-haiku-3-5-20241022  → Haiku 3.5
+# Strategy: try major-minor-date first, fall back to major-date
+_MODEL_PATTERN_FULL = re.compile(
+    r"claude-(?P<family>[a-z]+)-(?P<major>\d+)-(?P<minor>\d{1,2})-(?P<date>\d{8,})",
+    re.IGNORECASE,
+)
+_MODEL_PATTERN_SHORT = re.compile(
+    r"claude-(?P<family>[a-z]+)-(?P<major>\d+)-(?P<date>\d{8,})",
+    re.IGNORECASE,
+)
+
+# Fallback for short names: "opus", "sonnet", "haiku"
+_SHORT_NAMES = {
+    "opus": {"family": "Opus", "version": "4.5"},
+    "sonnet": {"family": "Sonnet", "version": "4.5"},
+    "haiku": {"family": "Haiku", "version": "3.5"},
+}
+
+
+def parse_model_id(model_id: str) -> dict:
+    """Parse a model ID string into structured info.
+
+    Examples:
+        claude-opus-4-5-20251101 → { family: "Opus", version: "4.5", date: "20251101", raw: "..." }
+        claude-sonnet-5-20260201 → { family: "Sonnet", version: "5", date: "20260201", raw: "..." }
+        opus                     → { family: "Opus", version: "4.5", date: "", raw: "opus" }
+    """
+    result = {"family": "Claude", "version": "", "date": "", "raw": model_id, "display": "Claude"}
+
+    if not model_id:
+        return result
+
+    # Try full pattern (major-minor-date) first, then short (major-date)
+    m = _MODEL_PATTERN_FULL.match(model_id) or _MODEL_PATTERN_SHORT.match(model_id)
+    if m:
+        family = m.group("family").capitalize()
+        major = m.group("major") or ""
+        minor = m.group("minor") if "minor" in m.groupdict() and m.group("minor") else ""
+        date = m.group("date") or ""
+
+        version = f"{major}.{minor}" if minor else major
+        result.update({
+            "family": family,
+            "version": version,
+            "date": date,
+            "display": f"{family} {version}" if version else family,
+        })
+        return result
+
+    # Try short name lookup
+    short = model_id.strip().lower().split()[0]
+    if short in _SHORT_NAMES:
+        info = _SHORT_NAMES[short]
+        result.update({
+            "family": info["family"],
+            "version": info["version"],
+            "display": f"{info['family']} {info['version']}",
+        })
+        return result
+
+    # Fallback: capitalize first word
+    first_word = model_id.strip().split()[0]
+    result.update({"family": first_word.capitalize(), "display": first_word.capitalize()})
+    return result
+
+
+def do_model_capture() -> None:
+    """Capture model ID from SessionStart hook input, write to ~/.claude/.model-info."""
+    raw = _read_stdin_with_timeout(5)
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        data = {}
+
+    model_id = data.get("model", "")
+    if not model_id:
+        # Try nested structure
+        model_id = data.get("session", {}).get("model", "") if isinstance(data.get("session"), dict) else ""
+
+    parsed = parse_model_id(model_id)
+
+    # Write to ~/.claude/.model-info
+    model_info_path = Path.home() / ".claude" / ".model-info"
+    try:
+        model_info_path.parent.mkdir(parents=True, exist_ok=True)
+        model_info_path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+    # Return success (SessionStart hooks use simple schema)
+    sys.stdout.write('{"continue":true,"suppressOutput":true}')
+
+
+# ===========================================================================
 # Main entry point
 # ===========================================================================
 
@@ -361,7 +464,7 @@ def main() -> None:
         signal.signal(signal.SIGHUP, lambda *_: sys.exit(0))
 
     if len(sys.argv) < 2:
-        print("Usage: utils.py [focus|notify] [args...]", file=sys.stderr)
+        print("Usage: utils.py [focus|notify|model-capture] [args...]", file=sys.stderr)
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -371,8 +474,10 @@ def main() -> None:
         do_focus(cwd)
     elif mode == "notify":
         do_notify()
+    elif mode == "model-capture":
+        do_model_capture()
     else:
-        print("Usage: utils.py [focus|notify] [args...]", file=sys.stderr)
+        print("Usage: utils.py [focus|notify|model-capture] [args...]", file=sys.stderr)
         sys.exit(1)
 
 

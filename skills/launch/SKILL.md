@@ -17,7 +17,7 @@ Interactive launch tool with animated orange-themed UI providing:
 - Dev server modes (debug + standard, hot reload)
 - Production server mode (optimized build)
 - Cloudflare tunnel support for public access
-- ALL 4 browsers enabled by default
+- ALL 3 browsers enabled by default
 - Interactive browser toggle menu
 - Automatic process cleanup and cache clearing
 - System stats display (CPU, RAM, Node memory)
@@ -47,7 +47,6 @@ CLI Flags:
 Browsers (ALL enabled by default):
   system         - System default browser (start / Start-Process)
   playwriter     - Playwriter MCP (auth/sessions)
-  agent-browser  - Agent Browser (headless, fast)
   chrome-mcp     - Chrome MCP (DevTools, inspection)
 
 Examples:
@@ -63,7 +62,7 @@ Examples:
 
 - `/launch` - Opens interactive menu with all modes
 - `/launch --only=<browser>` - Single browser mode
-  - Valid: `system`, `playwriter`, `agent-browser`, `chrome-mcp`
+  - Valid: `system`, `playwriter`, `chrome-mcp`
 - `/launch --skip=<browser>` - Skip specific browser(s)
 - `/launch help` - Show usage information
 
@@ -80,19 +79,18 @@ Examples:
 
 ## Browser Configuration
 
-All 4 browsers are **enabled by default**:
+All 3 browsers are **enabled by default**:
 
 | Browser | Name | Description |
 |---------|------|-------------|
 | `system` | System Browser | Opens URL in system default (start / Start-Process) |
 | `playwriter` | Playwriter MCP | Chrome extension, maintains auth/sessions |
-| `agent-browser` | Agent Browser | Lightweight headless, fast screenshots |
 | `chrome-mcp` | Chrome MCP | Full DevTools access, network inspection |
 
 ### Browser Toggle Menu
 
 Press `B` from main menu to toggle browsers:
-- Press `1-4` to toggle individual browsers
+- Press `1-3` to toggle individual browsers
 - Press `A` to enable all
 - Press `N` to disable all
 - Press `0` to return to main menu
@@ -135,7 +133,6 @@ Before starting any server:
 | Browser | Use For |
 |---------|---------|
 | **Chrome MCP** | DevTools, network inspection, console logs, DOM debugging |
-| **agent-browser** | Quick screenshots, element snapshots, lightweight checks |
 | **Playwriter** | If the app requires login/authenticated session |
 | **System** | Visual verification in your daily driver browser |
 
@@ -143,7 +140,6 @@ Before starting any server:
 
 ```
 Need DevTools/network/console?  - Chrome MCP
-Quick visual check?             - agent-browser
 App requires login?             - Playwriter
 Manual testing?                 - System browser
 ```
@@ -154,9 +150,9 @@ For critical visual verification, check with multiple browsers:
 
 | Task | Primary | Verification |
 |------|---------|--------------|
-| UI layout check | Chrome MCP | agent-browser |
+| UI layout check | Chrome MCP | Playwriter |
 | Network debugging | Chrome MCP | Playwriter |
-| Visual regression | agent-browser | Chrome MCP |
+| Visual regression | Chrome MCP | System |
 
 ### Discrepancy Report Format
 
@@ -299,75 +295,7 @@ mcp__claude-in-chrome__form_input(ref: "ref_2", value: "test@example.com", tabId
 
 ---
 
-### Browser 3: agent-browser
-
-**Status:** Installed at `C:\Users\Dennis\.claude\agent-browser-npm\`
-
-> **Note:** agent-browser requires separate installation via npm. If not installed, use other browser options.
-
-**Capabilities:**
-- Lightweight headless Chromium (Playwright-based)
-- Fast screenshot capture
-- Ref-based element selection (AI-friendly)
-- Low resource usage
-- Session isolation support
-- CDP mode for connecting to existing browsers
-
-**Core Workflow:**
-
-```bash
-# 1. Navigate to URL
-~/.claude/bin/agent-browser open http://localhost:3000
-
-# 2. Get accessibility tree with refs (@e1, @e2, etc.)
-~/.claude/bin/agent-browser snapshot -i      # Interactive elements only
-~/.claude/bin/agent-browser snapshot -c      # Compact mode
-~/.claude/bin/agent-browser snapshot --json  # Machine-readable
-
-# 3. Interact using refs
-~/.claude/bin/agent-browser click @e1
-~/.claude/bin/agent-browser fill @e2 "test@example.com"
-~/.claude/bin/agent-browser type @e3 "search query"
-
-# 4. Capture screenshot
-~/.claude/bin/agent-browser screenshot ./verification.png
-~/.claude/bin/agent-browser screenshot --full ./fullpage.png
-
-# 5. Get element info
-~/.claude/bin/agent-browser get text @e1
-~/.claude/bin/agent-browser get value @e2
-~/.claude/bin/agent-browser is visible @e3
-
-# 6. Close browser
-~/.claude/bin/agent-browser close
-```
-
-**Advanced Features:**
-
-```bash
-# Sessions (isolated browser instances)
-~/.claude/bin/agent-browser --session agent1 open site-a.com
-~/.claude/bin/agent-browser --session agent2 open site-b.com
-
-# CDP mode (connect to existing browser)
-~/.claude/bin/agent-browser connect 9222
-~/.claude/bin/agent-browser --cdp 9222 snapshot
-
-# Headed mode (visible browser for debugging)
-~/.claude/bin/agent-browser open example.com --headed
-
-# Authentication headers
-~/.claude/bin/agent-browser open api.example.com --headers '{"Authorization": "Bearer <token>"}'
-
-# Wait commands
-~/.claude/bin/agent-browser wait "#element"        # Wait for element
-~/.claude/bin/agent-browser wait 2000              # Wait 2 seconds
-~/.claude/bin/agent-browser wait --text "Welcome"  # Wait for text
-```
-
----
-
-### Browser 4: Playwriter MCP
+### Browser 3: Playwriter MCP
 
 **Status:** Configured via mcpServers (`mcp__playwriter__*`) + Chrome extension
 
@@ -450,12 +378,9 @@ mcp__playwriter__browser_take_screenshot(filename: "result.png")
 | Console error inspection | Chrome MCP | DevTools protocol |
 | Recording GIFs of interactions | Chrome MCP | Built-in recording |
 | Quick DOM inspection | Chrome MCP | DevTools protocol |
-| Quick visual check | agent-browser | Lightweight, fast |
-| Headless screenshot capture | agent-browser | Session isolation |
-| CI/CD automated testing | agent-browser | Low resource usage |
 | App requires login/auth | Playwriter | Session persistence |
 | Form testing | Playwriter | Field type awareness |
 | Accessibility testing | Playwriter | Snapshot-based |
 | Manual user testing | System | Full browser features |
 
-**Note:** For web scraping/research (not app debugging), see `/scraper` skill or use the Web Research Fallback Chain in CLAUDE.md.
+**Note:** For web research (not app debugging), use the Web Research Fallback Chain in CLAUDE.md.

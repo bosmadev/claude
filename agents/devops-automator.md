@@ -1,5 +1,6 @@
 ---
 name: devops-automator
+specialty: devops
 description: Use this agent to create, review, and optimize CI/CD pipelines, deployment configurations, and infrastructure automation. Invoke when setting up new pipelines, debugging deployment failures, or optimizing build times. Connects to /start for RALPH-orchestrated deployments.
 
 Examples:

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Claude Code Statusline Script (Python port of statusline.sh).
 
-Format: Opus ($0.00 | ⚡11) Engineer | 25%/59% | main@abc123 »1«3 [+0|~2|?5]
+Format: Opus 4.5 Engineer 25% | 32%/59m | $0.00 | 0%/10% | main@abc123 »1«3 [+0|~2|?5]
 Reads JSON input from stdin (Claude Code statusLine protocol).
 
 Optimized for speed:
 - Parallel git commands via ThreadPoolExecutor
 - Single git status --porcelain for staged/modified/untracked
-- Stale-while-revalidate for weekly usage API
+- Stale-while-revalidate for usage API
 - Last-output cache fallback for post-/clear persistence
 """
 
@@ -37,10 +37,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Nord-inspired color palette (Variation A)
 # ---------------------------------------------------------------------------
-SALMON        = "\033[38;5;173m"        # Model name (Opus)
-AURORA_GREEN  = "\033[38;5;108m"        # Hooks all active, ahead, staged, context %
-AURORA_YELLOW = "\033[38;5;222m"        # Hooks partial, modified
-AURORA_RED    = "\033[38;5;131m"        # Behind, untracked
+SALMON        = "\033[38;5;173m"        # Model name (Opus 4.5)
+AURORA_GREEN  = "\033[38;5;108m"        # Cost, context %, ahead, staged
+AURORA_YELLOW = "\033[38;5;222m"        # Modified, warnings
+AURORA_RED    = "\033[38;5;131m"        # Behind, untracked, high usage
 GREY          = "\033[38;5;245m"        # Style name, commit hash, zero counts
 DARK_GREY     = "\033[38;5;240m"        # Separators, parentheses
 SNOW_WHITE    = "\033[38;5;253m"        # Branch name (softer white)
@@ -52,45 +52,6 @@ CACHE_DIR = Path.home() / ".claude"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def find_settings_dir(cwd: str = ".") -> str:
-    """Discover active settings.json location (priority order)."""
-    _claude_home = os.environ.get(
-        "CLAUDE_HOME",
-        "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude",
-    )
-    if Path(cwd, "settings.json").exists():
-        return cwd
-    elif Path(_claude_home, "settings.json").exists():
-        return _claude_home
-    else:
-        return str(Path.home() / ".claude")
-
-
-def count_hooks(settings_path: str) -> int:
-    """Count command-type hooks from settings.json."""
-    try:
-        with open(settings_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return 0
-
-    count = 0
-
-    def _walk(obj):
-        nonlocal count
-        if isinstance(obj, dict):
-            if obj.get("type") == "command":
-                count += 1
-            for v in obj.values():
-                _walk(v)
-        elif isinstance(obj, list):
-            for item in obj:
-                _walk(item)
-
-    _walk(data.get("hooks", {}))
-    return count
-
 
 def git_run(cwd: str, *args: str) -> str:
     """Run a git command and return stripped stdout, or '' on failure."""
@@ -173,16 +134,45 @@ def parse_porcelain_status(status_output: str) -> tuple:
     return staged, modified, untracked
 
 
-def read_usage_cache(cache_path: Path) -> str:
-    """Read cached weekly usage value, or '?' if unavailable."""
+def read_usage_cache(cache_path: Path) -> dict:
+    """Read cached usage values, return dict with all fields."""
+    result = {
+        "all_weekly": "?",
+        "sonnet_weekly": "?",
+        "five_hour_pct": "?",
+        "five_hour_resets_at": "",
+    }
     if cache_path.exists():
         try:
             data = json.loads(cache_path.read_text(encoding="utf-8"))
+            # All-models weekly
             val = data.get("seven_day", {}).get("utilization", 0)
-            return str(int(float(val)))
-        except (json.JSONDecodeError, OSError, ValueError):
+            result["all_weekly"] = str(int(float(val)))
+            # Sonnet-only weekly
+            val_s = data.get("seven_day_sonnet", {}).get("utilization", 0)
+            result["sonnet_weekly"] = str(int(float(val_s)))
+            # 5-hour session
+            val_5h = data.get("five_hour", {}).get("utilization", 0)
+            result["five_hour_pct"] = str(int(float(val_5h)))
+            # Reset time
+            result["five_hour_resets_at"] = data.get("five_hour", {}).get("resets_at", "")
+        except (json.JSONDecodeError, OSError, ValueError, TypeError):
             pass
-    return "?"
+    return result
+
+
+def minutes_until_reset(resets_at: str) -> str:
+    """Calculate minutes from now until ISO timestamp reset. Returns e.g. '59'."""
+    if not resets_at:
+        return "?"
+    try:
+        reset_dt = datetime.fromisoformat(resets_at.replace("Z", "+00:00"))
+        now = datetime.now(reset_dt.tzinfo)
+        diff = (reset_dt - now).total_seconds()
+        mins = max(0, int(diff / 60))
+        return str(mins)
+    except (ValueError, TypeError, AttributeError):
+        return "?"
 
 
 def refresh_usage_cache_bg(cache_path: Path) -> None:
@@ -220,14 +210,14 @@ def refresh_usage_cache_bg(cache_path: Path) -> None:
     t.start()
 
 
-def fetch_weekly_usage(cache_path: Path) -> str:
-    """Return weekly utilization % using stale-while-revalidate pattern.
+def fetch_usage_data(cache_path: Path) -> dict:
+    """Return usage data using stale-while-revalidate pattern.
 
     Always returns immediately from cache. Triggers background refresh
     if cache is older than 5 minutes.
     """
     now = int(time.time())
-    cached_value = read_usage_cache(cache_path)
+    cached = read_usage_cache(cache_path)
 
     # Check if cache needs refresh (>5 min old or missing)
     needs_refresh = True
@@ -241,7 +231,7 @@ def fetch_weekly_usage(cache_path: Path) -> str:
     if needs_refresh:
         refresh_usage_cache_bg(cache_path)
 
-    return cached_value
+    return cached
 
 
 def save_last_output(output: str) -> None:
@@ -264,33 +254,27 @@ def load_last_output() -> str:
     return ""
 
 
+def color_threshold(value_str: str, green_below: int, yellow_below: int) -> str:
+    """Return color based on threshold: green < yellow < red."""
+    if value_str == "?":
+        return GREY
+    try:
+        v = int(value_str)
+    except ValueError:
+        return GREY
+    if v < green_below:
+        return AURORA_GREEN
+    elif v < yellow_below:
+        return AURORA_YELLOW
+    else:
+        return AURORA_RED
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # ------------------------------------------------------------------
-    # Settings & hooks
-    # ------------------------------------------------------------------
-    settings_dir = find_settings_dir(os.getcwd())
-    settings_file = os.path.join(settings_dir, "settings.json")
-    hooks_config = os.path.join(settings_dir, ".expected-hooks")
-
-    # Expected hooks
-    if os.path.isfile(hooks_config):
-        try:
-            expected_hooks = int(Path(hooks_config).read_text(encoding="utf-8").strip())
-        except (OSError, ValueError):
-            expected_hooks = 0
-    else:
-        expected_hooks = count_hooks(settings_file)
-        try:
-            Path(hooks_config).write_text(str(expected_hooks), encoding="utf-8")
-        except OSError:
-            pass
-    if not expected_hooks:
-        expected_hooks = 0
-
     # ------------------------------------------------------------------
     # Read JSON input from stdin
     # ------------------------------------------------------------------
@@ -301,11 +285,24 @@ def main() -> None:
         inp = {}
 
     cwd     = inp.get("cwd", ".")
-    model_val = inp.get("model", "Claude")
-    if isinstance(model_val, dict):
-        model = (model_val.get("display_name", "Claude") or "Claude").split()[0]
-    else:
-        model = str(model_val).split()[0] if model_val else "Claude"
+
+    # Model display: prefer .model-info (written by SessionStart hook) for "Opus 4.5" style
+    model = "Claude"
+    model_info_path = CACHE_DIR / ".model-info"
+    try:
+        if model_info_path.exists():
+            mi = json.loads(model_info_path.read_text(encoding="utf-8"))
+            model = mi.get("display", "Claude") or "Claude"
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    # Fallback: parse from statusline input if .model-info not available
+    if model == "Claude":
+        model_val = inp.get("model", "Claude")
+        if isinstance(model_val, dict):
+            model = (model_val.get("display_name", "Claude") or "Claude").split()[0]
+        else:
+            model = str(model_val).split()[0] if model_val else "Claude"
     ctx_val = inp.get("context_window", {})
     pct     = int(float(ctx_val.get("used_percentage", 0) if isinstance(ctx_val, dict) else 0))
     style_val = inp.get("output_style", {})
@@ -313,29 +310,23 @@ def main() -> None:
     style   = style_raw[0].upper() + style_raw[1:]  # capitalize first letter
 
     # Context % color
-    if pct < 50:
-        ctx_color = AURORA_GREEN
-    elif pct < 80:
-        ctx_color = AURORA_YELLOW
-    else:
-        ctx_color = AURORA_RED
+    ctx_color = color_threshold(str(pct), 50, 80)
 
     # ------------------------------------------------------------------
-    # Weekly usage (stale-while-revalidate, never blocks)
+    # Usage data (stale-while-revalidate, never blocks)
     # ------------------------------------------------------------------
     cache_path = CACHE_DIR / ".usage-cache"
-    weekly = fetch_weekly_usage(cache_path)
+    usage = fetch_usage_data(cache_path)
 
-    if weekly == "?":
-        weekly_color = GREY
-    else:
-        w = int(weekly)
-        if w < 80:
-            weekly_color = AURORA_GREEN
-        elif w < 90:
-            weekly_color = AURORA_YELLOW
-        else:
-            weekly_color = AURORA_RED
+    all_weekly = usage["all_weekly"]
+    sonnet_weekly = usage["sonnet_weekly"]
+    five_hour = usage["five_hour_pct"]
+    minutes_reset = minutes_until_reset(usage["five_hour_resets_at"])
+
+    # Color thresholds
+    weekly_color = color_threshold(all_weekly, 80, 90)
+    sonnet_color = color_threshold(sonnet_weekly, 80, 90)
+    five_hour_color = color_threshold(five_hour, 70, 90)
 
     # ------------------------------------------------------------------
     # Daily cost (CET timezone, valid 24h across sessions)
@@ -449,32 +440,22 @@ def main() -> None:
             git_section += f" {git_status}"
 
     # ------------------------------------------------------------------
-    # Hook count
-    # ------------------------------------------------------------------
-    hooks = count_hooks(settings_file)
-
-    if hooks == expected_hooks:
-        hook_color = AURORA_GREEN
-    elif hooks > 0:
-        hook_color = AURORA_YELLOW
-    else:
-        hook_color = AURORA_RED
-
-    # ------------------------------------------------------------------
     # Output
     # ------------------------------------------------------------------
     line = (
         f"{SALMON}{model}{RESET} "
-        f"{DARK_GREY}({RESET}"
+        f"{GREY}{style}{RESET} "
+        f"{ctx_color}{pct}%{RESET} "
+        f"{DARK_GREY}|{RESET} "
+        f"{five_hour_color}{five_hour}%{RESET}"
+        f"{DARK_GREY}/{RESET}"
+        f"{GREY}{minutes_reset}m{RESET} "
+        f"{DARK_GREY}|{RESET} "
         f"{AURORA_GREEN}${cost_fmt}{RESET} "
         f"{DARK_GREY}|{RESET} "
-        f"{hook_color}\u26a1{hooks}{RESET}"
-        f"{DARK_GREY}){RESET} "
-        f"{GREY}{style}{RESET} "
-        f"{DARK_GREY}|{RESET} "
-        f"{ctx_color}{pct}%{RESET}"
+        f"{sonnet_color}{sonnet_weekly}%{RESET}"
         f"{DARK_GREY}/{RESET}"
-        f"{weekly_color}{weekly}%{RESET} "
+        f"{weekly_color}{all_weekly}%{RESET} "
         f"{DARK_GREY}|{RESET} "
         f"{git_section}"
     )

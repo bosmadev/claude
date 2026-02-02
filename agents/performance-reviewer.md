@@ -1,5 +1,7 @@
 ---
 name: performance-reviewer
+specialty: performance
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent for performance analysis, Big-O complexity evaluation, memory profiling, and bundle size optimization. This agent should be invoked when reviewing code for performance issues, optimizing critical paths, or analyzing runtime characteristics. It connects to performance profiling tools and provides actionable optimization recommendations.
 
 Examples:

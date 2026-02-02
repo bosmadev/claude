@@ -1,9 +1,8 @@
 ---
 name: start
 description: Initialize ULTRATHINK mode with Ralph auto-loop. Use when starting work on complex features, planning implementations, or when deep analysis is needed.
-argument-hint: [N] [M] [task | review [rN] [rM] [task] | import <source>]
+argument-hint: "[N] [M] [sonnet|sonnet all] [task | noreview [task] | review [rN] [rM] [task] | import <source>]"
 user-invocable: true
-context: fork
 ---
 # Start Workflow
 
@@ -23,6 +22,7 @@ This skill activates **ULTRATHINK** mode for deep analysis and planning. When in
 Parsed arguments:
 - Agents: [N]
 - Iterations: [M]
+- Model: [opus|sonnet] (plan phase / impl phase)
 - Mode: [implement|review|import|noreview]
 - Post-Review Agents: [rN] (if applicable)
 - Post-Review Iterations: [rM] (if applicable)
@@ -33,8 +33,28 @@ From `$ARGUMENTS`, parse in order:
 
 1. **First number** (optional) = Number of agents to spawn (default: 3)
 2. **Second number** (optional) = Iterations per agent (default: 3)
-3. **Keywords** (optional) = `review`, `noreview`, `import`
-4. **Remaining text** = Task description, path, or `git`
+3. **Model keyword** (optional) = `sonnet` or `sonnet all` (see Model Routing below)
+4. **Keywords** (optional) = `review`, `noreview`, `import`
+5. **Remaining text** = Task description, path, or `git`
+
+### Model Routing (Sonnet-for-Planning / Opus-for-Execution)
+
+| Command | Plan Phase | Impl Phase | TTY Confirmation |
+|---------|-----------|-----------|-----------------|
+| `/start` | Opus 4.5 | Opus 4.5 | `⚡ All phases: Opus 4.5` |
+| `/start sonnet` | Sonnet 4.5 | Opus 4.5 (auto-switch) | `📝 Planning: Sonnet 4.5` → approve → `⚡ Switching to Opus 4.5` |
+| `/start sonnet all` | Sonnet 4.5 | Sonnet 4.5 | `💰 Budget mode: Sonnet 4.5 (all phases)` |
+
+**Implementation:** When `sonnet` keyword detected:
+- Plan-phase agents: `Task(model="sonnet", ...)`
+- After plan approval (ExitPlanMode), output model switch confirmation
+- Impl-phase agents: `Task(model="opus", ...)` (unless `sonnet all`)
+
+When `sonnet all` detected:
+- ALL agents use `Task(model="sonnet", ...)`
+
+When no model keyword (default):
+- ALL agents use `Task(model="opus", ...)`
 
 ### Natural Language Recognition
 
@@ -44,6 +64,7 @@ Also recognize these natural language variations:
 - "10 iterations" / "run 10 times" / "iterate 10x" → iterations = 10
 - "skip review" / "no review" → noreview mode
 - "import from X" / "load X" → import mode
+- "use sonnet" / "budget mode" / "cheap mode" → sonnet all
 
 ### When In Doubt
 
@@ -61,17 +82,20 @@ Is this correct? (yes/no)
 ### Decision Tree
 
 ```
-/start                                           →  3 agents, 3 iterations, no task (DEFAULT)
-/start [task]                                    →  3 agents, 3 iterations, with task
+/start                                           →  3 agents, 3 iterations, Opus, no task (DEFAULT)
+/start [task]                                    →  3 agents, 3 iterations, Opus, with task
 /start [N]                                       →  N agents, 3 iterations, no task
-/start [N] [task]                                →  N agents, 3 iterations, with task
 /start [N] [M]                                   →  N agents, M iterations, no task
 /start [N] [M] [task]                            →  N agents, M iterations, with task
+/start sonnet [task]                             →  Sonnet plan → Opus impl, with task
+/start sonnet all [task]                         →  Sonnet ALL phases, with task
+/start [N] [M] sonnet [task]                     →  N agents, M iter, Sonnet plan → Opus impl
+/start [N] [M] sonnet all [task]                 →  N agents, M iter, Sonnet ALL phases
 /start [N] [M] noreview [task]                   →  N agents, M iterations, skip post-review
 /start [N] [M] review                            →  Review entire codebase (review-only mode)
 /start [N] [M] review [path]                     →  Review specific path (review-only mode)
 /start [N] [M] review git                        →  Review git diff files (review-only mode)
-/start [N] [M] review [rN] [rM] [task]           →  N agents, M iterations, custom post-review (rN agents, rM iterations)
+/start [N] [M] review [rN] [rM] [task]           →  N agents, M iterations, custom post-review
 /start [N] [M] import <source>                   →  Import mode (PRD, YAML, GitHub, etc.)
 ```
 
@@ -83,21 +107,31 @@ Parse $ARGUMENTS left-to-right:
 1. If $0 is numeric → agents = $0, else agents = 3
 2. If $1 is numeric → iterations = $1, else iterations = 3
 
-3. Check keyword at $2:
-   a) "noreview"  → postReviewEnabled = false, task = $3+
-   b) "import"    → importMode = true, source = $3+
-   c) "review"    → Check $3:
-      - If $3 is numeric AND $4 is numeric:
-        → postReviewAgents = $3
-        → postReviewIterations = $4
-        → task = $5+
+3. Check for model keyword at current position:
+   a) "sonnet" followed by "all" → modelMode = "sonnet_all", advance 2 positions
+   b) "sonnet"                   → modelMode = "sonnet", advance 1 position
+   c) Otherwise                  → modelMode = "opus" (default, no advance)
+
+4. Check keyword at current position:
+   a) "noreview"  → postReviewEnabled = false, task = remaining
+   b) "import"    → importMode = true, source = remaining
+   c) "review"    → Check next:
+      - If next is numeric AND next+1 is numeric:
+        → postReviewAgents = next
+        → postReviewIterations = next+1
+        → task = remaining
         → postReviewEnabled = true (custom review config)
       - Else:
         → reviewOnlyMode = true
-        → reviewScope = $3+ (path, "git", or empty for full codebase)
-   d) Otherwise   → task = $2+, postReviewEnabled = true (default)
+        → reviewScope = remaining (path, "git", or empty for full codebase)
+   d) Otherwise   → task = remaining, postReviewEnabled = true (default)
 
-4. If no task and no special mode → interactive planning mode
+5. If no task and no special mode → interactive planning mode
+
+Model routing based on modelMode:
+- "opus"       → All agents: model="opus"
+- "sonnet"     → Plan agents: model="sonnet", Impl agents: model="opus"
+- "sonnet_all" → All agents: model="sonnet"
 ```
 
 ## Plan File Format (MANDATORY)
@@ -123,20 +157,19 @@ This block MUST be present for Ralph to execute with correct parameters.
 
 ### Examples
 
-| Command                                   | Agents | Iterations | Mode        | Post-Review       | Scope                |
-| ----------------------------------------- | ------ | ---------- | ----------- | ----------------- | -------------------- |
-| `/start`                                | 3      | 3          | Interactive | 5 agents, 2 iter  | No task (planning)   |
-| `/start fix the APIs`                   | 3      | 3          | Implement   | 5 agents, 2 iter  | Task description     |
-| `/start 5`                              | 5      | 3          | Interactive | 5 agents, 2 iter  | No task (planning)   |
-| `/start 5 fix the APIs`                 | 5      | 3          | Implement   | 5 agents, 2 iter  | Task description     |
-| `/start 5 10`                           | 5      | 10         | Interactive | 5 agents, 2 iter  | No task (planning)   |
-| `/start 5 10 fix the APIs`              | 5      | 10         | Implement   | 5 agents, 2 iter  | Task description     |
-| `/start 5 3 noreview implement auth`    | 5      | 3          | Implement   | Disabled          | Skip post-review     |
-| `/start 15 5 review`                    | 15     | 5          | Review only | N/A               | Entire codebase      |
-| `/start 15 5 review src/`               | 15     | 5          | Review only | N/A               | Specific path        |
-| `/start 15 5 review git`                | 15     | 5          | Review only | N/A               | Git diff files       |
-| `/start 5 3 review 10 2 implement auth` | 5      | 3          | Implement   | 10 agents, 2 iter | Custom review config |
-| `/start 3 5 import PRD.md`              | 3      | 5          | Import      | 5 agents, 2 iter  | From PRD file        |
+| Command                                   | Agents | Iterations | Model Mode     | Post-Review       | Scope                |
+| ----------------------------------------- | ------ | ---------- | -------------- | ----------------- | -------------------- |
+| `/start`                                | 3      | 3          | Opus (all)     | 5 agents, 2 iter  | No task (planning)   |
+| `/start fix the APIs`                   | 3      | 3          | Opus (all)     | 5 agents, 2 iter  | Task description     |
+| `/start sonnet fix auth`               | 3      | 3          | Sonnet→Opus   | 5 agents, 2 iter  | Sonnet plan, Opus impl |
+| `/start sonnet all fix auth`           | 3      | 3          | Sonnet (all)   | 5 agents, 2 iter  | Budget mode          |
+| `/start 5 3 sonnet build API`          | 5      | 3          | Sonnet→Opus   | 5 agents, 2 iter  | Sonnet plan, Opus impl |
+| `/start 5 10`                           | 5      | 10         | Opus (all)     | 5 agents, 2 iter  | No task (planning)   |
+| `/start 5 3 noreview implement auth`    | 5      | 3          | Opus (all)     | Disabled          | Skip post-review     |
+| `/start 15 5 review`                    | 15     | 5          | Opus (all)     | N/A               | Entire codebase      |
+| `/start 15 5 review src/`               | 15     | 5          | Opus (all)     | N/A               | Specific path        |
+| `/start 5 3 review 10 2 implement auth` | 5      | 3          | Opus (all)     | 10 agents, 2 iter | Custom review config |
+| `/start 3 5 import PRD.md`              | 3      | 5          | Opus (all)     | 5 agents, 2 iter  | From PRD file        |
 
 ## Review Mode
 

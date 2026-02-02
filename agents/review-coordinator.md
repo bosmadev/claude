@@ -1,5 +1,7 @@
 ---
 name: review-coordinator
+specialty: coordination
+disallowedTools: [Write, Edit, MultiEdit]
 description: Orchestrate parallel multi-agent code review. Spawns specialized reviewers (api-reviewer, security-reviewer, performance-profiler) and synthesizes findings into a unified report. Use for comprehensive codebase reviews or pre-deployment audits.
 
 Examples:

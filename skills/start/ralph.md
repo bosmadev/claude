@@ -392,7 +392,9 @@ Guardian samples work (every 5 actions)
          ↓
 If drift detected → inject warning
          ↓
-Implementation complete → Review agents
+Implementation complete → Verify+Fix agents
+         ↓
+Verify+Fix complete → Review agents
          ↓
 RALPH_COMPLETE
 ```

@@ -6,9 +6,11 @@ This module reads stdin (hook input JSON), determines the hook mode from
 sys.argv[1], and forwards to the main Ralph script for processing.
 
 Usage:
-    python3 ralph.py stop         # Stop hook (orchestrator)
-    python3 ralph.py session-start # SessionStart hook
-    python3 ralph.py pre-compact   # PreCompact hook
+    python3 ralph.py stop             # Stop hook (orchestrator)
+    python3 ralph.py session-start    # SessionStart hook
+    python3 ralph.py pre-compact      # PreCompact hook
+    python3 ralph.py subagent-start   # SubagentStart hook
+    python3 ralph.py subagent-stop    # SubagentStop hook
 """
 
 import os
@@ -40,7 +42,13 @@ def main() -> None:
     hook_command = f"hook-{mode}"
 
     # Determine subprocess timeout based on mode
-    sub_timeout = {"stop": 25, "session-start": 8, "pre-compact": 8}.get(mode, 15)
+    sub_timeout = {
+        "stop": 25,
+        "session-start": 8,
+        "pre-compact": 8,
+        "subagent-start": 8,
+        "subagent-stop": 8,
+    }.get(mode, 15)
 
     # Read stdin for hook input (with implicit timeout from _kill_timer)
     stdin_data = sys.stdin.read()

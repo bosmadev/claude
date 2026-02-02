@@ -1,5 +1,6 @@
 ---
 name: e2e-runner
+specialty: testing
 description: Use this agent for Playwright E2E test generation, execution, and debugging. This agent should be invoked when creating new E2E tests, debugging failing tests, or verifying user flows work correctly. It connects to the /launch skill for browser automation and visual verification.
 
 Examples:
@@ -75,7 +76,7 @@ You handle:
 
 - **/launch** - Browser automation and visual verification
   - Runs `pnpm launch` for debug mode
-  - Provides visual verification in Antigravity browser
+  - Provides visual verification via Playwriter/chrome-mcp
   - Use for interactive testing and debugging
 
 ## Playwright Test Patterns

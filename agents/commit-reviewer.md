@@ -1,5 +1,7 @@
 ---
 name: commit-reviewer
+specialty: git
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent to review the quality of commit.md files and pending commits before execution. Analyzes commit message clarity, scope, conventional commit compliance, and suggests improvements. Connects to /commit skill.
 
 Examples:

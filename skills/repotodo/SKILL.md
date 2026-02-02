@@ -2,7 +2,6 @@
 name: repotodo
 description: Scan and process TODO comments in the codebase. Use /repotodo list to see all TODOs, /repotodo <priority> all to process all of a priority, /repotodo <priority> 1 to process one, or /repotodo verify to check alignment with review findings.
 user-invocable: true
-context: fork
 ---
 
 # Repo TODO Manager

@@ -1,5 +1,7 @@
 ---
 name: security-reviewer
+specialty: security
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent for security vulnerability analysis, OWASP Top 10 compliance checks, and dependency auditing. This agent should be invoked when reviewing code for security issues, conducting security audits before deployment, or when suspicious patterns are detected. It connects to the /review security command for detailed security scanning.
 
 Examples:

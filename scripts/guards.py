@@ -1021,6 +1021,10 @@ def ralph_enforcer() -> None:
         "startedAt": datetime.now(timezone.utc).isoformat(),
         "task": task,
         "phase": "implementation",
+        "verify_fix": {
+            "agents": 2,
+            "iterations": 2
+        },
         "review": {
             "agents": review_agents,
             "iterations": review_iterations

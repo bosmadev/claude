@@ -28,12 +28,29 @@ if sys.platform != "win32":
     import pty
 import shutil
 import subprocess
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from zoneinfo import ZoneInfo
+
+
+class LifecyclePhase(str, Enum):
+    """Ralph session lifecycle phases."""
+    PLAN = "plan"
+    IMPLEMENT = "implementation"
+    VERIFY_FIX = "verify_fix"
+    REVIEW = "review"
+    COMPLETE = "complete"
+
+
+class ModelMode(str, Enum):
+    """Model routing modes for agent spawning."""
+    OPUS = "opus"
+    SONNET = "sonnet"
+    SONNET_ALL = "sonnet_all"
 
 
 class SpawnBackend(str, Enum):
@@ -251,7 +268,7 @@ class RalphState:
 @dataclass
 class QueueTask:
     """Task in the work-stealing queue."""
-    id: str
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     status: str = "pending"
     blocked_by: list = field(default_factory=list)
     claimed_by: Optional[str] = None
@@ -809,6 +826,261 @@ class AgentInbox:
 
 
 # =============================================================================
+# Structured Review Output
+# =============================================================================
+
+@dataclass
+class ReviewFinding:
+    """A single review finding from a review agent."""
+    severity: str = "info"  # critical, high, medium, low, info
+    category: str = "general"  # security, performance, architecture, etc.
+    file_path: str = ""
+    line_number: int = 0
+    description: str = ""
+    suggestion: str = ""
+    agent_id: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "severity": self.severity,
+            "category": self.category,
+            "file_path": self.file_path,
+            "line_number": self.line_number,
+            "description": self.description,
+            "suggestion": self.suggestion,
+            "agent_id": self.agent_id,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ReviewFinding":
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class ReviewSummary:
+    """Aggregated review summary from all review agents."""
+    session_id: str = ""
+    task: str = ""
+    total_findings: int = 0
+    findings_by_severity: dict = field(default_factory=dict)
+    findings_by_category: dict = field(default_factory=dict)
+    findings: list = field(default_factory=list)
+    reviewed_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "session_id": self.session_id,
+            "task": self.task,
+            "total_findings": self.total_findings,
+            "findings_by_severity": self.findings_by_severity,
+            "findings_by_category": self.findings_by_category,
+            "findings": [f.to_dict() if isinstance(f, ReviewFinding) else f for f in self.findings],
+            "reviewed_at": self.reviewed_at,
+        }
+
+    def to_markdown(self) -> str:
+        """Generate review-summary.md content."""
+        lines = [
+            f"# Review Summary",
+            f"",
+            f"**Session:** {self.session_id}",
+            f"**Task:** {self.task}",
+            f"**Reviewed:** {self.reviewed_at}",
+            f"**Total Findings:** {self.total_findings}",
+            f"",
+            f"## Findings by Severity",
+            f"",
+            f"| Severity | Count |",
+            f"|----------|-------|",
+        ]
+        for sev in ["critical", "high", "medium", "low", "info"]:
+            count = self.findings_by_severity.get(sev, 0)
+            if count > 0:
+                icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢", "info": "🔵"}.get(sev, "")
+                lines.append(f"| {icon} {sev} | {count} |")
+
+        lines.extend([
+            f"",
+            f"## Findings by Category",
+            f"",
+            f"| Category | Count |",
+            f"|----------|-------|",
+        ])
+        for cat, count in sorted(self.findings_by_category.items(), key=lambda x: -x[1]):
+            lines.append(f"| {cat} | {count} |")
+
+        if self.findings:
+            lines.extend([
+                f"",
+                f"## Details",
+                f"",
+            ])
+            for i, finding in enumerate(self.findings, 1):
+                f = finding if isinstance(finding, dict) else finding.to_dict()
+                sev = f.get("severity", "info")
+                icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢", "info": "🔵"}.get(sev, "")
+                lines.append(f"### {i}. {icon} [{sev.upper()}] {f.get('category', 'general')}")
+                if f.get("file_path"):
+                    loc = f["file_path"]
+                    if f.get("line_number"):
+                        loc += f":{f['line_number']}"
+                    lines.append(f"**Location:** `{loc}`")
+                lines.append(f"")
+                lines.append(f.get("description", ""))
+                if f.get("suggestion"):
+                    lines.append(f"")
+                    lines.append(f"**Suggestion:** {f['suggestion']}")
+                lines.append(f"")
+
+        return "\n".join(lines)
+
+
+# =============================================================================
+# Activity Scheduling + Performance Tracking
+# =============================================================================
+
+class ActivityScheduler:
+    """
+    Adaptive polling interval scheduler.
+
+    Starts with fast polling (2s) when agents are active, decays to slower
+    intervals (up to 30s) when idle. Resets on new activity.
+    """
+
+    MIN_INTERVAL: float = 2.0   # Fastest poll rate (seconds)
+    MAX_INTERVAL: float = 30.0  # Slowest poll rate (seconds)
+    DECAY_FACTOR: float = 1.5   # Multiplier per idle cycle
+
+    def __init__(self):
+        self._current_interval: float = self.MIN_INTERVAL
+        self._last_activity: datetime = datetime.now()
+        self._idle_cycles: int = 0
+
+    @property
+    def interval(self) -> float:
+        """Current polling interval in seconds."""
+        return self._current_interval
+
+    def record_activity(self) -> None:
+        """Reset interval on new activity (agent start/stop, state change)."""
+        self._current_interval = self.MIN_INTERVAL
+        self._last_activity = datetime.now()
+        self._idle_cycles = 0
+
+    def tick(self) -> float:
+        """Advance one polling cycle, return the next sleep interval."""
+        self._idle_cycles += 1
+        self._current_interval = min(
+            self._current_interval * self.DECAY_FACTOR,
+            self.MAX_INTERVAL
+        )
+        return self._current_interval
+
+    def idle_seconds(self) -> float:
+        """Seconds since last activity."""
+        return (datetime.now() - self._last_activity).total_seconds()
+
+
+@dataclass
+class AgentPerformanceRecord:
+    """Per-agent performance metrics."""
+    agent_id: int
+    agent_name: str = ""
+    cost_usd: float = 0.0
+    num_turns: int = 0
+    duration_seconds: float = 0.0
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    status: str = "pending"
+
+    def to_dict(self) -> dict:
+        return {
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "cost_usd": round(self.cost_usd, 4),
+            "num_turns": self.num_turns,
+            "duration_seconds": round(self.duration_seconds, 1),
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "status": self.status,
+        }
+
+
+class PerformanceTracker:
+    """
+    Track per-agent cost, duration, and turn metrics.
+
+    Aggregates performance data for progress reporting and budget enforcement.
+    """
+
+    def __init__(self):
+        self._records: dict[int, AgentPerformanceRecord] = {}
+
+    def start_agent(self, agent_id: int, agent_name: str = "") -> None:
+        """Record agent start."""
+        self._records[agent_id] = AgentPerformanceRecord(
+            agent_id=agent_id,
+            agent_name=agent_name,
+            started_at=datetime.now().isoformat(),
+            status="running",
+        )
+
+    def complete_agent(
+        self, agent_id: int, cost_usd: float = 0, num_turns: int = 0, success: bool = True
+    ) -> None:
+        """Record agent completion with metrics."""
+        rec = self._records.get(agent_id)
+        if rec is None:
+            rec = AgentPerformanceRecord(agent_id=agent_id)
+            self._records[agent_id] = rec
+
+        rec.cost_usd = cost_usd
+        rec.num_turns = num_turns
+        rec.completed_at = datetime.now().isoformat()
+        rec.status = "completed" if success else "failed"
+
+        if rec.started_at:
+            try:
+                start = datetime.fromisoformat(rec.started_at)
+                rec.duration_seconds = (datetime.now() - start).total_seconds()
+            except (ValueError, TypeError):
+                pass
+
+    @property
+    def total_cost(self) -> float:
+        return sum(r.cost_usd for r in self._records.values())
+
+    @property
+    def total_turns(self) -> int:
+        return sum(r.num_turns for r in self._records.values())
+
+    @property
+    def avg_cost_per_agent(self) -> float:
+        completed = [r for r in self._records.values() if r.status == "completed"]
+        return self.total_cost / len(completed) if completed else 0.0
+
+    @property
+    def avg_duration(self) -> float:
+        completed = [r for r in self._records.values() if r.duration_seconds > 0]
+        return (sum(r.duration_seconds for r in completed) / len(completed)) if completed else 0.0
+
+    def summary(self) -> dict:
+        """Generate performance summary for progress file."""
+        completed = [r for r in self._records.values() if r.status == "completed"]
+        failed = [r for r in self._records.values() if r.status == "failed"]
+        return {
+            "total_agents": len(self._records),
+            "completed": len(completed),
+            "failed": len(failed),
+            "total_cost_usd": round(self.total_cost, 4),
+            "total_turns": self.total_turns,
+            "avg_cost_per_agent": round(self.avg_cost_per_agent, 4),
+            "avg_duration_seconds": round(self.avg_duration, 1),
+            "agents": [r.to_dict() for r in self._records.values()],
+        }
+
+
+# =============================================================================
 # Agent Config Discovery
 # =============================================================================
 
@@ -846,6 +1118,95 @@ def load_agent_config(config_path: str) -> str:
         return Path(config_path).read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+# =============================================================================
+# Agent Specialties + Auto-Assignment
+# =============================================================================
+
+AGENT_SPECIALTIES: dict[str, list[str]] = {
+    "security-reviewer": ["security", "auth", "owasp", "xss", "csrf", "injection", "vulnerability", "encryption", "token", "password"],
+    "performance-reviewer": ["performance", "speed", "latency", "cache", "optimize", "memory", "profil", "bottleneck", "slow"],
+    "api-reviewer": ["api", "rest", "graphql", "endpoint", "route", "http", "request", "response", "cors", "middleware"],
+    "architecture-reviewer": ["architecture", "pattern", "design", "structure", "module", "dependency", "coupling", "solid"],
+    "a11y-reviewer": ["accessibility", "a11y", "aria", "wcag", "screen reader", "keyboard", "contrast", "focus"],
+    "database-reviewer": ["database", "sql", "query", "migration", "schema", "index", "orm", "prisma", "drizzle"],
+    "commit-reviewer": ["commit", "git", "merge", "branch", "changelog", "version", "release"],
+    "performance-profiler": ["profile", "benchmark", "flame", "trace", "cpu", "heap", "allocation"],
+    "doc-accuracy-checker": ["documentation", "readme", "jsdoc", "docstring", "comment", "api doc"],
+    "build-error-resolver": ["build", "compile", "error", "typescript", "lint", "biome", "webpack", "vite", "bundle"],
+    "refactor-cleaner": ["refactor", "clean", "dead code", "unused", "duplicate", "simplify", "extract"],
+    "e2e-runner": ["test", "e2e", "playwright", "cypress", "selenium", "integration test", "coverage"],
+    "review-coordinator": ["review", "coordinate", "summary", "aggregate", "findings", "report"],
+    "nextjs-specialist": ["nextjs", "next", "react", "ssr", "server component", "app router", "page", "layout"],
+    "python-specialist": ["python", "fastapi", "django", "flask", "pip", "uv", "pytest", "pydantic"],
+    "go-specialist": ["go", "golang", "goroutine", "channel", "gin", "fiber"],
+    "devops-automator": ["devops", "ci", "cd", "docker", "kubernetes", "deploy", "pipeline", "github actions"],
+    "scraper-agent": ["scrape", "crawl", "extract", "parse", "html", "browser", "puppeteer"],
+    "pr-body-generator": ["pr", "pull request", "description", "summary", "changelog"],
+}
+
+
+def generate_agent_name(phase: str, specialty: str, index: int) -> str:
+    """
+    Generate a structured agent name.
+
+    Format: ralph-{phase}-{specialty}-{index}
+    Example: ralph-impl-security-0, ralph-review-api-3, ralph-vf-build-1
+
+    Args:
+        phase: Lifecycle phase (impl, vf, review).
+        specialty: Agent specialty (security, api, etc.).
+        index: Agent index number.
+
+    Returns:
+        Structured agent name string.
+    """
+    # Abbreviate phase names for conciseness
+    phase_abbrev = {
+        "implementation": "impl",
+        "verify_fix": "vf",
+        "review": "review",
+        "plan": "plan",
+        "complete": "done",
+    }.get(phase, phase[:4])
+
+    # Sanitize specialty (remove -reviewer, -specialist suffixes)
+    spec = specialty.replace("-reviewer", "").replace("-specialist", "").replace("-", "")[:8]
+
+    return f"ralph-{phase_abbrev}-{spec}-{index}"
+
+
+def match_agent_to_task(task: str, agents_dir: str | None = None) -> str:
+    """
+    Match a task description to the best-fit agent config via keyword overlap scoring.
+
+    Args:
+        task: The task description to match against.
+        agents_dir: Path to agents directory.
+
+    Returns:
+        Config name of the best-matching agent (e.g., "security-reviewer").
+    """
+    if not task:
+        return "general"
+
+    task_lower = task.lower()
+    best_match = "general"
+    best_score = 0
+
+    # Check available agents on disk
+    available = discover_agent_configs(agents_dir)
+
+    for agent_name, keywords in AGENT_SPECIALTIES.items():
+        if agent_name not in available:
+            continue
+        score = sum(1 for kw in keywords if kw in task_lower)
+        if score > best_score:
+            best_score = score
+            best_match = agent_name
+
+    return best_match if best_score > 0 else "general"
 
 
 # =============================================================================
@@ -1096,7 +1457,7 @@ class RalphProtocol:
 
     def write_state(self, state: RalphState) -> bool:
         """
-        Write Ralph state to JSON file.
+        Write Ralph state to JSON file with config backup rotation.
 
         Args:
             state: RalphState object to persist.
@@ -1107,6 +1468,10 @@ class RalphProtocol:
         try:
             # Ensure .claude directory exists
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Backup before overwrite (keep last 3)
+            self._backup_config()
+
             with open(self.state_path, 'w') as f:
                 json.dump(state.to_dict(), f, indent=2)
             self.log_activity(f"State written: {state.session_id}")
@@ -1114,6 +1479,35 @@ class RalphProtocol:
         except IOError as e:
             self.log_activity(f"Error writing state: {e}", level="ERROR")
             return False
+
+    def _backup_config(self, max_backups: int = 3) -> None:
+        """
+        Rotate state backups, keeping the last N copies.
+
+        Args:
+            max_backups: Maximum number of backup files to retain.
+        """
+        if not self.state_path.exists():
+            return
+
+        backup_dir = self.state_path.parent / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / f"state_{timestamp}.json"
+
+        try:
+            shutil.copy2(str(self.state_path), str(backup_path))
+        except OSError:
+            return
+
+        # Prune old backups
+        backups = sorted(backup_dir.glob("state_*.json"))
+        for old_backup in backups[:-max_backups]:
+            try:
+                old_backup.unlink()
+            except OSError:
+                pass
 
     def create_checkpoint(self, state: RalphState) -> Optional[str]:
         """
@@ -1338,6 +1732,9 @@ class RalphProtocol:
                 "started_at": self._loop_start_time.isoformat() if self._loop_start_time else None,
                 "updated_at": datetime.now().isoformat(),
             }
+            # Include performance tracker summary if available
+            if hasattr(self, '_perf_tracker') and self._perf_tracker:
+                progress_data["performance"] = self._perf_tracker.summary()
             self.progress_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.progress_path, 'w') as f:
                 json.dump(progress_data, f)
@@ -1708,7 +2105,7 @@ class RalphProtocol:
         phase = raw_state.get("phase", "")
         completed_at = raw_state.get("completedAt") or raw_state.get("completed_at")
 
-        if phase == "complete" or completed_at:
+        if phase in ("complete", LifecyclePhase.COMPLETE.value) or completed_at:
             self.log_activity("Exit allowed: Ralph loop marked complete in state file")
             cleanup_results = self.cleanup_ralph_session(keep_activity_log=False)
             return {
@@ -1968,6 +2365,82 @@ This will properly close the Ralph session."""
 
         return response
 
+    # =========================================================================
+    # SubagentStart / SubagentStop Hook Handlers
+    # =========================================================================
+
+    def handle_hook_subagent_start(self, stdin_content: Optional[str] = None) -> dict:
+        """
+        Handle SubagentStart hook — track agent spawn in state.
+
+        Records the subagent spawn event with timestamp and agent metadata.
+        """
+        if not self.state_exists():
+            return {}
+
+        try:
+            data = json.loads(stdin_content) if stdin_content else json.loads(sys.stdin.read())
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+        state = self.read_state()
+        if not state:
+            return {}
+
+        agent_id = data.get("agent_id", data.get("subagent_id", "unknown"))
+        self.log_activity(f"SubagentStart: {agent_id}")
+
+        # Update heartbeat
+        state.last_heartbeat = datetime.now().isoformat()
+        self.write_state(state)
+
+        return {"tracked": True, "agent_id": agent_id}
+
+    def handle_hook_subagent_stop(self, stdin_content: Optional[str] = None) -> dict:
+        """
+        Handle SubagentStop hook — track agent completion, enforce iteration limits.
+
+        Records completion, updates metrics, and can force additional iterations
+        if the agent hasn't met minimum quality thresholds.
+        """
+        if not self.state_exists():
+            return {}
+
+        try:
+            data = json.loads(stdin_content) if stdin_content else json.loads(sys.stdin.read())
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+        state = self.read_state()
+        if not state:
+            return {}
+
+        agent_id = data.get("agent_id", data.get("subagent_id", "unknown"))
+        cost_usd = data.get("total_cost_usd", 0)
+        num_turns = data.get("num_turns", 0)
+
+        self.log_activity(
+            f"SubagentStop: {agent_id} (${cost_usd:.4f}, {num_turns} turns)"
+        )
+
+        # Update heartbeat and track cost
+        state.last_heartbeat = datetime.now().isoformat()
+        self.write_state(state)
+
+        # Record daily cost
+        if cost_usd > 0:
+            try:
+                record_daily_cost(cost_usd)
+            except Exception:
+                pass
+
+        return {
+            "tracked": True,
+            "agent_id": agent_id,
+            "cost_usd": cost_usd,
+            "num_turns": num_turns,
+        }
+
     def _generate_serena_context(self) -> str:
         """
         Generate Serena integration context for session start.
@@ -2000,6 +2473,17 @@ Project configured: `{project_root}`
 | Read full file | - | `Read` |
 | Edit symbol | `replace_symbol_body` | - |
 | Edit specific lines | - | `Edit` |
+
+### Memory Persistence:
+- Use `mcp__serena__write_memory` to save architectural decisions, symbol maps
+- Use `mcp__serena__read_memory` to recall project context across sessions
+- Use `mcp__serena__list_memories` to see available memory files
+- Run `/serena-workflow` for the full tool matrix and editing workflows
+
+### Reflection Checkpoints:
+- `mcp__serena__think_about_collected_information` — after gathering context
+- `mcp__serena__think_about_task_adherence` — before making changes
+- `mcp__serena__think_about_whether_you_are_done` — before reporting completion
 """
         else:
             return """
@@ -2165,6 +2649,11 @@ Serena provides LSP-powered semantic code analysis. To enable:
         """Spawn agent as an independent subprocess with its own context window."""
         self.log_activity(f"Agent {agent_state.agent_id} started")
         self._print_progress("STARTED", agent_state.agent_id)
+        # Track performance start
+        if hasattr(self, '_perf_tracker') and self._perf_tracker:
+            self._perf_tracker.start_agent(agent_state.agent_id)
+        if hasattr(self, '_scheduler') and self._scheduler:
+            self._scheduler.record_activity()
 
         spawned_pid = None
         proc = None
@@ -2185,9 +2674,19 @@ Serena provides LSP-powered semantic code analysis. To enable:
             env["CLAUDE_CODE_TEAM_NAME"] = os.environ.get(
                 "CLAUDE_CODE_TEAM_NAME", f"ralph-{session_id}"
             )
+            # Generate structured agent name based on phase and specialty
+            current_phase = state.phase if state else "implementation"
+            assigned_config = match_agent_to_task(task or "", None) if task else "general"
+            structured_name = generate_agent_name(current_phase, assigned_config, agent_state.agent_id)
+
             env["CLAUDE_CODE_AGENT_ID"] = f"agent-{agent_state.agent_id}"
-            env["CLAUDE_CODE_AGENT_NAME"] = f"Ralph Agent {agent_state.agent_id}"
-            env["RALPH_AGENT_TYPE"] = "implementation"  # or "review", "leader"
+            env["CLAUDE_CODE_AGENT_NAME"] = structured_name
+            env["RALPH_AGENT_TYPE"] = current_phase
+
+            # Review agents get read-only sandbox (plan mode)
+            if current_phase == LifecyclePhase.REVIEW.value:
+                env["CLAUDE_CODE_PERMISSION_MODE"] = "plan"
+                env["RALPH_AGENT_TYPE"] = "review"
             env["RALPH_PARENT_SESSION_ID"] = session_id
 
             # Record HEAD at agent start for push gate comparison
@@ -2205,8 +2704,31 @@ Serena provides LSP-powered semantic code analysis. To enable:
 
             # Use start_new_session to detach from parent process group
             # --output-format json gives us total_cost_usd in the result
+            # Apply model routing if specified
+            cmd = ["claude", "--print", "--output-format", "json"]
+            model_override = env.get("RALPH_MODEL_MODE", "")
+            if model_override and model_override != ModelMode.OPUS.value:
+                cmd.extend(["--model", model_override])
+            cmd.extend(["-p", prompt])
+
+            # Budget guard: check cost before spawning
+            if hasattr(self, '_perf_tracker') and self._perf_tracker:
+                budget_limit = float(env.get("RALPH_MAX_BUDGET_USD", "0") or "0")
+                if budget_limit > 0 and self._perf_tracker.total_cost >= budget_limit:
+                    self.log_activity(
+                        f"Budget limit ${budget_limit:.2f} reached (spent ${self._perf_tracker.total_cost:.2f}), "
+                        f"skipping agent {agent_state.agent_id}",
+                        level="WARN"
+                    )
+                    agent_state.status = AgentStatus.FAILED.value
+                    agent_state.completed_at = datetime.now().isoformat()
+                    self._failed_count += 1
+                    self._print_progress("BUDGET", agent_state.agent_id, f"limit ${budget_limit:.2f} exceeded")
+                    await self._update_final_state(agent_state, None)
+                    return False
+
             proc = await asyncio.create_subprocess_exec(
-                "claude", "--print", "--output-format", "json", "-p", prompt,
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
@@ -2301,6 +2823,13 @@ Serena provides LSP-powered semantic code analysis. To enable:
 
                 self._completed_count += 1
                 self._total_cost += cost_usd
+                # Record performance metrics
+                if hasattr(self, '_perf_tracker') and self._perf_tracker:
+                    self._perf_tracker.complete_agent(
+                        agent_state.agent_id, cost_usd=cost_usd, num_turns=num_turns, success=True
+                    )
+                if hasattr(self, '_scheduler') and self._scheduler:
+                    self._scheduler.record_activity()
                 detail_parts = []
                 if cost_usd > 0:
                     detail_parts.append(f"${cost_usd:.2f}")
@@ -2314,6 +2843,10 @@ Serena provides LSP-powered semantic code analysis. To enable:
                     f"Agent {agent_state.agent_id} failed (exit {proc.returncode}): {error_msg}",
                     level="ERROR"
                 )
+                if hasattr(self, '_perf_tracker') and self._perf_tracker:
+                    self._perf_tracker.complete_agent(
+                        agent_state.agent_id, cost_usd=0, num_turns=0, success=False
+                    )
                 self._failed_count += 1
                 self._print_progress("FAILED", agent_state.agent_id, f"exit {proc.returncode}")
 
@@ -2358,6 +2891,8 @@ Serena provides LSP-powered semantic code analysis. To enable:
         plan_file: Optional[str] = None,
         max_concurrent: Optional[int] = None,
         backend: str = SpawnBackend.AUTO.value,
+        model_mode: str = ModelMode.OPUS.value,
+        max_budget_usd: Optional[float] = None,
     ) -> RalphState:
         """
         Run the full Ralph loop with N agents × M iterations.
@@ -2385,6 +2920,10 @@ Serena provides LSP-powered semantic code analysis. To enable:
         self._failed_count = 0
         self._total_cost = 0.0
         self._total_agents_in_loop = num_agents
+
+        # Initialize performance tracking and adaptive scheduling
+        self._perf_tracker = PerformanceTracker()
+        self._scheduler = ActivityScheduler()
 
         # Initialize state
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2990,6 +3529,106 @@ INSTRUCTIONS:
   {self.EXIT_SIGNAL}
 """
 
+    def _generate_review_summary(self) -> Optional[str]:
+        """
+        Parse review agent outputs and generate review-summary.md.
+
+        Reads .claude/review-agents.md (if exists) and parses tabular findings
+        into a structured ReviewSummary, then writes .claude/review-summary.md.
+
+        Returns:
+            Path to generated summary file, or None if no review data.
+        """
+        review_path = self.base_dir / ".claude" / "review-agents.md"
+        if not review_path.exists():
+            return None
+
+        try:
+            content = review_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+        # Parse findings from markdown table rows
+        findings = []
+        for line in content.splitlines():
+            line = line.strip()
+            if not line.startswith("|") or line.startswith("|-") or "Severity" in line:
+                continue
+            cells = [c.strip() for c in line.split("|")[1:-1]]
+            if len(cells) >= 4:
+                finding = ReviewFinding(
+                    severity=cells[0].lower().strip("🔴🟠🟡🟢🔵 ") or "info",
+                    category=cells[1] if len(cells) > 1 else "general",
+                    file_path=cells[2] if len(cells) > 2 else "",
+                    description=cells[3] if len(cells) > 3 else "",
+                    suggestion=cells[4] if len(cells) > 4 else "",
+                )
+                findings.append(finding)
+
+        if not findings:
+            return None
+
+        # Build summary
+        state = self.read_state()
+        severity_counts: dict[str, int] = {}
+        category_counts: dict[str, int] = {}
+        for f in findings:
+            severity_counts[f.severity] = severity_counts.get(f.severity, 0) + 1
+            category_counts[f.category] = category_counts.get(f.category, 0) + 1
+
+        summary = ReviewSummary(
+            session_id=state.session_id if state else "unknown",
+            task=state.task if state else "",
+            total_findings=len(findings),
+            findings_by_severity=severity_counts,
+            findings_by_category=category_counts,
+            findings=findings,
+            reviewed_at=datetime.now().isoformat(),
+        )
+
+        # Write summary
+        summary_path = self.base_dir / ".claude" / "review-summary.md"
+        try:
+            summary_path.write_text(summary.to_markdown(), encoding="utf-8")
+            self.log_activity(f"Review summary written: {len(findings)} findings")
+            return str(summary_path)
+        except OSError:
+            return None
+
+    def _build_verify_fix_prompt(self, agent: AgentState, task: Optional[str]) -> str:
+        """Build prompt for verify-fix phase agents."""
+        vf_config_path = Path(_get_agents_dir()) / "verify-fix.md"
+        vf_content = load_agent_config(str(vf_config_path)) if vf_config_path.exists() else ""
+
+        state = self.read_state()
+        session_id = state.session_id if state else "unknown"
+
+        return f"""You are Ralph Verify-Fix Agent {agent.agent_id} working on: {task or 'Verify and fix the implementation'}
+
+PHASE: VERIFY+FIX (post-implementation, pre-review)
+SESSION: {session_id}
+ITERATION: {agent.current_iteration + 1} of {agent.max_iterations}
+
+{vf_content[:3000] if vf_content else ''}
+
+WORK PROTOCOL:
+1. Run build checks for the project
+2. Use Serena tools to verify symbol integrity across modified files
+3. Run type checker and linter
+4. Auto-fix simple issues (imports, types, formatting)
+5. Use AskUserQuestion for complex issues requiring human decision
+6. Do NOT leave TODO comments — fix or escalate
+7. Use mcp__serena__think_about_whether_you_are_done before completion
+8. Push ALL commits before signaling completion
+9. When all verification is done, output EXACTLY:
+   {self.RALPH_COMPLETE_SIGNAL}
+   {self.EXIT_SIGNAL}
+
+TOOLS: All standard tools + Serena MCP + Context7 MCP
+
+Begin verification now.
+"""
+
     def _build_agent_prompt(self, agent: AgentState, task: Optional[str]) -> str:
         """Build the initial prompt for an agent with agent config loading (Step 3)."""
         # Discover and assign agent config via round-robin
@@ -3037,7 +3676,8 @@ WORK PROTOCOL:
 3. Work autonomously — no confirmation needed
 4. Push ALL commits before signaling completion
 5. Mark task completed, claim next
-6. When all your work is done, output EXACTLY:
+6. Before completion, call mcp__serena__think_about_whether_you_are_done
+7. When all your work is done, output EXACTLY:
    {self.RALPH_COMPLETE_SIGNAL}
    {self.EXIT_SIGNAL}
 {inbox_section}
@@ -3169,7 +3809,48 @@ def agent_tracker() -> None:
         agents_field = state.get("agents", 3)
         expected = state.get("total_agents") or (len(agents_field) if isinstance(agents_field, list) else agents_field)
         if completed >= expected:
-            # All implementation agents done → transition to review
+            # All implementation agents done → transition to verify_fix
+            vf_config = state.get("verify_fix", {"agents": 2, "iterations": 2})
+            vf_agents = vf_config.get("agents", 2)
+            task = state.get("task", "Verify and fix the implementation")
+
+            state["phase"] = "verify_fix"
+            state["completedAgents"] = 0  # Reset for verify_fix phase
+
+            activity_log.append({
+                "timestamp": timestamp,
+                "event": "phase_transition",
+                "from": "implementation",
+                "to": "verify_fix"
+            })
+
+            output_msg = f"""🔄 RALPH PHASE TRANSITION: Implementation → Verify+Fix
+
+All {expected} implementation agents completed.
+
+**MANDATORY NEXT STEP:**
+Spawn {vf_agents} verify-fix agents IN PARALLEL:
+
+```
+Task(subagent_type: "general-purpose", prompt: "RALPH Verify-Fix Agent 1/{vf_agents}: Verify and fix implementation for {task}")
+Task(subagent_type: "general-purpose", prompt: "RALPH Verify-Fix Agent 2/{vf_agents}: Verify and fix implementation for {task}")
+```
+
+Verify-Fix agents should:
+1. Run build checks (`pnpm build` / `python -m py_compile`)
+2. Use Serena to verify symbol integrity
+3. Run type checks where applicable
+4. Auto-fix simple issues (imports, types, formatting)
+5. Use AskUserQuestion for complex issues
+6. Do NOT leave TODO comments — fix or escalate
+
+**DO NOT** output completion signals yet. Spawn verify-fix agents NOW."""
+
+    elif phase == "verify_fix":
+        vf_config = state.get("verify_fix", {"agents": 2, "iterations": 2})
+        expected = vf_config.get("agents", 2)
+        if completed >= expected:
+            # All verify-fix agents done → transition to review
             review_config = state.get("review", {"agents": 5, "iterations": 2})
             review_agents = review_config.get("agents", 5)
             review_iterations = review_config.get("iterations", 2)
@@ -3181,13 +3862,13 @@ def agent_tracker() -> None:
             activity_log.append({
                 "timestamp": timestamp,
                 "event": "phase_transition",
-                "from": "implementation",
+                "from": "verify_fix",
                 "to": "review"
             })
 
-            output_msg = f"""🔄 RALPH PHASE TRANSITION: Implementation → Review
+            output_msg = f"""🔄 RALPH PHASE TRANSITION: Verify+Fix → Review
 
-All {expected} implementation agents completed.
+All {expected} verify-fix agents completed.
 
 **MANDATORY NEXT STEP:**
 Spawn {review_agents} review agents IN PARALLEL:
@@ -3236,6 +3917,7 @@ This will allow the session to exit properly.
 
 **Summary:**
 - Implementation agents: {state.get("total_agents", len(state["agents"]) if isinstance(state.get("agents"), list) else state.get("agents", "?"))} completed
+- Verify-fix agents: {state.get("verify_fix", {}).get("agents", 2)} completed
 - Review agents: {expected} completed
 - Task: {state.get("task", "N/A")}
 - Duration: {state.get("startedAt", "?")} → {timestamp}"""
@@ -3330,6 +4012,8 @@ Usage:
     ralph.py hook-pretool               - Handle hook-pretool (reads stdin)
     ralph.py hook-user-prompt           - Handle hook-user-prompt (reads stdin)
     ralph.py hook-session               - Handle hook-session-start (reads stdin)
+    ralph.py hook-subagent-start        - Handle SubagentStart hook (reads stdin)
+    ralph.py hook-subagent-stop         - Handle SubagentStop hook (reads stdin)
 
 Loop / Setup Options:
     --review-agents RN      Number of post-review agents (default: 5)
@@ -3337,6 +4021,8 @@ Loop / Setup Options:
     --skip-review           Skip post-implementation review
     --plan FILE             Path to plan file being executed
     --backend BACKEND       Spawn backend: task|subprocess|auto (default: auto)
+    --model MODE            Model routing: opus|sonnet|sonnet_all (default: opus)
+    --budget USD            Max budget in USD (stop spawning when exceeded)
 
 Cleanup Options:
     --auto                  Run age-based cleanup instead of full cleanup
@@ -3383,6 +4069,8 @@ def main():
         skip_review = False
         plan_file = None
         backend = SpawnBackend.AUTO.value
+        model_mode = ModelMode.OPUS.value
+        max_budget_usd = None
         task_parts = []
 
         i = 4
@@ -3406,11 +4094,31 @@ def main():
                     print(f"Error: --backend must be one of: task, subprocess, auto")
                     sys.exit(1)
                 i += 2
+            elif arg == "--model" and i + 1 < len(sys.argv):
+                model_mode = sys.argv[i + 1]
+                valid_modes = [m.value for m in ModelMode]
+                if model_mode not in valid_modes:
+                    print(f"Error: --model must be one of: {', '.join(valid_modes)}")
+                    sys.exit(1)
+                i += 2
+            elif arg == "--budget" and i + 1 < len(sys.argv):
+                try:
+                    max_budget_usd = float(sys.argv[i + 1])
+                except ValueError:
+                    print("Error: --budget must be a number (USD)")
+                    sys.exit(1)
+                i += 2
             else:
                 task_parts.append(arg)
                 i += 1
 
         task = " ".join(task_parts) if task_parts else None
+
+        # Set model/budget env vars for subprocess agents
+        if model_mode != ModelMode.OPUS.value:
+            os.environ["RALPH_MODEL_MODE"] = model_mode
+        if max_budget_usd is not None:
+            os.environ["RALPH_MAX_BUDGET_USD"] = str(max_budget_usd)
 
         # Preflight: archive stale state files before starting new session (Fix D)
         preflight_check()
@@ -3435,6 +4143,8 @@ def main():
             skip_review=skip_review,
             plan_file=plan_file,
             backend=backend,
+            model_mode=model_mode,
+            max_budget_usd=max_budget_usd,
         ))
 
     elif command == "setup":
@@ -3534,6 +4244,16 @@ def main():
                 except Exception as e:
                     protocol.log_activity(f"PreCompact checkpoint failed: {e}", level="ERROR")
         print(json.dumps({"checkpoint_created": result is not None}))
+
+    elif command == "hook-subagent-start":
+        # SubagentStart hook handler
+        result = protocol.handle_hook_subagent_start()
+        print(json.dumps(result))
+
+    elif command == "hook-subagent-stop":
+        # SubagentStop hook handler
+        result = protocol.handle_hook_subagent_stop()
+        print(json.dumps(result))
 
     else:
         print(f"Unknown command: {command}")

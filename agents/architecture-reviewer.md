@@ -1,5 +1,7 @@
 ---
 name: architecture-reviewer
+specialty: architecture
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent for software architecture analysis, SOLID principles validation, coupling assessment, and system design review. This agent should be invoked when reviewing code structure, evaluating design patterns, or assessing technical debt. It provides guidance on maintainability, scalability, and separation of concerns.
 
 Examples:

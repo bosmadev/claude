@@ -1,5 +1,7 @@
 ---
 name: api-reviewer
+specialty: api
+disallowedTools: [Write, Edit, MultiEdit]
 description: Use this agent when the user designs, reviews, or implements REST or GraphQL APIs. Evaluates API patterns, naming conventions, error handling, versioning, and HTTP semantics. Connects to /quality for correctness rules. Examples:
 
 <example>

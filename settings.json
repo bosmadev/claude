@@ -1,7 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
-    "FORCE_COLOR": "1"
+    "FORCE_COLOR": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   },
   "attribution": {
     "commit": "",
@@ -70,7 +71,6 @@
       "Bash(gh browse:*)",
       "Bash(gh api:*)",
       "Bash(pip show:*)",
-      "Bash(agent-browser:*)",
       "Skill",
       "WebSearch",
       "WebFetch",
@@ -321,6 +321,16 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\utils.py model-capture",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "command",
@@ -501,6 +511,28 @@
            ]
           }
       ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\ralph.py hook-subagent-start",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\ralph.py hook-subagent-stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "permission_prompt",
@@ -523,36 +555,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "Derezzling",
-      "Rezzing",
-      "Entering the Grid",
-      "Compiling identity disc",
-      "Routing through I/O Tower",
-      "Scanning lightcycles",
-      "Initializing CLU",
-      "Querying the MCP",
-      "Traversing the Grid",
-      "Rectifying",
-      "Digitizing",
-      "End of line processing",
-      "Defragmenting disc",
-      "Booting Tron protocol",
-      "Cycling the light ribbon",
-      "Decrypting ISO signal",
-      "Interfacing with Flynn",
-      "Resequencing bits",
-      "Activating recognizer",
-      "Parsing the Sea of Simulation",
-      "Disc wars training",
-      "Opening the portal",
-      "Encoding on the Grid",
-      "Running program",
-      "Syncing identity disc",
-      "Gridwalking",
-      "Tracing data stream",
-      "Powering light jet",
-      "Uplink to I/O Tower",
-      "Resolving user request"
+      "Unifying"
     ]
   },
   "autoUpdatesChannel": "latest"
