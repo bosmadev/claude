@@ -4,7 +4,6 @@ description: Process USER comments in plan files. Scans /plans/ for USER comment
 argument-hint: "[path]"
 user-invocable: true
 ---
-
 # /reviewplan - Plan Comment Processor
 
 **When invoked, immediately output:** `**SKILL_STARTED:** reviewplan`
@@ -43,8 +42,9 @@ grep -rn "USER:" plans/*.md 2>/dev/null || echo "No USER comments found"
 2. **Understand** what change is requested
 3. **Apply** the requested change to the plan
 4. **Remove** the USER: line completely
-5. **Add 🟧** (Orange Square) marker at END of modified line (not beginning!)
-6. **Update** the "Last Updated" timestamp in frontmatter
+5. **Execute Step 3**: Cleaup before adding new ones
+6. **Add 🟧** (Orange Square) marker at END of modified line (not beginning!)
+7. **Update** the "Last Updated" timestamp in frontmatter
 
 ### Step 3: Clean Up Old Markers
 
@@ -86,25 +86,31 @@ Files now clean of USER comments.
 **CRITICAL:** Place 🟧 at the **END of the line**, not the beginning. Different markdown elements require specific handling:
 
 ### Standard lines
+
 Place at END of line: `Content changed 🟧`
 
 ### Headings
+
 Place after text: `### Title 🟧`
 
 ### Tables
+
 Place INSIDE last cell, before closing pipe:
+
 ```markdown
 CORRECT: | File | Change 🟧 |
 WRONG:   | File | Change | 🟧
 ```
 
 NEVER mark separator rows:
+
 ```markdown
 WRONG:   |------|--------| 🟧
 SKIP:    |------|--------|    (no marker)
 ```
 
 If entire table changed, mark the row ABOVE the table:
+
 ```markdown
 Two services exist: 🟧
 | File | Schedule |
@@ -112,8 +118,10 @@ Two services exist: 🟧
 ```
 
 ### Code blocks
+
 NEVER place 🟧 inside code fences.
 Mark the line ABOVE the code block:
+
 ```markdown
 CORRECT: **Fixed imports:** 🟧
          ```typescript
@@ -124,9 +132,11 @@ WRONG:   import { foo } from "bar"; 🟧  (inside code)
 ```
 
 ### Lists
+
 Place after item text: `- Item description 🟧`
 
 ### Incorrect (breaks markdown)
+
 ```markdown
 🟧 ### Section Title    <- WRONG: breaks heading
 🟧 Some content         <- WRONG: marker at beginning
@@ -135,6 +145,7 @@ Place after item text: `- Item description 🟧`
 ## Marker Lifecycle: Remove Old Before Adding New
 
 Each `/reviewplan` invocation MUST:
+
 1. **Strip ALL existing 🟧 markers** from the entire file first
 2. Process USER comments and apply changes
 3. Add 🟧 ONLY to lines changed in THIS processing pass
@@ -145,6 +156,7 @@ This ensures the plan only shows what's NEW since the last review.
 ## Example
 
 **Before:**
+
 ```markdown
 ## Files to Create 🟧
 
@@ -156,6 +168,7 @@ USER: Add a new file for database schema
 ```
 
 **After processing:**
+
 ```markdown
 ## Files to Create
 
@@ -170,6 +183,7 @@ USER: Add a new file for database schema
 When applying changes to plan files, all tables and sections MUST use emoji-prefixed headers:
 
 **Section headers:** Add category emoji before title.
+
 ```markdown
 ## 🔒 Security Considerations
 ## ⚡ Performance Impact
@@ -177,6 +191,7 @@ When applying changes to plan files, all tables and sections MUST use emoji-pref
 ```
 
 **Table headers:** Add status emoji in relevant cells.
+
 ```markdown
 | # | ✅ Feature | ⚠️ Risk | 📋 Status |
 |---|-----------|---------|----------|
@@ -194,5 +209,6 @@ When executing a plan via `/start`, the skill should be invoked automatically if
 ## Hook Integration
 
 This skill works with the `guards.py` hooks:
+
 - **UserPromptSubmit**: Detects USER comments and injects processing reminder
 - **PostToolUse**: Warns if plan files still have USER comments after writes

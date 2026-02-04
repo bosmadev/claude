@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Code review: multi-aspect analysis OR PR review. Use '/review' for code quality, '/review pr [N]' for pull requests, '/review security' for OWASP audit."
-argument-hint: "[agents] [iterations] [opus|sonnet|haiku] [working|impact|branch|staged|pr]"
+argument-hint: "[agents] [iterations] [opus|sonnet|haiku] [working|impact|branch|staged|pr|security]"
 user-invocable: true
 ---
 

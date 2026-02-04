@@ -367,6 +367,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python ~/.claude\\hooks\\security-gate.py pre-bash",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "python ~/.claude\\hooks\\git.py pre-commit-checks",
             "timeout": 5
           }
@@ -425,11 +430,6 @@
           {
             "type": "command",
             "command": "python ~/.claude\\scripts\\guards.py plan-write-check",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py hook-sync",
             "timeout": 5
           },
           {

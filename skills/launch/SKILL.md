@@ -1,6 +1,7 @@
 ---
 name: launch
 description: Run debug mode and browser testing for visual verification. Use when you need to visually verify UI changes, check for visual regressions, or test interactive elements. Manual invocation only - use /launch to run.
+argument-hint: "[--only <browser>] | help"
 user-invocable: true
 context: fork
 ---

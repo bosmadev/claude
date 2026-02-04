@@ -1,0 +1,90 @@
+# =============================================================================
+# DOCKER DATA CONVENTION FOR ALL PROJECTS
+# =============================================================================
+#
+# DATA LOCATION: D:\docker-data\{project}\{service}\
+#
+# Examples:
+#   D:\docker-data\claude\redis\        - This project's Redis
+#   D:\docker-data\cwchat\redis\        - cwchat Redis
+#   D:\docker-data\cwchat\mongodb\      - cwchat MongoDB
+#   D:\docker-data\pulsona\redis\       - pulsona Redis
+#   D:\docker-data\pulsona\mongodb\     - pulsona MongoDB
+#   D:\docker-data\pulsona\qdrant\      - pulsona Qdrant
+#
+# CONTAINER NAMING: {project}-{service}
+#   claude-redis, cwchat-redis, cwchat-mongodb, pulsona-qdrant, etc.
+#
+# PORT ALLOCATION (to avoid conflicts):
+#   Redis:    claude=6379, cwchat=6380, pulsona=6381
+#   MongoDB:  cwchat=27017, pulsona=27018
+#   Qdrant:   pulsona=6333
+#
+# BACKUP:
+#   Copy D:\docker-data\{project}\ to SSH storage
+#   Includes all service data for that project
+#
+# RESTORE:
+#   1. Copy backup to D:\docker-data\{project}\
+#   2. docker-compose up -d
+#
+# NEW PROJECT TEMPLATE:
+# -----------------------------------------------------------------------------
+# name: {project}
+#
+# services:
+#   redis:
+#     image: redis:7-alpine
+#     container_name: {project}-redis
+#     ports:
+#       - "{port}:6379"
+#     volumes:
+#       - D:\docker-data\{project}\redis:/data
+#     restart: unless-stopped
+#     healthcheck:
+#       test: ["CMD", "redis-cli", "ping"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 3
+#     command: redis-server --appendonly yes --save 60 1
+#
+#   mongodb:
+#     image: mongo:7
+#     container_name: {project}-mongodb
+#     ports:
+#       - "{port}:27017"
+#     volumes:
+#       - D:\docker-data\{project}\mongodb:/data/db
+#     restart: unless-stopped
+#     environment:
+#       MONGO_INITDB_DATABASE: {project}
+#
+#   qdrant:
+#     image: qdrant/qdrant:latest
+#     container_name: {project}-qdrant
+#     ports:
+#       - "{port}:6333"
+#     volumes:
+#       - D:\docker-data\{project}\qdrant:/qdrant/storage
+#     restart: unless-stopped
+# -----------------------------------------------------------------------------
+#
+# =============================================================================
+
+name: claude
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: claude-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - D:\docker-data\claude\redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    command: redis-server --appendonly yes --save 60 1

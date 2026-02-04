@@ -1,6 +1,7 @@
 ---
 name: repotodo
 description: Scan and process TODO comments in the codebase. Use /repotodo list to see all TODOs, /repotodo <priority> all to process all of a priority, /repotodo <priority> 1 to process one, or /repotodo verify to check alignment with review findings.
+argument-hint: "[list|P1|P2|P3|low|all|verify]"
 user-invocable: true
 ---
 

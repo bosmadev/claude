@@ -1,6 +1,6 @@
 # Claude Code Configuration
 
-#### Based on claude-code: 2.1.29
+#### Based on claude-code: 2.1.31
 
 **Stack:** Next.js 16.1+, React 19+, Node.js 25+, Python 3.14+, FastAPI, TypeScript 5.9.3+, Tailwind CSS v4+, Shadcn UI, Radix, Playwright, Vitest, Biome 2.3.10+, Knip 5.77.1+, uv 0.9.18+, pnpm 10.26.2+.
 
@@ -32,10 +32,11 @@
 ├── scripts\                    # CLI utilities
 │   ├── statusline.py          # Terminal status display
 │   ├── ralph.py               # Ralph unified implementation
-│   └── claude-github.py       # GitHub integration
+│   ├── claude-github.py       # GitHub integration
+│   └── aggregate-pr.py        # PR commit aggregation
 ├── skills\                     # Skill definitions (/commands)
-│   ├── chats\                 # /chats - Chat management
 │   ├── commit\                # /commit - Git commits
+│   ├── init-repo\             # /init-repo - Repo initialization
 │   ├── launch\                # /launch - Browser debug
 │   ├── openpr\                # /openpr - Pull requests
 │   ├── quality\               # /quality - Linting/checks
@@ -356,7 +357,6 @@ All hooks registered in `settings.json`:
 | PostToolUse | Edit\|Write | `git.py change-tracker` | 5s | 1 |
 | PostToolUse | Edit\|Write | `guards.py guardian` | 5s | 1 |
 | PostToolUse | Edit\|Write | `guards.py plan-write-check` | 5s | 1 |
-| PostToolUse | Edit\|Write | `guards.py hook-sync` | 5s | 1 |
 | PostToolUse | Edit\|Write | `guards.py insights-reminder` | 5s | 1 |
 | PostToolUse | ExitPlanMode | `guards.py ralph-enforcer` | 10s | 1 |
 | PostToolUse | Task | `ralph.py agent-tracker` | 10s | 1 |
@@ -464,6 +464,11 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 | `/commit clear`   | Clear change log                               |
 | `/commit help`    | Show usage                                     |
 
+**Commit Structure:** Uses single-file sections format with scope-prefix style:
+- Organized by file path (e.g., `### src/components/Button.tsx`)
+- Each section includes bullet points of changes
+- Generates concise commit message: `scope: description`
+
 ### /openpr - Create Pull Request
 
 | Command              | Description         |
@@ -471,6 +476,24 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 | `/openpr`          | Create PR to main   |
 | `/openpr [branch]` | Create PR to branch |
 | `/openpr help`     | Show usage          |
+
+**Integration:** Uses `scripts/aggregate-pr.py` for commit aggregation with build ID extraction.
+
+### /init-repo - Initialize Repository for Claude Code
+
+| Command                | Description                              |
+| ---------------------- | ---------------------------------------- |
+| `/init-repo`         | Interactive setup - prompts for each     |
+| `/init-repo workflows` | Install GitHub workflows only          |
+| `/init-repo all`     | Full setup (workflows + .gitignore)      |
+| `/init-repo help`    | Show usage                               |
+
+**Installs:** From `~/.claude/.github/workflows/` including:
+- `.github/workflows/claude.yml` - PR automation, changelog, validation
+- `.claude/` directory structure
+- Updated `.gitignore` with Claude patterns
+
+**Workflow Integration:** Sets up automated CHANGELOG generation via GitHub Actions. See [CHANGELOG Automation](#changelog-automation) for details.
 
 ### /repotodo - Process TODO Comments by Priority
 
@@ -496,25 +519,6 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 | `/reviewplan`        | Process all USER comments in /plans/ |
 | `/reviewplan [path]` | Process specific plan file           |
 | `/reviewplan help`   | Show usage                           |
-
-### /chats - Chat Management
-
-| Command                       | Description                                |
-| ----------------------------- | ------------------------------------------ |
-| `/chats`                    | List all chats                             |
-| `/chats [id]`               | View chat details                          |
-| `/chats rename [id] [name]` | Rename chat                                |
-| `/chats delete [id]`        | Delete by ID                               |
-| `/chats delete [days]`      | Delete older than N days                   |
-| `/chats delete all`         | Delete all (prompts for screenshots/plans) |
-| `/chats cache`              | Clean caches                               |
-| `/chats open [id]`          | Show resume command                        |
-| `/chats filter [project]`   | Filter by project                          |
-| `/chats commits`            | Manage commit.md files                     |
-| `/chats commits delete all` | Delete all commit.md files                 |
-| `/chats plans`              | Manage plan files                          |
-| `/chats plans delete all`   | Delete all plan files                      |
-| `/chats help`               | Show usage                                 |
 
 ### /launch - Visual App Verification
 
@@ -556,6 +560,275 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 | `/token sync`                 | Push token to current repo secrets |
 | `/token sync all`             | Push token to all detected repos   |
 | `/token help`                 | Show usage                         |
+
+## GitHub Actions Workflow Template
+
+The `.github/workflows/claude.yml` workflow provides AI-assisted PR automation, code review, and security audits.
+
+### Trigger Methods
+
+| Trigger | How to Use | Example |
+|---------|-----------|---------|
+| `@claude review` comment | Comment on issue/PR | "@claude review this change" |
+| `@claude review` in PR review | Submit PR review | "@claude review is this secure?" |
+| Issue assigned to `claude[bot]` | Assign in GitHub UI | Assigns Claude as reviewer |
+| `claude` label | Add label to PR | Auto-triggers on label |
+| PR opened | Automatic | Runs on every new PR |
+| Manual dispatch | Actions tab UI | Select action from dropdown |
+
+### Manual Dispatch Actions
+
+Use the GitHub Actions tab to run these on-demand:
+
+| Action | Purpose | Use Case |
+|--------|---------|----------|
+| **Summarize changes in this PR** | Generate structured PR summary | Before review, after multiple commits |
+| **Review code quality** | Style, patterns, bugs, test coverage | Pre-merge validation |
+| **Security audit (OWASP)** | OWASP Top 10 security check | Security-critical PRs |
+| **Custom prompt** | Your own question/task | Ad-hoc analysis |
+
+### Configuration Options
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `model` | `claude-sonnet-4-5` | AI model (Sonnet/Opus/Haiku) |
+| `max_turns` | 25 | Conversation length limit |
+| `timeout` | 30 minutes | Workflow timeout |
+
+### Required Secrets
+
+Set in repository Settings > Secrets and variables > Actions:
+
+| Secret | Required | How to Get |
+|--------|----------|-----------|
+| `CLAUDE_CODE_OAUTH_TOKEN` | Yes | Run `claude auth login` then `/token sync` |
+| `GITHUB_TOKEN` | Auto | Provided automatically by GitHub |
+
+**Token Sync Workflow:**
+
+```bash
+# 1. Authenticate Claude CLI
+claude auth login
+
+# 2. Sync token to repository
+cd your-repo
+/token sync         # Current repo only
+/token sync all     # All detected repos
+```
+
+### Workflow Permissions
+
+Required GitHub permissions (already configured):
+
+```yaml
+permissions:
+  id-token: write       # OIDC authentication
+  contents: write       # Read code, update files
+  issues: write         # Comment on issues
+  pull-requests: write  # Comment on PRs
+  actions: read         # Read workflow status
+```
+
+### MCP Servers Enabled
+
+| Server | Purpose |
+|--------|---------|
+| `sequential-thinking` | Multi-step reasoning for complex analysis |
+| `context7` | Documentation search and reference |
+
+**Note:** Serena and Playwriter are intentionally excluded to prevent infinite loops in CI.
+
+### Allowed Tools (Security-Restricted)
+
+| Tool Category | Allowed |
+|---------------|---------|
+| MCP sequential-thinking | All |
+| MCP context7 | All |
+| Bash (safe commands) | gh, npm, pnpm, git, ls, cat, head, tail, tree, find, wc, grep, echo, pwd, mkdir, touch, cp, mv |
+| File operations | Read, Write, Edit, MultiEdit |
+| Search | Glob, Grep |
+| Task orchestration | Task |
+
+**Dangerous tools blocked:** rm, sudo, curl download, network access
+
+### Usage Examples
+
+**Comment-Based Triggers:**
+
+```markdown
+@claude explain this code block
+@claude is this implementation secure?
+@claude suggest improvements for performance
+@claude refactor this function to be more readable
+```
+
+**PR Automation:**
+
+```bash
+# Create PR (Claude auto-triggers on PR open)
+gh pr create --title "Add authentication" --body "WIP"
+
+# Add label to trigger analysis
+gh pr edit 42 --add-label "claude"
+
+# Assign Claude for review
+gh pr edit 42 --add-assignee "claude[bot]"
+```
+
+### Troubleshooting
+
+**Workflow Not Triggering:**
+
+```bash
+# View workflow runs
+gh run list --workflow=claude.yml
+
+# View specific run logs
+gh run view <run-id> --log
+```
+
+**Authentication Errors:**
+
+1. Verify token: `gh secret list`
+2. Refresh token: `claude auth login`
+3. Sync to repo: `/token sync`
+4. Check expiry: `/token status`
+
+**Timeout Issues:**
+
+- Increase timeout in workflow dispatch inputs
+- Reduce `max_turns` for shorter conversations
+- Use Haiku model for faster responses
+- Break large tasks into smaller PRs
+
+### Cost Optimization
+
+| Scenario | Recommended Model | Rationale |
+|----------|------------------|-----------|
+| Dependency PRs | Haiku | Simple diffs, pattern matching |
+| Documentation | Sonnet | Good balance |
+| Architecture review | Opus | Complex reasoning needed |
+| Security audit | Opus | Critical analysis |
+| Style checks | Haiku | Fast, cheap, effective |
+
+### Advanced Configuration
+
+**Multi-Repository Setup:**
+
+```bash
+# Sync token to all repositories
+cd ~/.claude
+/token sync all
+
+# Verify sync
+for repo in $(gh repo list --json name -q '.[].name'); do
+  echo "Checking $repo..."
+  gh secret list -R owner/$repo | grep CLAUDE
+done
+```
+
+**Change AI Model:**
+
+```yaml
+--model claude-opus-4-5-20251101  # For complex reasoning
+--model claude-haiku-4-5-20251001 # For faster/cheaper runs
+```
+
+**Adjust Conversation Length:**
+
+```yaml
+--max-turns 50  # Longer conversations
+--max-turns 10  # Shorter, focused analysis
+```
+
+## Build Numbering Convention
+
+Branch names include build IDs to track work across non-linear merges:
+
+**Format:** `{type}/b{id}-{description}`
+
+**Examples:**
+- `feature/b101-user-auth` - Feature branch for build 101
+- `fix/b102-login-bug` - Bugfix for build 102
+- `refactor/b103-api-cleanup` - Refactor for build 103
+
+**Build ID Assignment:**
+- Build IDs are manually assigned (no auto-generation)
+- Sequential but can have gaps (e.g., 101, 102, 105)
+- Use next available number when creating branches
+- Check existing branches to avoid conflicts
+
+**Why Build IDs:**
+- Track changes across non-linear merge history
+- Link PR summaries to specific work items
+- Enable automated CHANGELOG grouping
+- Survive squash merges and rebases
+
+**Branch Types:**
+- `feature/` - New functionality
+- `fix/` - Bug fixes
+- `refactor/` - Code restructuring
+- `docs/` - Documentation only
+- `chore/` - Maintenance tasks
+
+## CHANGELOG Automation
+
+Automated changelog generation via GitHub Actions workflow (`claude.yml`):
+
+### Workflow: @claude prepare → Review → Squash Merge → Auto CHANGELOG
+
+1. **@claude prepare** - Bot creates PR with:
+   - Aggregated commit summary (grouped by file)
+   - Build ID extracted from branch name
+   - Review checklist
+
+2. **Review** - Team reviews PR via GitHub UI
+   - Add comments, request changes
+   - Approve when ready
+
+3. **Squash Merge** - Merge PR to main:
+   - GitHub Actions triggers automatically
+   - Reads PR body for commit aggregation
+   - Extracts build ID from branch name
+   - Generates CHANGELOG entry
+
+4. **CHANGELOG Entry Format:**
+
+```markdown
+## Build {id} | {version}
+
+**Branch:** {type}/b{id}-{description}
+**Merged:** {timestamp}
+
+{pr_summary}
+
+### Changes
+- {file_section_1}
+- {file_section_2}
+- ...
+```
+
+### Key Points
+
+**Worktree Behavior:**
+- Working branches do NOT edit CHANGELOG directly
+- All CHANGELOG updates happen via GitHub Actions post-merge
+- Prevents merge conflicts and duplication
+
+**Build ID Extraction:**
+- Workflow parses branch name: `feature/b101-auth` → Build 101
+- Used in CHANGELOG header and grouping
+- Enables non-linear merge tracking
+
+**Version Bumping:**
+- Uses `scripts/aggregate-pr.py --bump` logic
+- Follows semantic versioning (major.minor.patch)
+- Auto-detects version type from PR labels or commit messages
+
+**Manual Override:**
+- Edit CHANGELOG directly on main if needed
+- Use conventional commit format in PR title to influence versioning
+- Add `skip-changelog` label to PR to bypass automation
 
 ## Serena Semantic Code Tools
 
@@ -628,7 +901,6 @@ Token-efficient model assignment via permanent, native mechanisms:
 | `/review` | No fork | Opus (main) | Spawns Task agents with model="sonnet" |
 | `/commit` | Fork | Sonnet (L1) | Pattern matching, no code changes |
 | `/openpr` | Fork | Sonnet (L1) | Reads commits, generates PR body |
-| `/chats` | Fork | Sonnet (L1) | List/rename/delete operations |
 | `/screen` | Fork | Sonnet (L1) | Screenshot management |
 | `/youtube` | Fork | Sonnet (L1) | Transcription management |
 | `/launch` | Fork | Sonnet (L1) | Browser verification |
