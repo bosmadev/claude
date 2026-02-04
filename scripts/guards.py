@@ -11,7 +11,6 @@ Usage:
   python3 guards.py plan-comments        # UserPromptSubmit: Plan comment tracking
   python3 guards.py plan-write-check     # PostToolUse: Check for USER comments
   python3 guards.py skill-parser         # UserPromptSubmit: Parse /start command arguments
-  python3 guards.py hook-sync            # PostToolUse: Sync expected-hooks count
   python3 guards.py insights-reminder    # PostToolUse: Remind about Insights section
   python3 guards.py ralph-enforcer       # Ralph protocol enforcement
   python3 guards.py ralph-agent-tracker  # (deprecated) Redirects to scripts/ralph.py
@@ -784,116 +783,6 @@ def skill_validator() -> None:
 
 
 # =============================================================================
-# Hook Sync (PostToolUse) - Auto-sync expected-hooks count
-# =============================================================================
-
-def hook_sync() -> None:
-    """Sync expected-hooks count after settings.json modification.
-
-    Fixes for 8 identified silent failure edge cases:
-    1. Exact filename match (not substring)
-    2. Logging for write failures
-    3. File locking for concurrent writes
-    4. Use edited file's directory for .expected-hooks
-    5. Expand ~ early in process
-    6. Log JSON decode errors
-    7. Validate hook structure before counting
-    8. Clean exit on errors
-    """
-    try:
-        data = json.loads(sys.stdin.read())
-    except json.JSONDecodeError as e:
-        # Fix #6: Log JSON decode errors instead of silent exit
-        sys.stderr.write(f"hook_sync: Invalid JSON input: {e}\n")
-        sys.exit(0)
-
-    tool_input = data.get("tool_input", {})
-    file_path = extract_file_path(tool_input)
-
-    # Fix #5: Expand ~ early before any checks
-    if file_path and file_path.startswith("~"):
-        file_path = str(Path(file_path).expanduser())
-
-    # Fix #1: Exact filename match, not substring
-    if not file_path:
-        sys.exit(0)
-    edited_path = Path(file_path)
-    if edited_path.name != "settings.json":
-        sys.exit(0)
-
-    # Fix #4: Use the actual edited settings.json, not hardcoded path
-    settings_path = edited_path if edited_path.exists() else Path.home() / ".claude" / "settings.json"
-    if not settings_path.exists():
-        sys.stderr.write(f"hook_sync: Settings file not found: {settings_path}\n")
-        sys.exit(0)
-
-    try:
-        with open(settings_path) as f:
-            settings = json.load(f)
-    except json.JSONDecodeError as e:
-        # Fix #6: Log malformed JSON
-        sys.stderr.write(f"hook_sync: Malformed settings.json: {e}\n")
-        sys.exit(0)
-    except OSError as e:
-        sys.stderr.write(f"hook_sync: Cannot read settings: {e}\n")
-        sys.exit(0)
-
-    # Fix #7: Validate hook structure with type checks
-    hook_count = 0
-    hooks = settings.get("hooks", {})
-    if not isinstance(hooks, dict):
-        sys.stderr.write(f"hook_sync: Invalid hooks structure (not dict)\n")
-        sys.exit(0)
-
-    for event_name, event_hooks in hooks.items():
-        if not isinstance(event_hooks, list):
-            continue
-        for hook_group in event_hooks:
-            if not isinstance(hook_group, dict):
-                continue
-            inner_hooks = hook_group.get("hooks", [])
-            if not isinstance(inner_hooks, list):
-                continue
-            for hook in inner_hooks:
-                if isinstance(hook, dict) and hook.get("type") == "command" and hook.get("command"):
-                    hook_count += 1
-
-    # Fix #4: Write .expected-hooks in same directory as settings.json
-    expected_path = settings_path.parent / ".expected-hooks"
-
-    # Fix #3: File locking for concurrent writes (cross-platform)
-    try:
-        with open(expected_path, "w") as f:
-            if sys.platform == "win32":
-                import msvcrt
-                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                try:
-                    f.write(str(hook_count))
-                finally:
-                    os.lseek(f.fileno(), 0, os.SEEK_SET)
-                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                try:
-                    f.write(str(hook_count))
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-    except (OSError, BlockingIOError) as e:
-        # Fix #2: Log write failures instead of silent pass
-        sys.stderr.write(f"hook_sync: Cannot write {expected_path}: {e}\n")
-
-    output = {
-        "hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
-            "additionalContext": f"Hook count synced: {hook_count} hooks"
-        }
-    }
-    print(json.dumps(output))
-    sys.exit(0)
-
-
-# =============================================================================
 # Insights Reminder (PostToolUse)
 # =============================================================================
 
@@ -1098,7 +987,7 @@ State file created: {state_path}"""
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print("Usage: guards.py [protect|guardian|plan-comments|plan-write-check|skill-parser|hook-sync|insights-reminder|ralph-enforcer|skill-interceptor|skill-validator|plan-rename-tracker]", file=sys.stderr)
+        print("Usage: guards.py [protect|guardian|plan-comments|plan-write-check|skill-parser|insights-reminder|ralph-enforcer|skill-interceptor|skill-validator|plan-rename-tracker]", file=sys.stderr)
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -1113,8 +1002,6 @@ def main() -> None:
         plan_write_check()
     elif mode == "skill-parser":
         skill_parser()
-    elif mode == "hook-sync":
-        hook_sync()
     elif mode == "insights-reminder":
         insights_reminder()
     elif mode == "ralph-enforcer":

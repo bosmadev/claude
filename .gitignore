@@ -26,6 +26,7 @@ bin/
 transcriptions/
 statsig/
 tmp/
+security/
 
 # Files
 !.gitkeep

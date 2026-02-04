@@ -11,11 +11,29 @@ The protocol ensures:
 - Hook handlers inject proper context and block premature exits
 - Multiple agents can be spawned concurrently with asyncio
 
+Spawn Backends:
+- subprocess: Spawns agents as separate `claude --print` processes (default)
+- task: Generates prompts for manual Task() spawning in parent Claude session
+- auto: Uses Task for <=10 agents, subprocess for overflow
+
 Usage:
-    ralph.py loop N M [task]  - Run N agents × M iterations
-    ralph.py status           - Show current state
-    ralph.py resume           - Resume from checkpoint
-    ralph.py cleanup          - Clean state files
+    ralph.py loop N M [task]         - Run N agents × M iterations (subprocess backend)
+    ralph.py prompt N [task]         - Generate N prompts for Task() spawning
+    ralph.py status                  - Show current state
+    ralph.py resume                  - Resume from checkpoint
+    ralph.py cleanup                 - Clean state files
+
+Task Backend Workflow:
+    The 'task' backend requires manual Task() spawning from the parent Claude session
+    because ralph.py runs as a subprocess and cannot directly invoke the Task tool.
+    
+    Example:
+        1. Generate prompts: python ralph.py prompt 5 "implement auth"
+        2. In parent Claude session, spawn each prompt via Task tool:
+           Task(prompt="...agent 1 prompt...")
+           Task(prompt="...agent 2 prompt...")
+           ...
+        3. All agents share the same TaskList and coordinate via Ralph protocol
 """
 
 import asyncio
@@ -35,6 +53,133 @@ from typing import Any, Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from zoneinfo import ZoneInfo
+
+# Optional Redis import for real-time context injection
+try:
+    from redis import Redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    Redis = None  # type: ignore
+
+
+# =============================================================================
+# Redis Hybrid Context Injection
+# =============================================================================
+
+REDIS_HOST = "localhost"
+REDIS_PORT = 6379
+CONTEXT_FILE_PATH = Path.home() / ".claude" / ".claude" / "ralph" / "pending-context.md"
+
+
+def inject_context(context: str, agent_id: str | None = None) -> bool:
+    """
+    Inject context to running agents via Redis pub/sub with file fallback.
+
+    Uses Redis for real-time delivery when available, falls back to file-based
+    injection when Redis is down or not installed.
+
+    Args:
+        context: The context/hint to inject (markdown string).
+        agent_id: Optional specific agent ID, or None for broadcast to all.
+
+    Returns:
+        True if injection succeeded, False otherwise.
+
+    Example:
+        >>> inject_context("Try checking the import paths", "agent-3")
+        >>> inject_context("Use the singleton pattern for the cache")  # broadcast
+    """
+    # Try Redis first for real-time delivery
+    if REDIS_AVAILABLE:
+        try:
+            redis = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+            channel = f"ralph:context:{agent_id or 'all'}"
+            redis.publish(channel, context)
+            redis.close()
+            return True
+        except Exception:
+            pass  # Fall through to file-based
+
+    # Fallback to file-based injection
+    try:
+        CONTEXT_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # Append with agent targeting
+        entry = f"---\nagent: {agent_id or 'all'}\ntime: {datetime.now().isoformat()}\n---\n{context}\n\n"
+        with open(CONTEXT_FILE_PATH, "a", encoding="utf-8") as f:
+            f.write(entry)
+        return True
+    except OSError:
+        return False
+
+
+def receive_context(agent_id: str, timeout: float = 0.1) -> str | None:
+    """
+    Receive injected context for an agent via Redis sub with file fallback.
+
+    Checks Redis pub/sub first, then falls back to reading from file.
+    Consumes the context (removes from file after reading).
+
+    Args:
+        agent_id: The agent ID to receive context for.
+        timeout: Redis subscription timeout in seconds.
+
+    Returns:
+        Context string if available, None otherwise.
+    """
+    # Try Redis first
+    if REDIS_AVAILABLE:
+        try:
+            redis = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+            pubsub = redis.pubsub()
+            pubsub.subscribe(f"ralph:context:{agent_id}", "ralph:context:all")
+            message = pubsub.get_message(timeout=timeout)
+            pubsub.close()
+            redis.close()
+            if message and message.get("type") == "message":
+                return message.get("data")
+        except Exception:
+            pass  # Fall through to file-based
+
+    # Fallback to file-based
+    if not CONTEXT_FILE_PATH.exists():
+        return None
+
+    try:
+        content = CONTEXT_FILE_PATH.read_text(encoding="utf-8")
+        if not content.strip():
+            return None
+
+        # Parse and find context for this agent
+        entries = content.split("---\nagent:")
+        remaining = []
+        found_context = None
+
+        for entry in entries:
+            if not entry.strip():
+                continue
+            lines = entry.strip().split("\n")
+            if lines:
+                target = lines[0].strip()
+                if target in (agent_id, "all") and found_context is None:
+                    # Extract context (skip metadata lines)
+                    context_start = next(
+                        (i for i, line in enumerate(lines) if line.startswith("---")),
+                        1
+                    )
+                    found_context = "\n".join(lines[context_start + 1:]).strip()
+                else:
+                    remaining.append(f"---\nagent:{entry}")
+
+        # Write back remaining entries
+        if remaining:
+            CONTEXT_FILE_PATH.write_text("".join(remaining), encoding="utf-8")
+        else:
+            CONTEXT_FILE_PATH.unlink(missing_ok=True)
+
+        return found_context
+    except OSError:
+        return None
 
 
 class LifecyclePhase(str, Enum):
@@ -269,6 +414,7 @@ class RalphState:
 class QueueTask:
     """Task in the work-stealing queue."""
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    description: str = ""  # Task description for markdown format
     status: str = "pending"
     blocked_by: list = field(default_factory=list)
     claimed_by: Optional[str] = None
@@ -279,6 +425,7 @@ class QueueTask:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "description": self.description,
             "status": self.status,
             "blockedBy": self.blocked_by,
             "claimed_by": self.claimed_by,
@@ -291,6 +438,7 @@ class QueueTask:
     def from_dict(cls, data: dict) -> "QueueTask":
         return cls(
             id=data["id"],
+            description=data.get("description", ""),
             status=data.get("status", "pending"),
             blocked_by=data.get("blockedBy", []),
             claimed_by=data.get("claimed_by"),
@@ -302,7 +450,7 @@ class QueueTask:
 
 @dataclass
 class TaskQueue:
-    """Work-stealing task queue tied to a plan file."""
+    """Work-stealing task queue tied to a plan file (supports JSON and Markdown)."""
     plan_id: str
     plan_file: str
     created_at: str
@@ -324,6 +472,145 @@ class TaskQueue:
             created_at=data["created_at"],
             tasks=[QueueTask.from_dict(t) if isinstance(t, dict) else t for t in data.get("tasks", [])]
         )
+    
+    def to_markdown(self) -> str:
+        """
+        Generate markdown representation of task queue.
+        
+        Format:
+        ---
+        plan_id: feature-auth
+        created: 2026-02-04T10:00:00Z
+        total_tasks: 5
+        completed: 2
+        ---
+        
+        # Task Queue: feature-auth
+        
+        ## ✅ Completed
+        - [x] Task 1: Description (agent-abc123)
+        
+        ## 🔄 In Progress
+        - [/] Task 2: Description (agent-def456)
+        
+        ## ⏳ Pending
+        - [ ] Task 3: Description
+        """
+        completed = [t for t in self.tasks if t.status == "completed"]
+        in_progress = [t for t in self.tasks if t.status == "in_progress"]
+        pending = [t for t in self.tasks if t.status == "pending"]
+        
+        lines = [
+            "---",
+            f"plan_id: {self.plan_id}",
+            f"created: {self.created_at}",
+            f"total_tasks: {len(self.tasks)}",
+            f"completed: {len(completed)}",
+            "---",
+            "",
+            f"# Task Queue: {self.plan_id}",
+            ""
+        ]
+        
+        if completed:
+            lines.append("## ✅ Completed")
+            for task in completed:
+                agent_info = f" ({task.claimed_by})" if task.claimed_by else ""
+                lines.append(f"- [x] Task {task.id}: {task.description}{agent_info}")
+            lines.append("")
+        
+        if in_progress:
+            lines.append("## 🔄 In Progress")
+            for task in in_progress:
+                agent_info = f" ({task.claimed_by})" if task.claimed_by else ""
+                lines.append(f"- [/] Task {task.id}: {task.description}{agent_info}")
+            lines.append("")
+        
+        if pending:
+            lines.append("## ⏳ Pending")
+            for task in pending:
+                blocked_info = f" (blocked by: {', '.join(task.blocked_by)})" if task.blocked_by else ""
+                lines.append(f"- [ ] Task {task.id}: {task.description}{blocked_info}")
+            lines.append("")
+        
+        return "\n".join(lines)
+    
+    @classmethod
+    def from_markdown(cls, content: str, plan_id: str = None, plan_file: str = None) -> "TaskQueue":
+        """
+        Parse markdown task queue into TaskQueue object.
+        
+        Recognizes:
+        - [ ] = pending
+        - [/] = in_progress
+        - [x] = completed
+        """
+        import re
+        
+        lines = content.split("\n")
+        
+        # Parse frontmatter
+        in_frontmatter = False
+        frontmatter = {}
+        tasks_section = []
+        
+        for line in lines:
+            if line.strip() == "---":
+                if not in_frontmatter:
+                    in_frontmatter = True
+                    continue
+                else:
+                    in_frontmatter = False
+                    continue
+            
+            if in_frontmatter:
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    frontmatter[key.strip()] = value.strip()
+            else:
+                tasks_section.append(line)
+        
+        # Extract task info from frontmatter or args
+        extracted_plan_id = plan_id or frontmatter.get("plan_id", "unknown")
+        extracted_plan_file = plan_file or frontmatter.get("plan_file", "")
+        created_at = frontmatter.get("created", datetime.now().isoformat())
+        
+        # Parse task list items
+        tasks = []
+        task_pattern = re.compile(r"^-\s+\[([ x/])\]\s+Task\s+(\d+):\s+(.+?)(?:\s+\(([^)]+)\))?(?:\s+\(blocked by:\s+([^)]+)\))?$")
+        
+        for line in tasks_section:
+            match = task_pattern.match(line.strip())
+            if match:
+                checkbox, task_id, description, claimed_by, blocked_by = match.groups()
+                
+                # Determine status from checkbox
+                if checkbox == "x":
+                    status = "completed"
+                elif checkbox == "/":
+                    status = "in_progress"
+                else:
+                    status = "pending"
+                
+                # Parse blocked_by list
+                blocked_list = []
+                if blocked_by:
+                    blocked_list = [b.strip() for b in blocked_by.split(",")]
+                
+                tasks.append(QueueTask(
+                    id=task_id,
+                    description=description.strip(),
+                    status=status,
+                    claimed_by=claimed_by,
+                    blocked_by=blocked_list
+                ))
+        
+        return cls(
+            plan_id=extracted_plan_id,
+            plan_file=extracted_plan_file,
+            created_at=created_at,
+            tasks=tasks
+        )
 
 
 class WorkStealingQueue:
@@ -339,11 +626,17 @@ class WorkStealingQueue:
     QUEUE_DIR = ".claude"
     LOCK_SUFFIX = ".lock"
 
-    def __init__(self, plan_id: str, plan_file: str, base_dir: Optional[Path] = None):
+    def __init__(self, plan_id: str, plan_file: str, base_dir: Optional[Path] = None, format: str = "markdown"):
         self.plan_id = plan_id
         self.plan_file = plan_file
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
-        self.queue_path = self.base_dir / self.QUEUE_DIR / f"task-queue-{plan_id}.json"
+        self.format = format  # "json" or "markdown"
+        
+        if format == "markdown":
+            self.queue_path = self.base_dir / self.QUEUE_DIR / f"task-queue-{plan_id}.md"
+        else:
+            self.queue_path = self.base_dir / self.QUEUE_DIR / f"task-queue-{plan_id}.json"
+        
         self.lock_path = self.base_dir / self.QUEUE_DIR / f"task-queue-{plan_id}{self.LOCK_SUFFIX}"
 
     def _ensure_dir(self) -> None:
@@ -374,12 +667,16 @@ class WorkStealingQueue:
         os.close(fd)
 
     def load(self) -> TaskQueue:
-        """Load queue from file, creating if needed."""
+        """Load queue from file (JSON or Markdown), creating if needed."""
         if self.queue_path.exists():
             try:
-                with open(self.queue_path) as f:
-                    return TaskQueue.from_dict(json.load(f))
-            except (json.JSONDecodeError, KeyError):
+                if self.format == "markdown":
+                    content = self.queue_path.read_text(encoding="utf-8")
+                    return TaskQueue.from_markdown(content, self.plan_id, self.plan_file)
+                else:
+                    with open(self.queue_path) as f:
+                        return TaskQueue.from_dict(json.load(f))
+            except (json.JSONDecodeError, KeyError, ValueError):
                 pass
 
         # Create new queue
@@ -391,10 +688,15 @@ class WorkStealingQueue:
         )
 
     def save(self, queue: TaskQueue) -> None:
-        """Save queue to file."""
+        """Save queue to file (JSON or Markdown)."""
         self._ensure_dir()
-        with open(self.queue_path, "w") as f:
-            json.dump(queue.to_dict(), f, indent=2)
+        
+        if self.format == "markdown":
+            content = queue.to_markdown()
+            self.queue_path.write_text(content, encoding="utf-8")
+        else:
+            with open(self.queue_path, "w") as f:
+                json.dump(queue.to_dict(), f, indent=2)
 
     def claim_next_task(self, agent_id: str) -> Optional[QueueTask]:
         """
@@ -1016,6 +1318,9 @@ class PerformanceTracker:
     def __init__(self):
         self._records: dict[int, AgentPerformanceRecord] = {}
 
+        # Struggle detection indicators (per-agent tracking)
+        self.struggle_indicators: dict[int, dict] = {}
+
     def start_agent(self, agent_id: int, agent_name: str = "") -> None:
         """Record agent start."""
         self._records[agent_id] = AgentPerformanceRecord(
@@ -1078,6 +1383,87 @@ class PerformanceTracker:
             "avg_duration_seconds": round(self.avg_duration, 1),
             "agents": [r.to_dict() for r in self._records.values()],
         }
+
+    def _init_struggle_tracker(self, agent_id: int) -> None:
+        """Initialize struggle tracking for an agent."""
+        if agent_id not in self.struggle_indicators:
+            self.struggle_indicators[agent_id] = {
+                "no_file_changes": 0,
+                "repeated_errors": [],
+                "short_iterations": 0,
+                "same_error_count": 0
+            }
+    
+    def record_iteration_result(self, agent_id: int, iteration_result: dict) -> None:
+        """
+        Record iteration metrics for struggle detection.
+        
+        Args:
+            agent_id: Agent identifier
+            iteration_result: Dict with keys:
+                - files_changed: int (number of files modified)
+                - error: Optional[str] (error message if any)
+                - duration_seconds: float (iteration duration)
+        """
+        self._init_struggle_tracker(agent_id)
+        indicators = self.struggle_indicators[agent_id]
+        
+        # Track file changes
+        if not iteration_result.get("files_changed"):
+            indicators["no_file_changes"] += 1
+        else:
+            indicators["no_file_changes"] = 0  # Reset on progress
+        
+        # Track errors
+        if iteration_result.get("error"):
+            error_msg = iteration_result["error"]
+            indicators["repeated_errors"].append(error_msg)
+            # Keep only last 5 errors
+            if len(indicators["repeated_errors"]) > 5:
+                indicators["repeated_errors"].pop(0)
+        
+        # Track iteration duration
+        duration = iteration_result.get("duration_seconds", 0)
+        if duration > 0 and duration < 30:
+            indicators["short_iterations"] += 1
+        else:
+            indicators["short_iterations"] = 0  # Reset on normal iteration
+    
+    def detect_struggle(self, agent_id: int) -> Optional[str]:
+        """
+        Detect if agent is struggling based on iteration patterns.
+        
+        Returns:
+            Optional[str]: Struggle type if detected, None if healthy
+                - "NO_PROGRESS": No file changes for 3+ iterations
+                - "REPEATED_ERROR": Same error occurring repeatedly
+                - "RAPID_CYCLING": 5+ iterations under 30 seconds each
+        """
+        if agent_id not in self.struggle_indicators:
+            return None
+        
+        indicators = self.struggle_indicators[agent_id]
+        
+        # Check for no progress
+        if indicators["no_file_changes"] >= 3:
+            return "NO_PROGRESS"
+        
+        # Check for repeated errors (same error in last 2 iterations)
+        recent_errors = indicators["repeated_errors"][-2:]
+        if len(recent_errors) == 2 and recent_errors[0] == recent_errors[1]:
+            return "REPEATED_ERROR"
+        
+        # Check for rapid cycling
+        if indicators["short_iterations"] >= 5:
+            return "RAPID_CYCLING"
+        
+        return None
+    
+    def get_struggle_summary(self, agent_id: int) -> dict:
+        """Get current struggle indicators for an agent."""
+        if agent_id not in self.struggle_indicators:
+            return {}
+        return self.struggle_indicators[agent_id].copy()
 
 
 # =============================================================================
@@ -1340,6 +1726,124 @@ def record_daily_cost(cost_usd: float) -> None:
             fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
+
+# =============================================================================
+# Complexity Detection & Auto-Configuration
+# =============================================================================
+
+@dataclass
+class ComplexityConfig:
+    """Auto-configured settings based on task complexity."""
+    agents: int
+    iterations: int
+    model: str
+    complexity_score: float
+    complexity_label: str
+
+
+def calculate_complexity(task_description: str) -> float:
+    """
+    Calculate complexity score for a task description.
+    
+    Scoring factors:
+    - Base keywords: "refactor", "architecture", "system", "migrate" (+0.5 each)
+    - Scope indicators: "all", "entire", "full", "complete" (+0.3 each)
+    - File count mentions: "multiple files", "across" (+0.4 each)
+    - Simple indicators: "typo", "fix", "add button", "update text" (-0.5 each)
+    - Word count: long descriptions tend to be more complex (+0.1 per 20 words)
+    
+    Returns:
+        float: Complexity score (0-5 range typical)
+    """
+    if not task_description:
+        return 1.0
+    
+    score = 1.0  # Base score
+    lower_task = task_description.lower()
+    
+    # High complexity keywords
+    high_keywords = ["refactor", "architecture", "system", "migrate", "redesign", 
+                     "rewrite", "overhaul", "integrate", "framework"]
+    score += sum(0.5 for kw in high_keywords if kw in lower_task)
+    
+    # Scope indicators
+    scope_keywords = ["all", "entire", "full", "complete", "comprehensive", "throughout"]
+    score += sum(0.3 for kw in scope_keywords if kw in lower_task)
+    
+    # Multi-file indicators
+    multi_file = ["multiple files", "across", "codebase", "project-wide", "global"]
+    score += sum(0.4 for kw in multi_file if kw in lower_task)
+    
+    # Simple task indicators (reduce score)
+    simple_keywords = ["typo", "fix typo", "add button", "update text", "change color",
+                      "rename", "small fix", "quick"]
+    score -= sum(0.5 for kw in simple_keywords if kw in lower_task)
+    
+    # Word count factor (longer = more complex)
+    word_count = len(task_description.split())
+    score += (word_count // 20) * 0.1
+    
+    return max(0.5, min(5.0, score))  # Clamp between 0.5 and 5.0
+
+
+def auto_configure(task_description: str = None, explicit_model: str = None) -> ComplexityConfig:
+    """
+    Auto-configure agent count and iterations based on task complexity.
+    
+    Model is ALWAYS Opus unless user explicitly specifies "sonnet" or "sonnet_all".
+    
+    Args:
+        task_description: Task to analyze for complexity
+        explicit_model: User-specified model override (sonnet/sonnet_all/opus)
+    
+    Returns:
+        ComplexityConfig with recommended settings
+    """
+    if not task_description:
+        # No task specified, use default
+        return ComplexityConfig(
+            agents=3,
+            iterations=3,
+            model=explicit_model or "opus",
+            complexity_score=1.0,
+            complexity_label="unknown"
+        )
+    
+    score = calculate_complexity(task_description)
+    
+    # Model is ALWAYS Opus unless explicit override
+    model = explicit_model if explicit_model else "opus"
+    
+    # Determine configuration based on score
+    if score < 1.5:  # Simple task
+        return ComplexityConfig(
+            agents=3,
+            iterations=1,
+            model=model,
+            complexity_score=score,
+            complexity_label="simple"
+        )
+    elif score < 2.5:  # Standard task
+        return ComplexityConfig(
+            agents=5,
+            iterations=2,
+            model=model,
+            complexity_score=score,
+            complexity_label="standard"
+        )
+    else:  # Complex task
+        return ComplexityConfig(
+            agents=10,
+            iterations=3,
+            model=model,
+            complexity_score=score,
+            complexity_label="complex"
+        )
+
+
+# =============================================================================
+# Ralph Protocol Implementation
+# =============================================================================
 
 class RalphProtocol:
     """
@@ -1687,12 +2191,18 @@ class RalphProtocol:
 
         Each line is self-contained so the user can see progress accumulate.
         Format: [elapsed] event Agent N [done/total] detail
+        
+        Visual Escalation Signals:
+        - ESCALATION: 🚨 (red) - Agent needs human intervention
+        - HINT_INJECTED: 💡 (yellow) - Context injected to unblock agent
+        - AGENT_PAUSED: ⏸️ (yellow) - Agent paused pending decision
+        - BUDGET_EXCEEDED: 💰 (red) - Budget limit reached
         """
         elapsed = self._elapsed_str()
         progress = self._progress_str()
         detail_str = f"  {detail}" if detail else ""
 
-        # Color-code by event type
+        # Color-code by event type with visual escalation signals
         if event == "STARTED":
             icon = f"{self._C_CYAN}>>>{self._C_RESET}"
             event_fmt = f"{self._C_CYAN}{event}{self._C_RESET}"
@@ -1705,6 +2215,18 @@ class RalphProtocol:
         elif event == "TIMEOUT":
             icon = f"{self._C_YELLOW}>>>{self._C_RESET}"
             event_fmt = f"{self._C_YELLOW}{event}{self._C_RESET}"
+        elif event == "BUDGET":
+            icon = f"{self._C_RED}💰{self._C_RESET}"
+            event_fmt = f"{self._C_RED}BUDGET_EXCEEDED{self._C_RESET}"
+        elif event == "ESCALATION":
+            icon = f"{self._C_RED}🚨{self._C_RESET}"
+            event_fmt = f"{self._C_RED}ESCALATION{self._C_RESET}"
+        elif event == "HINT_INJECTED":
+            icon = f"{self._C_YELLOW}💡{self._C_RESET}"
+            event_fmt = f"{self._C_YELLOW}HINT_INJECTED{self._C_RESET}"
+        elif event == "AGENT_PAUSED":
+            icon = f"{self._C_YELLOW}⏸️{self._C_RESET}"
+            event_fmt = f"{self._C_YELLOW}AGENT_PAUSED{self._C_RESET}"
         else:
             icon = ">>>"
             event_fmt = event
@@ -1717,6 +2239,22 @@ class RalphProtocol:
 
         # Write progress file for external consumers (statusline, etc.)
         self._write_progress_file()
+
+
+    def signal_escalation(self, agent_id: int, reason: str) -> None:
+        """Emit ESCALATION visual signal when agent needs human intervention."""
+        self._print_progress("ESCALATION", agent_id, reason)
+        self.log_activity(f"Agent {agent_id} escalation: {reason}", level="WARN")
+    
+    def signal_hint_injected(self, agent_id: int, hint_type: str) -> None:
+        """Emit HINT_INJECTED visual signal when context is injected to help agent."""
+        self._print_progress("HINT_INJECTED", agent_id, hint_type)
+        self.log_activity(f"Agent {agent_id} hint injected: {hint_type}")
+    
+    def signal_agent_paused(self, agent_id: int, reason: str) -> None:
+        """Emit AGENT_PAUSED visual signal when agent is waiting for decision."""
+        self._print_progress("AGENT_PAUSED", agent_id, reason)
+        self.log_activity(f"Agent {agent_id} paused: {reason}", level="INFO")
 
     def _write_progress_file(self) -> None:
         """Write current progress to a JSON file for external tools."""
@@ -2622,6 +3160,205 @@ Serena provides LSP-powered semantic code analysis. To enable:
             if semaphore:
                 semaphore.release()
 
+    async def _spawn_review_agent(
+        self,
+        agent_state: AgentState,
+        task: Optional[str] = None,
+        semaphore: Optional[asyncio.Semaphore] = None
+    ) -> bool:
+        """
+        Spawn a review agent that analyzes code changes without making edits.
+
+        Review agents:
+        - Analyze code quality, security, performance
+        - Leave TODO comments for issues found
+        - Report findings to .claude/review-agents.md
+        - Do NOT auto-fix issues
+
+        Args:
+            agent_state: State object for this review agent.
+            task: Original task description for context.
+            semaphore: Optional semaphore for concurrency limiting.
+
+        Returns:
+            True if review completed successfully, False otherwise.
+        """
+        if semaphore:
+            await semaphore.acquire()
+
+        try:
+            agent_state.status = AgentStatus.RUNNING.value
+            agent_state.started_at = datetime.now().isoformat()
+
+            # Track performance
+            self._perf_tracker.start_agent(agent_state.agent_id, f"review-{agent_state.agent_id}")
+
+            # Print start message
+            self._print_progress("STARTED", agent_state.agent_id, "Review")
+
+            # Build review-specific prompt
+            prompt = self._build_review_prompt(agent_state, task)
+
+            # Spawn subprocess (same mechanism as implementation agents)
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["claude", "--print", prompt],
+                        cwd=str(self.base_dir),
+                        capture_output=True,
+                        text=True,
+                        timeout=600,  # 10 min timeout for review
+                        env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
+                    )
+                )
+
+                success = result.returncode == 0
+                cost = self._extract_cost_from_output(result.stdout + result.stderr)
+                turns = self._extract_turns_from_output(result.stdout + result.stderr)
+
+                self._perf_tracker.complete_agent(
+                    agent_state.agent_id,
+                    cost_usd=cost,
+                    num_turns=turns,
+                    success=success
+                )
+
+                # Update counters
+                if success:
+                    self._completed_count += 1
+                    self._total_cost += cost
+                    self._print_progress(
+                        "DONE", agent_state.agent_id,
+                        f"Review  ${cost:.2f}, {turns} turns"
+                    )
+                else:
+                    self._failed_count += 1
+                    self._print_progress("FAILED", agent_state.agent_id, "Review")
+
+                return success
+
+            except subprocess.TimeoutExpired:
+                self._failed_count += 1
+                self._print_progress("TIMEOUT", agent_state.agent_id, "Review")
+                return False
+            except Exception as e:
+                self._failed_count += 1
+                self.log_activity(f"Review agent {agent_state.agent_id} error: {e}", level="ERROR")
+                return False
+
+        finally:
+            if semaphore:
+                semaphore.release()
+
+    def _build_review_prompt(self, agent: AgentState, task: Optional[str]) -> str:
+        """Build prompt for a review agent."""
+        # Get list of changed files
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=str(self.base_dir),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            changed_files = result.stdout.strip() if result.returncode == 0 else ""
+        except Exception:
+            changed_files = ""
+
+        # Assign review specialty based on agent ID
+        specialties = [
+            "security",      # Agent 0: Security vulnerabilities
+            "performance",   # Agent 1: Performance issues
+            "types",         # Agent 2: Type safety and design
+            "errors",        # Agent 3: Error handling
+            "quality",       # Agent 4: Code quality and style
+        ]
+        specialty = specialties[agent.agent_id % len(specialties)]
+
+        return f"""You are Review Agent {agent.agent_id} specializing in: {specialty.upper()}
+
+TASK CONTEXT: {task or 'Review recent code changes'}
+
+CHANGED FILES:
+{changed_files or '(Use git diff --name-only HEAD to find changes)'}
+
+REVIEW PROTOCOL:
+1. Focus on {specialty} issues in the changed files
+2. For each issue found, leave a TODO comment in the code:
+   - TODO-P1: Critical issues (security, crashes)
+   - TODO-P2: Important issues (bugs, performance)
+   - TODO-P3: Improvements (refactoring, docs)
+
+3. Report findings to .claude/review-agents.md in this format:
+   | Severity | Category | File | Issue | Suggestion |
+   |----------|----------|------|-------|------------|
+   | 🔴 P1 | {specialty} | path/file.ts:42 | Description | Fix suggestion |
+
+4. Do NOT auto-fix issues - only identify and document them
+
+5. When done, output:
+   REVIEW_COMPLETE
+   {self.EXIT_SIGNAL}
+
+SPECIALTY FOCUS ({specialty}):
+"""
+        + self._get_specialty_instructions(specialty)
+
+    def _get_specialty_instructions(self, specialty: str) -> str:
+        """Get specialty-specific review instructions."""
+        instructions = {
+            "security": """
+- Check for injection vulnerabilities (SQL, XSS, command injection)
+- Verify authentication and authorization
+- Look for hardcoded secrets or credentials
+- Check for insecure data handling
+- Verify input validation and sanitization
+""",
+            "performance": """
+- Identify N+1 query patterns
+- Check for memory leaks or excessive allocations
+- Look for blocking operations in async code
+- Verify efficient data structures are used
+- Check for unnecessary re-renders in React
+""",
+            "types": """
+- Check for proper TypeScript types (no `any`)
+- Verify function signatures are complete
+- Look for missing null checks
+- Check interface/type consistency
+- Verify proper use of generics
+""",
+            "errors": """
+- Check for proper error handling
+- Verify try/catch blocks are appropriate
+- Look for swallowed exceptions
+- Check for proper error messages
+- Verify error recovery paths
+""",
+            "quality": """
+- Check code follows project conventions
+- Look for code duplication
+- Verify proper naming conventions
+- Check for dead code
+- Verify documentation completeness
+""",
+        }
+        return instructions.get(specialty, "Review for general code quality issues.")
+
+    def _extract_cost_from_output(self, output: str) -> float:
+        """Extract cost from Claude output."""
+        import re
+        match = re.search(r'\$(\d+\.?\d*)', output)
+        return float(match.group(1)) if match else 0.0
+
+    def _extract_turns_from_output(self, output: str) -> int:
+        """Extract turn count from Claude output."""
+        import re
+        match = re.search(r'(\d+)\s*turns?', output, re.IGNORECASE)
+        return int(match.group(1)) if match else 1
+
     async def _spawn_agent_impl(self, agent_state: AgentState, task: Optional[str] = None) -> bool:
         """Internal implementation of agent spawning via subprocess.
 
@@ -3074,8 +3811,92 @@ Serena provides LSP-powered semantic code analysis. To enable:
             f"Ralph loop completed: {successful}/{num_agents} successful, {failed} failed"
         )
 
-        # Print final summary to stdout
+        # Print implementation summary
         self._print_summary(successful, failed, exceptions)
+
+        # =====================================================================
+        # REVIEW PHASE - Spawn review agents after implementation
+        # =====================================================================
+        review_successful = 0
+        review_failed = 0
+        review_exceptions: list[Exception] = []
+
+        if not skip_review and successful > 0:
+            print(flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(
+                f"  {self._C_BOLD}Review Phase{self._C_RESET}  "
+                f"{review_agents} agents x {review_iterations} iterations",
+                flush=True
+            )
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(flush=True)
+
+            # Reset counters for review phase
+            self._loop_start_time = datetime.now()
+            self._completed_count = 0
+            self._failed_count = 0
+            self._total_agents_in_loop = review_agents
+
+            # Create review agent states
+            review_agent_states = [
+                AgentState(
+                    agent_id=i,
+                    max_iterations=review_iterations,
+                    status=AgentStatus.PENDING.value
+                )
+                for i in range(review_agents)
+            ]
+
+            # Spawn review agents
+            review_semaphore = asyncio.Semaphore(min(self.MAX_CONCURRENT_AGENTS, review_agents))
+            review_tasks = [
+                self._spawn_review_agent(agent, task, review_semaphore)
+                for agent in review_agent_states
+            ]
+            review_results = await asyncio.gather(*review_tasks, return_exceptions=True)
+
+            # Count review results
+            review_successful = sum(1 for r in review_results if r is True)
+            review_failed = sum(1 for r in review_results if r is False or isinstance(r, Exception))
+            review_exceptions = [r for r in review_results if isinstance(r, Exception)]
+
+            self.log_activity(
+                f"Review phase completed: {review_successful}/{review_agents} successful"
+            )
+
+            # Print review summary
+            print(flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(f"{self._C_BOLD}  Review Phase Complete{self._C_RESET}", flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(
+                f"  Review Agents: {self._C_GREEN}{review_successful}{self._C_RESET} succeeded, "
+                f"{self._C_DIM}{review_failed}{self._C_RESET} failed",
+                flush=True
+            )
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+
+            # Generate review summary
+            self._generate_review_summary()
+
+        elif skip_review:
+            self.log_activity("Review phase skipped (--skip-review)")
 
         # Clean up progress file (loop is done)
         self._cleanup_progress_file()
@@ -4000,6 +4821,7 @@ Ralph Protocol - Autonomous Agent Loop Manager
 
 Usage:
     ralph.py loop N M [OPTIONS] [task]  - Run N agents × M iterations
+    ralph.py prompt N [task]            - Generate N agent prompts for Task tool spawning
     ralph.py setup N M [OPTIONS] [task] - Initialize session (no spawning)
     ralph.py teardown [--no-logs]       - Clean up after session
     ralph.py status                     - Show current Ralph state
@@ -4021,6 +4843,8 @@ Loop / Setup Options:
     --skip-review           Skip post-implementation review
     --plan FILE             Path to plan file being executed
     --backend BACKEND       Spawn backend: task|subprocess|auto (default: auto)
+                            NOTE: 'task' backend requires manual Task() spawning in parent session.
+                            Use 'ralph.py prompt N' to generate prompts, then spawn via Task tool.
     --model MODE            Model routing: opus|sonnet|sonnet_all (default: opus)
     --budget USD            Max budget in USD (stop spawning when exceeded)
 
@@ -4033,12 +4857,19 @@ Examples:
     ralph.py loop 50 15 --review-agents 15 --review-iterations 10 "Big feature"
     ralph.py loop 10 5 --skip-review "Quick fix"
     ralph.py loop 30 10 --plan /path/to/plan.md "Execute plan"
-    ralph.py loop 15 5 --backend task "Use Task tool"
+    ralph.py prompt 5 "Implement auth system"  # Generate prompts for parent Task spawning
     ralph.py setup 10 3 --backend task "Initialize only"
     ralph.py teardown
     ralph.py status
     ralph.py resume
     ralph.py cleanup --auto --max-age 3
+
+Task Backend Workflow:
+    1. Run: ralph.py prompt 5 "implement feature"
+    2. In parent Claude session, spawn returned prompts via Task tool:
+       Task(prompt="...agent 1 prompt...")
+       Task(prompt="...agent 2 prompt...")
+       ...
 """)
 
 
@@ -4146,6 +4977,61 @@ def main():
             model_mode=model_mode,
             max_budget_usd=max_budget_usd,
         ))
+
+    elif command == "prompt":
+        # Generate agent prompts for parent session Task spawning
+        if len(sys.argv) < 3:
+            print("Usage: ralph.py prompt N [task]")
+            sys.exit(1)
+        
+        try:
+            num_agents = int(sys.argv[2])
+        except ValueError:
+            print("Error: N must be an integer")
+            sys.exit(1)
+        
+        task_parts = sys.argv[3:] if len(sys.argv) > 3 else []
+        task = " ".join(task_parts) if task_parts else None
+        
+        # Generate prompts without spawning
+        max_iterations = 3  # Default for prompt generation
+        agents = [
+            AgentState(
+                agent_id=i,
+                max_iterations=max_iterations,
+                status=AgentStatus.PENDING.value
+            )
+            for i in range(num_agents)
+        ]
+        
+        # Create temporary state for prompt generation
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        state = RalphState(
+            session_id=session_id,
+            task=task,
+            total_agents=num_agents,
+            max_iterations=max_iterations,
+            agents=agents,
+            started_at=datetime.now().isoformat()
+        )
+        protocol.write_state(state)
+        
+        print(f"\nGenerated {num_agents} agent prompts for Task spawning:")
+        print("=" * 70)
+        print("\nCopy these prompts and spawn them in your parent Claude session using Task():\n")
+        
+        for i, agent in enumerate(agents):
+            prompt = protocol._build_agent_prompt(agent, task)
+            print(f"# Agent {i}")
+            print(f'Task(prompt="""{prompt}""")')
+            print()
+        
+        print("=" * 70)
+        print(f"\nAfter spawning all {num_agents} agents, they will share the TaskList")
+        print("and coordinate via the Ralph protocol.")
+        
+        # Clean up temporary state
+        protocol.cleanup_ralph_session(keep_activity_log=False)
 
     elif command == "setup":
         # Step 1: Initialize session infrastructure without spawning

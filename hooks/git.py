@@ -428,24 +428,41 @@ def update_commit_md(repo_root: Path, relative_path: str, action_type: str, desc
     """
     Update commit.md with contextual, grouped entries.
 
+    Preserves ## Ready section while updating ## Pending section.
+
     Format:
+    # Pending Changes
+
+    ## Pending
     - Added authentication API (login, logout, callback)
     - Updated UI components (button, badge)
     - Removed deprecated middleware
+
+    <!-- tracked: path1, path2 -->
+
+    ## Ready
+    (User's final bullet points preserved here)
     """
     commit_file = repo_root / ".claude" / "commit.md"
     commit_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Track which paths are already recorded
     tracked_paths: set[str] = set()
+    ready_section: str = ""
 
-    # Parse existing commit.md to recover tracked paths
+    # Parse existing commit.md to recover tracked paths and Ready section
     if commit_file.exists():
         content = commit_file.read_text(encoding="utf-8", errors="replace")
+
         # Extract tracked paths from special comment markers
         for match in re.finditer(r"<!-- tracked: (.+?) -->", content):
             for path in match.group(1).split(","):
                 tracked_paths.add(path.strip())
+
+        # Extract ## Ready section (everything after ## Ready header)
+        ready_match = re.search(r"^## Ready\s*\n(.*)", content, re.MULTILINE | re.DOTALL)
+        if ready_match:
+            ready_section = ready_match.group(1).strip()
 
     # Skip if already tracked
     if relative_path in tracked_paths:
@@ -469,7 +486,7 @@ def update_commit_md(repo_root: Path, relative_path: str, action_type: str, desc
         verb_categories[p_verb][p_category].append(path)
 
     # Build new content
-    new_content = ["# Pending Changes", ""]
+    new_content = ["# Pending Changes", "", "## Pending"]
 
     # Order: Added > Fixed > Updated > Improved > Changed > Removed
     verb_order = ["Added", "Fixed", "Updated", "Improved", "Changed", "Removed"]
@@ -498,7 +515,70 @@ def update_commit_md(repo_root: Path, relative_path: str, action_type: str, desc
     new_content.append(f"<!-- tracked: {', '.join(sorted(tracked_paths))} -->")
     new_content.append("")
 
+    # Preserve ## Ready section
+    new_content.append("## Ready")
+    if ready_section:
+        new_content.append(ready_section)
+    else:
+        new_content.append("(User writes their final bullet points here)")
+
+    new_content.append("")
+
     commit_file.write_text("\n".join(new_content))
+
+
+# =============================================================================
+# Receipt Audit Trail - SHA-256 hashing for tamper detection
+# =============================================================================
+
+def log_receipt(repo_root: Path, relative_path: str, action_type: str) -> None:
+    """
+    Log file change receipt with SHA-256 hash for audit trail.
+    
+    Creates immutable audit record in .claude/receipts.json:
+    - SHA-256 hash of file content
+    - Timestamp (ISO 8601 UTC)
+    - Action type (added/modified/removed)
+    - Relative path
+    """
+    import hashlib
+    
+    receipts_file = repo_root / ".claude" / "receipts.json"
+    receipts_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Load existing receipts
+    receipts = []
+    if receipts_file.exists():
+        try:
+            receipts = json.loads(receipts_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            receipts = []
+    
+    # Compute SHA-256 hash of file content
+    file_path = repo_root / relative_path
+    if file_path.exists() and action_type != "removed":
+        try:
+            content = file_path.read_bytes()
+            file_hash = hashlib.sha256(content).hexdigest()
+        except OSError:
+            file_hash = "ERROR_READING_FILE"
+    else:
+        file_hash = "DELETED" if action_type == "removed" else "FILE_NOT_FOUND"
+    
+    # Create receipt entry
+    receipt = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "path": relative_path,
+        "action": action_type,
+        "sha256": file_hash,
+    }
+    
+    # Append and save
+    receipts.append(receipt)
+    try:
+        receipts_file.write_text(json.dumps(receipts, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # Silent fail - don't block commits
 
 
 def change_tracker() -> None:
@@ -543,6 +623,8 @@ def change_tracker() -> None:
 
     try:
         update_commit_md(repo_root, relative_path, action_type, description)
+        # Add receipt audit trail
+        log_receipt(repo_root, relative_path, action_type)
     except OSError:
         pass
 

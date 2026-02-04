@@ -2,6 +2,7 @@
 name: serena-workflow
 context: fork
 description: Guide for using Serena semantic code tools effectively. Shows optimal workflows for code exploration, editing, and impact analysis.
+user-invocable: true
 ---
 
 # Serena Workflow Guide

@@ -1,7 +1,7 @@
 ---
 name: start
 description: Initialize ULTRATHINK mode with Ralph auto-loop. Use when starting work on complex features, planning implementations, or when deep analysis is needed.
-argument-hint: "[N] [M] [sonnet|sonnet all] [task | noreview [task] | review [rN] [rM] [task] | import <source>]"
+argument-hint: "[N] [M] [opus|sonnet|sonnet all] [task | noreview [task] | review [rN] [rM] [task] | import <source>]"
 user-invocable: true
 ---
 # Start Workflow
