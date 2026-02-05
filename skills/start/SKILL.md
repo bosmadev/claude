@@ -134,9 +134,138 @@ Model routing based on modelMode:
 - "sonnet_all" → All agents: model="sonnet"
 ```
 
+### Task Ambiguity Detection & Agent Count Recommendations
+
+After parsing the task, analyze it for ambiguity and complexity to determine:
+1. Whether to trigger AskUserQuestion for clarification
+2. Whether to offer fewer agents for simple tasks
+
+**Ambiguity Score Calculation:**
+
+| Pattern                             | Score | Clarification Needed | Agent Count Offer |
+| ----------------------------------- | ----- | -------------------- | ----------------- |
+| "implement" + no specific tech      | HIGH  | ✅ ASK (pre-research) | 10 (default)      |
+| "add feature" + multiple components | HIGH  | ✅ ASK (pre-research) | 10 (default)      |
+| "refactor" + >5 files impacted      | HIGH  | ✅ ASK (pre-research) | 10 (default)      |
+| "fix" + single file + clear error   | LOW   | ❌ SKIP               | Offer 2 or 5      |
+| "typo", "rename", "docs"            | LOW   | ❌ SKIP               | Offer 2           |
+
+**Detection Keywords:**
+
+```python
+HIGH_AMBIGUITY_PATTERNS = [
+    ("implement", "without_tech_stack"),      # e.g., "implement auth" (no JWT/OAuth mentioned)
+    ("add feature", "multiple_components"),   # e.g., "add user dashboard"
+    ("refactor", "many_files"),               # e.g., "refactor API layer" (>5 files)
+    ("build", "without_stack"),               # e.g., "build API" (no framework)
+]
+
+LOW_AMBIGUITY_PATTERNS = [
+    ("fix", "single_file"),                   # e.g., "fix bug in auth.ts"
+    ("typo", "any"),                          # e.g., "fix typos in docs"
+    ("rename", "any"),                        # e.g., "rename function foo to bar"
+    ("update docs", "any"),                   # e.g., "update README"
+]
+```
+
+**AskUserQuestion Trigger Flow:**
+
+```
+Parse task → Calculate ambiguity score
+                    ↓
+        Score HIGH? (multiple valid approaches)
+                    ↓ YES
+┌─────────────────────────────────────────────────┐
+│ AskUserQuestion (PRE-RESEARCH CLARIFICATION)    │
+│                                                 │
+│ Example questions:                              │
+│ - "Which auth strategy: OAuth, JWT, or          │
+│    Session-based?" (Recommended: JWT)           │
+│ - "Should this include mobile or web only?"     │
+│ - "Monorepo or multi-repo architecture?"        │
+│                                                 │
+│ Format: Max 4 questions, 2-4 options each       │
+│         Auto-add "Other (please specify)"       │
+└─────────────────────────────────────────────────┘
+                    ↓
+        User responds with selections
+                    ↓
+    Launch Explore agents with refined scope
+                    ↓
+        Research complete → Multiple solutions found?
+                    ↓ YES
+┌─────────────────────────────────────────────────┐
+│ AskUserQuestion (POST-RESEARCH SELECTION)       │
+│                                                 │
+│ Example:                                        │
+│ "Research found 3 auth libraries:               │
+│  - Passport.js (Recommended - most popular)     │
+│  - Auth0 SDK (Easiest integration)              │
+│  - Custom JWT (Most control)                    │
+│  Which should we use?"                          │
+└─────────────────────────────────────────────────┘
+                    ↓
+        User selects option
+                    ↓
+            Write detailed plan
+```
+
+**Agent Count Offers (Simple Tasks):**
+
+When LOW ambiguity detected, offer fewer agents:
+
+```
+Detected simple task: fix typo in README
+Recommended: 2 agents, 2 iterations
+
+Continue with 2 agents? (yes/no/specify count)
+```
+
+**Question Format Requirements:**
+
+- **Maximum 4 questions** per AskUserQuestion call
+- **2-4 options** per question (not including "Other")
+- **Auto-add** "Other (please specify)" as final option
+- **Mark recommended** with "(Recommended)" suffix
+- **Include brief description** for each option (1 sentence max)
+
+**Example Pre-Research Question:**
+
+```markdown
+I need clarification on the auth implementation:
+
+1. **Authentication Strategy:**
+   - OAuth 2.0 (Best for third-party login)
+   - JWT (Recommended - simple, stateless)
+   - Session-based (Traditional, server-side state)
+   - Other (please specify)
+
+2. **Scope:**
+   - Web only
+   - Mobile only
+   - Both web and mobile (Recommended)
+   - Other (please specify)
+```
+
+**Example Post-Research Question:**
+
+```markdown
+Research found 3 viable auth libraries:
+
+**Which library should we use?**
+- Passport.js (Recommended - 22k GitHub stars, extensive middleware ecosystem)
+- Auth0 SDK (Easiest integration, managed service)
+- Custom JWT implementation (Most control, no dependencies)
+- Other (please specify)
+```
+
 ## Plan File Format (MANDATORY)
 
-When creating or updating a plan file, ALWAYS include the Ralph Configuration block immediately after the status line:
+When creating or updating a plan file, ALWAYS include:
+
+1. **Ralph Configuration block** immediately after the status line
+2. **Decision Matrix tables** for all decision points
+3. **Emoji-prefixed section headers** for visual scanning
 
 ```markdown
 # [Plan Title]
@@ -151,9 +280,42 @@ When creating or updating a plan file, ALWAYS include the Ralph Configuration bl
 - Post-Review Agents: [rN or default 5]
 - Post-Review Iterations: [rM or default 2]
 - Launch Command: `/start [original command]`
+
+## 🔒 Security Considerations
+
+[Content here]
+
+## 🏗️ Architecture Decisions
+
+### Authentication Strategy
+
+| # | Option | Pros | Cons | 🎯 |
+|---|--------|------|------|-----|
+| 1 | JWT cookies | - XSS protection<br>- Secure by default | - CORS setup needed | ⭐ |
+| 2 | Bearer tokens | - Stateless | - XSS vulnerable |  |
+
+**Recommendation:** Option 1 for enhanced security.
+
+---
+
+## ⚡ Performance Impact
+
+[Content here]
+
+## 📋 Implementation Status
+
+| # | ✅ Task | 🔴 Risk | 📋 Status |
+|---|---------|---------|----------|
+| 1 | Auth flow | 🟡 Med | ✅ Done |
+| 2 | API layer | 🔴 High | ⏳ WIP |
 ```
 
-This block MUST be present for Ralph to execute with correct parameters.
+**Plan Template Rules:**
+- Every decision point gets a Decision Matrix table
+- Section headers use category emojis (🔒 🏗️ ⚡ 📝 🧪 🎨)
+- Status tables use status emojis (✅ ⏳ ❌ 🔴 🟡 🟢)
+- Related items stay grouped under `<hr>` sections
+- Recommended option gets ⭐ in 🎯 column
 
 ### Examples
 
@@ -250,16 +412,115 @@ Begin your response with an explicit analysis. Take at least 3000 tokens to:
 1. **Restate the task** - Confirm understanding
 2. **Map dependencies** - Identify affected files, modules, interfaces
 3. **List assumptions** - Make explicit what you're assuming
-4. **Consider 3-5 options** for each design decision using this template:
+4. **Consider 3-5 options** for each design decision using **Decision Matrix Format**:
 
-| Option   | Pros                   | Cons                   | Use Case    | Recommendation |
-| -------- | ---------------------- | ---------------------- | ----------- | -------------- |
-| Option 1 | - Pro A`<br>`- Pro B | - Con A`<br>`- Con B | When to use | Priority rank  |
-| Option 2 | - Pro A`<br>`- Pro B | - Con A`<br>`- Con B | When to use | Priority rank  |
+| # | Option | Pros | Cons | 🎯 |
+|---|--------|------|------|-----|
+| 1 | [Option name] | - Pro A<br>- Pro B | - Con A<br>- Con B | ⭐ |
+| 2 | [Option name] | - Pro A<br>- Pro B | - Con A<br>- Con B |  |
+
+- Use `<br>` tags to stack multiple items in cells
+- Add ⭐ in 🎯 column for recommended option
+- Number options sequentially (1, 2, 3...)
 
 ### Step 2: Generate Implementation Plan Artifact
 
-Create a structured plan with: Overview, Dependencies, Steps (actionable verbs), Verification, Rollback Plan.
+Create a structured plan following the **Decision Matrix Format** with emoji-prefixed sections:
+
+**Required Structure:**
+1. **Overview** - Brief description with context
+2. **Dependencies** - External requirements and constraints
+3. **Decision Matrices** - Options analysis for each key decision
+4. **Implementation Steps** - Actionable verbs grouped under `<hr>` sections
+5. **Verification Checklist** - How to confirm success
+6. **Rollback Plan** - Recovery procedure
+
+**Decision Matrix Format (MANDATORY for all options):**
+
+```markdown
+| # | Option | Pros | Cons | 🎯 |
+|---|--------|------|------|-----|
+| 1 | [Option name] | - Pro A<br>- Pro B | - Con A<br>- Con B | ⭐ |
+| 2 | [Option name] | - Pro A<br>- Pro B | - Con A<br>- Con B |  |
+| 3 | [Option name] | - Pro A<br>- Pro B | - Con A<br>- Con B |  |
+```
+
+- **Each decision point gets its own Decision Matrix table**
+- **Use `<br>` to stack multiple items in Pros/Cons cells**
+- **Add ⭐ emoji in 🎯 column for recommended option**
+- **Number options sequentially within each matrix**
+
+**Emoji Section Headers (MANDATORY):**
+
+```markdown
+## 🔒 Security Considerations
+## ⚡ Performance Impact
+## 🏗️ Architecture Changes
+## 📝 Documentation Updates
+## 🧪 Test Coverage
+## 🎨 UI/UX Changes
+```
+
+**Status Emojis (use in table cells):**
+- **Priority:** 🔴 Critical | 🟡 Medium | 🟢 Low
+- **Status:** ✅ Done | ⏳ WIP | ❌ Blocked
+- **Risk:** ⚠️ Warning | 🔴 High | 🟡 Med | 🟢 Low
+
+**Grouping Rules:**
+- Keep correlated items together under `<hr>` sections
+- Don't split related decisions across sections
+- Group by domain (auth, API, UI) not by type (decisions, steps)
+
+**Decision Matrix Examples:**
+
+```markdown
+## 🔒 Authentication Strategy Decision
+
+| # | Option | Pros | Cons | 🎯 |
+|---|--------|------|------|-----|
+| 1 | JWT with HTTP-only cookies | - XSS protection<br>- No localStorage risk<br>- Automatic CSRF tokens | - CORS complexity<br>- Cookie size limits | ⭐ |
+| 2 | OAuth2 Bearer tokens | - Stateless<br>- Third-party support | - XSS vulnerable<br>- Manual refresh logic |  |
+| 3 | Session-based auth | - Simple implementation<br>- Server-side revocation | - Scaling challenges<br>- Redis dependency | |
+
+**Recommendation:** Option 1 (JWT cookies) provides best security for our SPA architecture.
+
+---
+
+## ⚡ Caching Strategy Decision
+
+| # | Option | Pros | Cons | 🎯 |
+|---|--------|------|------|-----|
+| 1 | React Query with stale-while-revalidate | - Built-in optimistic updates<br>- Smart cache invalidation<br>- Offline support | - 15KB bundle size<br>- Learning curve | ⭐ |
+| 2 | Native fetch with manual cache | - Zero dependencies<br>- Full control | - Manual invalidation<br>- No offline support |  |
+| 3 | Apollo Client | - GraphQL integration<br>- Normalized cache | - 45KB bundle<br>- GraphQL required |  |
+
+**Recommendation:** Option 1 (React Query) balances DX and performance.
+```
+
+**Status Table Examples:**
+
+```markdown
+## 📋 Implementation Status
+
+| # | ✅ Feature | 🔴 Risk Level | 📋 Status | 🎯 Owner |
+|---|-----------|--------------|----------|---------|
+| 1 | Auth flow | 🟡 Medium | ✅ Done | Agent-3 |
+| 2 | API cache | 🟢 Low | ⏳ WIP | Agent-5 |
+| 3 | Error boundaries | 🔴 High | ❌ Blocked | Agent-7 |
+```
+
+**Comparison Matrix Examples:**
+
+```markdown
+## 🏗️ Database Migration Comparison
+
+| Feature | Option A | Option B | Option C |
+|---------|---------|---------|---------|
+| Performance | ✅ Fast | 🟡 Medium | ❌ Slow |
+| Complexity | 🟢 Simple | 🟡 Moderate | 🔴 Complex |
+| Rollback | ✅ Safe | ⚠️ Manual | ❌ Risky |
+| Cost | 🟢 Low | 🟡 Med | 🔴 High |
+```
 
 ### Step 3: Safety Check
 
@@ -496,101 +757,193 @@ For detailed documentation on specific topics:
 - **[ralph.md](ralph.md)** - Ralph Mode initialization, work loop, completion criteria, stuck detection, review agents, plan guardian
 - **[import.md](import.md)** - Import tasks from PRD files, YAML, GitHub Issues, or PR descriptions
 
-## Ralph Orchestrator Invocation (MANDATORY)
+## Agent Spawning via Task Tool (MANDATORY)
 
-After parsing arguments and creating/validating the plan, you MUST invoke the Ralph orchestrator script with all dynamic parameters:
-
-```bash
-python C:/Users/Dennis/.claude/scripts/ralph.py loop [AGENTS] [ITERATIONS] \
-    --review-agents [REVIEW_AGENTS] \
-    --review-iterations [REVIEW_ITERATIONS] \
-    [--skip-review] \
-    [--plan PLAN_FILE] \
-    [--backend task|subprocess|auto] \
-    "[TASK_DESCRIPTION]"
-```
-
-### Parameter Mapping
-
-| Parsed Value                          | CLI Argument                  |
-| ------------------------------------- | ----------------------------- |
-| `agents` (default: 3)               | First positional arg          |
-| `iterations` (default: 3)           | Second positional arg         |
-| `postReviewAgents` (default: 5)     | `--review-agents`           |
-| `postReviewIterations` (default: 2) | `--review-iterations`       |
-| `postReviewEnabled = false`         | `--skip-review`             |
-| Plan file path                        | `--plan`                    |
-| Backend mode                          | `--backend` (default: auto) |
-| Task description                      | Final quoted argument         |
-
-### Spawn Backend (Hybrid Architecture)
-
-| Backend        | Behavior                                            | UI Visibility                          |
-| -------------- | --------------------------------------------------- | -------------------------------------- |
-| `task`       | All agents via Claude Task tool                     | ✅ Cyan "x local agents" in statusline |
-| `subprocess` | All agents via `claude --print` subprocess        | ❌ Invisible processes                 |
-| `auto`       | Task for ≤10 agents, batched with overflow for >10 | ✅ Partial visibility                  |
-
-**Default:** `auto` — gives Task tool UI visibility for most workloads.
-
-When using `task` backend, agents appear in Claude Code's `/tasks` dropdown with real-time status. Each Task tool agent gets its own 200k context window with full MCP access (Serena, Context7).
-
-### Setup / Teardown (Hybrid Architecture)
-
-For advanced control, use `setup` + manual Task spawning + `teardown`:
-
-```bash
-# 1. Initialize session infrastructure (state, team, inboxes)
-python C:/Users/Dennis/.claude/scripts/ralph.py setup 10 3 --backend task "My task"
-
-# 2. Spawn agents manually via Task tool (gives UI visibility)
-#    Each agent reads team config from .claude/ralph/team-{session}/config.json
-
-# 3. Clean up after completion
-python C:/Users/Dennis/.claude/scripts/ralph.py teardown
-```
-
-### Example Invocations
-
-```bash
-# /start → defaults (auto backend)
-python C:/Users/Dennis/.claude/scripts/ralph.py loop 3 3 --review-agents 5 --review-iterations 2
-
-# /start 50 15 review 15 10 implement auth
-python C:/Users/Dennis/.claude/scripts/ralph.py loop 50 15 \
-    --review-agents 15 --review-iterations 10 \
-    --plan /path/to/plan.md \
-    "implement auth"
-
-# /start 10 5 noreview quick fix (Task backend for UI visibility)
-python C:/Users/Dennis/.claude/scripts/ralph.py loop 10 5 --skip-review --backend task "quick fix"
-
-# Force subprocess backend (legacy behavior)
-python C:/Users/Dennis/.claude/scripts/ralph.py loop 15 5 --backend subprocess "Use subprocess"
-```
+After parsing arguments and creating/validating the plan, you MUST spawn agents directly using the Task tool. All agents are spawned in PARALLEL in a SINGLE message with multiple Task() calls.
 
 ### Execution Flow
 
 1. Parse `$ARGUMENTS` per Decision Tree
 2. Echo parsed values for confirmation
 3. If task provided: Create/update plan file with Ralph Configuration block
-4. Invoke `ralph.py loop` with ALL dynamic parameters (including `--backend`)
-5. Ralph orchestrator initializes team infrastructure (inboxes, heartbeat, relay)
-6. Agents spawned in batches (≤10 per batch for >10 agents)
-7. Agents load role configs from `~/.claude\agents\` via round-robin
-8. Inter-agent coordination via file-based inbox system (Hybrid Gamma)
-9. Wait for `RALPH_COMPLETE` + `EXIT_SIGNAL`
-10. Report completion summary
+4. **Spawn ALL agents in PARALLEL** via multiple Task() calls in a single message
+5. Each agent:
+   - Receives agent number and total count in prompt
+   - Gets phase name and specific task assignment
+   - Uses correct model (opus/sonnet based on modelMode)
+   - Loads plan file for context
+   - Follows anti-hallucination standard
+   - Pushes commits before completion (Push Gate)
+   - Emits `ULTRATHINK_COMPLETE` when done
+6. After all agents complete: Check `.claude/ralph/retry-queue.json` for failed tasks
+7. If retry queue has entries: Spawn additional agents for retries
+8. Report completion summary
 
-**CRITICAL:** Do NOT spawn agents manually via Task tool. Let ralph.py handle orchestration - it manages:
+### Spawning Pattern (MANDATORY)
 
-- Parallel agent spawning with batching (>10 agents)
-- Agent config assignment (19 configs in ~/.claude `\agents\ `)
-- Inter-agent inboxes and heartbeat monitoring
-- Task reclamation (crashed agent's work re-assigned)
-- Iteration tracking and stuck detection
-- Post-review phase
-- Completion signals and structured shutdown
+**CRITICAL:** All agents MUST be spawned in a SINGLE message with multiple Task() calls. Do NOT spawn them sequentially across multiple messages.
+
+Example: Spawning 3 agents in parallel (single message, 3 Task calls):
+
+```python
+Task(
+    subagent_type="general-purpose",
+    model="opus",  # or "sonnet" based on modelMode
+    mode="acceptEdits",  # if auto-accept enabled
+    prompt="""RALPH Agent 1/3 - Phase 2.1: Implementation
+
+**Plan file:** ~/.claude\\plans\\feature-auth.md
+
+**Your task:** Implement OAuth flow with PKCE
+
+**Specifically:**
+1. Read plan file for architectural context
+2. Implement token exchange endpoint
+3. Add PKCE challenge generation
+4. Update session management
+
+**Success criteria:**
+- All endpoints functional
+- Tests passing
+- Types correct
+- Push commits to remote before completion
+
+When complete, output: ULTRATHINK_COMPLETE
+"""
+)
+
+Task(
+    subagent_type="general-purpose",
+    model="opus",
+    mode="acceptEdits",
+    prompt="""RALPH Agent 2/3 - Phase 2.1: Implementation
+
+**Plan file:** ~/.claude\\plans\\feature-auth.md
+
+**Your task:** Add frontend login UI
+
+**Specifically:**
+1. Create login form component
+2. Implement OAuth redirect flow
+3. Add loading states
+4. Handle auth errors
+
+**Success criteria:**
+- UI matches design
+- Accessibility checked
+- Push commits to remote before completion
+
+When complete, output: ULTRATHINK_COMPLETE
+"""
+)
+
+Task(
+    subagent_type="general-purpose",
+    model="opus",
+    mode="acceptEdits",
+    prompt="""RALPH Agent 3/3 - Phase 2.1: Implementation
+
+**Plan file:** ~/.claude\\plans\\feature-auth.md
+
+**Your task:** Update API middleware for auth
+
+**Specifically:**
+1. Add JWT validation middleware
+2. Implement refresh token rotation
+3. Add rate limiting
+4. Update error responses
+
+**Success criteria:**
+- Middleware tests passing
+- Security review passed
+- Push commits to remote before completion
+
+When complete, output: ULTRATHINK_COMPLETE
+"""
+)
+```
+
+### Model Routing (MANDATORY)
+
+Based on parsed `modelMode`, set the `model` parameter for each Task:
+
+| Model Mode     | Plan Phase Agents   | Impl Phase Agents   |
+| -------------- | ------------------- | ------------------- |
+| `opus`       | `model="opus"`    | `model="opus"`    |
+| `sonnet`     | `model="sonnet"`  | `model="opus"`    |
+| `sonnet_all` | `model="sonnet"`  | `model="sonnet"`  |
+
+**Phase detection:**
+- If in Plan Mode OR before ExitPlanMode: Use plan phase model
+- If after ExitPlanMode: Use impl phase model
+- If `sonnet all`: ALL phases use `model="sonnet"`
+
+### Auto-Accept Detection
+
+Check for auto-accept before spawning:
+
+1. Read `.claude/ralph/state.json` → look for `autoAccept: true`
+2. OR check env var `CLAUDE_AUTO_ACCEPT=true`
+3. If enabled: Set `mode="acceptEdits"` for all Task calls
+4. If disabled: Omit `mode` parameter (defaults to interactive)
+
+### Agent Prompt Template (MANDATORY)
+
+Each agent prompt MUST include:
+
+```
+RALPH Agent {X}/{N} - Phase {phase_number}: {phase_name}
+
+**Plan file:** {absolute_path_to_plan}
+
+**Your task:** {specific_task_description}
+
+**Specifically:**
+{detailed_steps_or_requirements}
+
+**Success criteria:**
+{what_defines_completion}
+- Push commits to remote before completion
+
+When complete, output: ULTRATHINK_COMPLETE
+```
+
+**Required fields:**
+- `{X}/{N}` - Agent number and total (e.g., "3/10")
+- `{phase_number}` - Current phase (e.g., "2.1")
+- `{phase_name}` - Phase description (e.g., "Implementation")
+- `{absolute_path_to_plan}` - Full path to plan file
+- `{specific_task_description}` - What this agent should do
+- `{detailed_steps_or_requirements}` - Breakdown of work
+- `{what_defines_completion}` - Clear completion criteria
+
+### Retry Queue Check (MANDATORY)
+
+After all agents emit `ULTRATHINK_COMPLETE`, check for retries:
+
+```bash
+# Check if retry queue exists
+if [ -f .claude/ralph/retry-queue.json ]; then
+    # Parse JSON and spawn agents for failed tasks
+    # Use same Task() pattern as initial spawn
+    # Include retry count in agent prompt: "RALPH Agent X/N (Retry 1)"
+fi
+```
+
+### Post-Review Phase (If Enabled)
+
+If `postReviewEnabled = true` (default), after implementation completes:
+
+1. Output: "Implementation complete! Starting post-implementation review..."
+2. Spawn review agents using same Task() pattern
+3. Set agent prompts to review mode (see skills/review/SKILL.md)
+4. Review agents use `disallowedTools: [Write, Edit, MultiEdit]`
+5. Review agents leave TODO-P1/P2/P3 comments
+6. Review agents report findings to `.claude/review-agents.md`
+
+**Review agent counts:**
+- Default: 5 review agents, 2 iterations
+- Custom: Use `postReviewAgents` and `postReviewIterations` from parsing
 
 ## Related Skills
 

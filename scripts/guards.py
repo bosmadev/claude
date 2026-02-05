@@ -17,6 +17,7 @@ Usage:
   python3 guards.py skill-interceptor    # Skill interception and routing
   python3 guards.py skill-validator      # Skill validation checks
   python3 guards.py plan-rename-tracker  # Track plan file renames
+  python3 guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
 """
 
 import json
@@ -343,6 +344,60 @@ Plan boundaries:
         }
         print(json.dumps(output))
 
+    sys.exit(0)
+
+
+# =============================================================================
+# Auto-Ralph Hook (UserPromptSubmit)
+# =============================================================================
+
+def auto_ralph_hook() -> None:
+    """Auto-spawn Ralph agents based on permission mode.
+
+    When permission_mode is permissive (acceptEdits, bypassPermissions, plan),
+    inject Ralph directive suggesting parallel agent spawning.
+
+    Activates only for permissive modes to avoid interfering with default/dontAsk workflows.
+    """
+    try:
+        data = json.loads(sys.stdin.read())
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    permission_mode = data.get("permission_mode", "default")
+
+    # Only trigger for permissive modes
+    if permission_mode not in ("acceptEdits", "bypassPermissions", "plan"):
+        sys.exit(0)
+
+    # Check if this is a task that would benefit from parallelization
+    prompt = data.get("prompt", "").lower()
+
+    # Skip if already using /start or other parallelization commands
+    if any(cmd in prompt for cmd in ["/start", "/review", "spawn agents", "ralph"]):
+        sys.exit(0)
+
+    # Inject Ralph suggestion
+    suggestion = """🚀 AUTO-RALPH SUGGESTION
+
+Your permission mode is set to "{mode}", which enables autonomous operation.
+
+For complex multi-step tasks, consider spawning parallel agents:
+- Use `/start` for full implementation workflows
+- Use `/start 10` to spawn 10 agents (adjust based on task complexity)
+- For smaller tasks, 3-5 agents may be sufficient
+
+This enables faster completion through parallel execution.
+
+Continue with your current approach, or use `/start` for parallelization.""".format(mode=permission_mode)
+
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": suggestion
+        }
+    }
+    print(json.dumps(output))
     sys.exit(0)
 
 
@@ -987,7 +1042,7 @@ State file created: {state_path}"""
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print("Usage: guards.py [protect|guardian|plan-comments|plan-write-check|skill-parser|insights-reminder|ralph-enforcer|skill-interceptor|skill-validator|plan-rename-tracker]", file=sys.stderr)
+        print("Usage: guards.py [protect|guardian|plan-comments|plan-write-check|skill-parser|insights-reminder|ralph-enforcer|skill-interceptor|skill-validator|plan-rename-tracker|auto-ralph]", file=sys.stderr)
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -1025,6 +1080,8 @@ def main() -> None:
         skill_validator()
     elif mode == "plan-rename-tracker":
         track_plan_rename()
+    elif mode == "auto-ralph":
+        auto_ralph_hook()
     else:
         print(f"Unknown mode: {mode}", file=sys.stderr)
         sys.exit(1)

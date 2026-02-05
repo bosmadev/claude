@@ -115,7 +115,6 @@
       "mcp__playwriter__reset",
       "mcp__ide__getDiagnostics",
       "mcp__ide__executeCode",
-      "mcp__vs-claude__open",
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
       "Bash(grep:*)",
@@ -275,8 +274,7 @@
   "enabledMcpjsonServers": [
     "playwriter",
     "context7",
-    "serena",
-    "vs-claude"
+    "serena"
   ],
   "hooks": {
     "Setup": [
@@ -507,6 +505,11 @@
               "type": "command",
             "command": "python ~/.claude\\scripts\\guards.py plan-comments",
              "timeout": 5
+             },
+             {
+              "type": "command",
+              "command": "python ~/.claude\\scripts\\guards.py auto-ralph",
+              "timeout": 5
              }
            ]
           }
