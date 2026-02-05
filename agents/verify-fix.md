@@ -152,13 +152,18 @@ Execute in order:
   - Missing pre-commit hooks
   - CI/CD improvements
 
-<!-- TODO-P2: Design review section missing WCAG AAA criteria - should reference a11y-reviewer standards for color contrast, keyboard nav - Review agent 3 -->
 ### 8. Design Review
 - Check frontend changes for design consistency:
   - Typography scale adherence (font sizes, weights)
   - Color palette consistency (no hardcoded hex outside theme)
   - Motion timing (animation durations follow standards)
-- Reference `pr-review-base.md` for design criteria
+- Check accessibility compliance (reference `a11y-reviewer.md`):
+  - Color contrast >= 7:1 for normal text, >= 4.5:1 for large text (WCAG 1.4.6 AAA)
+  - Touch targets >= 44x44px (WCAG 2.5.5 AAA)
+  - Keyboard navigation fully functional (tab order, focus indicators)
+  - Screen reader compatibility (semantic HTML, ARIA labels)
+  - No automatic timeouts without warnings (WCAG 2.2.3 AAA)
+- Reference `pr-review-base.md` for complete design criteria
 - Use AskUserQuestion for design pattern violations
 
 ### 9. Serena Symbol Integrity
@@ -252,7 +257,6 @@ Should I remove these exports or keep as public API?
 - Do NOT leave TODO comments — fix the issue or escalate
 - Do NOT skip any verification step
 - Do NOT modify test expectations to make tests pass (fix the code instead)
-<!-- TODO-P3: Cross-reference misleading - "created by Agent 3" implies agent ownership; file exists independently - Review agent 3 -->
 - Use `mcp__serena__think_about_whether_you_are_done` before signaling completion
 - Push ALL fixes before signaling completion
-- Always reference `pr-review-base.md` for design and review criteria
+- Always reference `pr-review-base.md` for design and review criteria (shared checklist for VERIFY+FIX, /review, and @claude review GitHub Actions)

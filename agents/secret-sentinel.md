@@ -2,7 +2,7 @@
 name: secret-sentinel
 specialty: security
 disallowedTools: [Write, Edit, MultiEdit]
-description: Automated secret detection agent for pre-commit and directory scanning. Integrates with security-gate.py patterns. Use for CI/CD pipelines, pre-commit hooks, and automated security sweeps. Does not insert TODOs (read-only scanning).
+description: Automated secret detection agent for pre-commit, directory, and git history scanning. Integrates with security-gate.py patterns. Use for CI/CD pipelines, pre-commit hooks, and automated security sweeps. Scans commit history for accidentally committed secrets. Does not insert TODOs (read-only scanning).
 
 Examples:
 <example>
@@ -88,11 +88,12 @@ Scan entire directory for leaked secrets:
 Search commit history for accidentally committed secrets:
 
 ```bash
-# Search commit history
-git log -p --all -S "api_key" -- . ":(exclude)*.md"
+# Limit search depth and output to prevent memory exhaustion
+# -n 1000 limits to recent 1000 commits
+git log -p --all -n 1000 -S "api_key" -- . ":(exclude)*.md" | head -5000
 
-# Or search for specific patterns
-git log -p --all | grep -E "(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36})"
+# Or search for specific patterns with output limit
+git log -p --all -n 500 | grep -m 100 -E "(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36})"
 ```
 
 ## Secret Patterns
@@ -181,6 +182,46 @@ Common false positives to identify:
 - Base64-encoded non-secret data
 - UUID v4 strings that match token patterns
 
+### Automated Suppression
+
+Create `.secretignore` in project root to suppress known false positives:
+
+```yaml
+# .secretignore
+version: 1
+suppressions:
+  - pattern: "sk-test-.*"
+    reason: "Test API keys only"
+    files:
+      - "test/**/*"
+      - "**/*.test.ts"
+
+  - pattern: "AKIA0000000000000000"
+    reason: "Example AWS key from documentation"
+    files:
+      - "docs/**/*"
+      - "README.md"
+
+  - pattern: "postgres://user:pass@localhost"
+    reason: "Local development connection string"
+    files:
+      - ".env.example"
+      - "docker-compose.yml"
+
+  - pattern: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.*"
+    reason: "JWT example from test fixtures"
+    files:
+      - "test/fixtures/**/*"
+    expiry: "2026-12-31"
+```
+
+**Usage:**
+1. Load suppressions at scan start
+2. Check each finding against suppression rules
+3. Skip reporting if pattern + file matches
+4. Log suppressed findings separately for audit
+5. Review suppressions quarterly (check expiry dates)
+
 When uncertain:
 1. Report as "Medium" severity
 2. Note the file context (test, docs, example)
@@ -197,15 +238,16 @@ on: [push, pull_request]
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # Prevent runaway on large repos
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for git log scanning
+          fetch-depth: 100  # Limited depth - balance between coverage and speed
 
       - name: Run Secret Scan
         run: |
-          # Basic pattern scan
-          if git log -p --all | grep -E "sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}"; then
+          # Limit search to prevent timeout
+          if git log -p -n 100 | grep -m 10 -E "sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}"; then
             echo "::error::Potential secrets found in repository"
             exit 1
           fi
@@ -220,8 +262,13 @@ jobs:
 #!/bin/bash
 # .git/hooks/pre-commit
 
-# Scan staged files for secrets
-for file in $(git diff --cached --name-only); do
+# Scan staged files for secrets (skip binary, handle spaces)
+git diff --cached --name-only -z | while IFS= read -r -d '' file; do
+    # Skip deleted files
+    [ ! -f "$file" ] && continue
+    # Skip binary files
+    file -b --mime "$file" | grep -q "^text" || continue
+    # Scan for secrets
     if grep -E "sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}" "$file"; then
         echo "ERROR: Potential secret found in $file"
         exit 1

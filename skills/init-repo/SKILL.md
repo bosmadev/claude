@@ -1,7 +1,7 @@
 ---
 name: init-repo
 description: Initialize Claude Code workflows and configuration in any repository. Copies templates for GitHub Actions, CLAUDE.md, and .gitignore.
-argument-hint: "[workflows|all|help]"
+argument-hint: "[interactive|workflows|all|help]"
 user-invocable: true
 context: fork
 ---
@@ -322,16 +322,29 @@ Prompt for each component.
 
    What would you like to install?
    ```
-2. Use AskUserQuestion to prompt:
+
+2. Use AskUserQuestion to prompt for components:
+
+   **Implementation guidance:**
+   - Use AskUserQuestion with multiple choice format
+   - Each component is a separate question (not checkboxes)
+   - Ask sequentially: workflows → claude directory → gitignore
+   - Format:
 
    ```
-   Which components do you want to install?
+   Question 1: "Install GitHub workflows (.github/workflows/claude.yml)?"
+   Options: ["Yes", "No"]
 
-   [ ] GitHub workflows (PR automation, changelog, validation)
-   [ ] .claude directory structure
-   [ ] Update .gitignore
+   Question 2: "Create .claude directory structure?"
+   Options: ["Yes", "No"]
+
+   Question 3: "Update .gitignore with Claude patterns?"
+   Options: ["Yes", "No"]
    ```
-3. Install selected components
+
+   **Note:** AskUserQuestion doesn't support checkbox UI. Use individual yes/no questions instead.
+
+3. Install selected components based on user responses
 4. Show summary of changes
 
 ## Template Locations
@@ -343,6 +356,34 @@ All templates are sourced from Claude Code's configuration directory:
 | Workflows | `C:/Users/Dennis/.claude/.github/workflows/claude.yml` | `.github/workflows/claude.yml` |
 
 **Note:** On Windows, use forward slashes in paths for cross-platform compatibility.
+
+### Template File Verification
+
+Before copying any template, verify it exists:
+
+```bash
+TEMPLATE="C:/Users/Dennis/.claude/.github/workflows/claude.yml"
+
+if [ ! -f "$TEMPLATE" ]; then
+    echo "Error: Template file not found at $TEMPLATE"
+    echo ""
+    echo "This usually means:"
+    echo "  - Claude Code installation is incomplete"
+    echo "  - Template files were not installed"
+    echo "  - Installation directory is not ~/.claude/"
+    echo ""
+    echo "Resolution:"
+    echo "  1. Check installation: ls ~/.claude/.github/workflows/"
+    echo "  2. Reinstall Claude Code if template is missing"
+    echo "  3. Verify you're using the correct Claude Code version"
+    exit 1
+fi
+
+# Proceed with copy only if verification passes
+cp "$TEMPLATE" ".github/workflows/claude.yml"
+```
+
+**Graceful failure:** If template is missing, provide detailed troubleshooting steps instead of a cryptic error.
 
 ## File Content: claude.yml
 
@@ -540,11 +581,40 @@ fi
 
 ### GitHub Secret Setup
 
-After installation, user must add secret manually:
+After installation, configure the Claude OAuth token as a GitHub secret:
 
-1. Go to GitHub repo → Settings → Secrets and variables → Actions
-2. Click "New repository secret"
-3. Name: `CLAUDE_CODE_OAUTH_TOKEN`
-4. Value: Get from `claude auth login` output
+**Option 1: Automatic sync (recommended)**
 
-The workflow will fail until this secret is configured.
+Use the `/token sync` command to automatically push your Claude token to GitHub:
+
+```bash
+# First, ensure you're authenticated
+claude auth login
+
+# Then sync to current repository
+/token sync
+
+# Or sync to all detected repositories
+/token sync all
+```
+
+The `/token sync` command handles the entire process: reading your local Claude token, pushing it to GitHub repository secrets, and verifying the setup.
+
+**Option 2: Manual setup**
+
+If `/token sync` is unavailable:
+
+1. Get token: Run `claude auth login` and copy the access token
+2. Go to GitHub repo → Settings → Secrets and variables → Actions
+3. Click "New repository secret"
+4. Name: `CLAUDE_CODE_OAUTH_TOKEN`
+5. Value: Paste the token from step 1
+
+**Verification:**
+
+After setup, verify the secret exists:
+```bash
+gh secret list | grep CLAUDE_CODE_OAUTH_TOKEN
+```
+
+The workflow will fail with authentication errors until this secret is properly configured. See `/token help` for more token management options.

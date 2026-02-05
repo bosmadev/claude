@@ -1,7 +1,7 @@
 ---
 name: screen
 description: Capture and manage screenshots using Windows Snipping Tool. Use for visual documentation, bug reporting, or UI reference.
-argument-hint: [N] | list | clean | analyze [id] | delete [id]
+argument-hint: [N] [list] [clean] [analyze <id>] [delete <id>] [help]
 user-invocable: true
 context: fork
 ---
@@ -38,6 +38,30 @@ From `$ARGUMENTS`, determine the action:
 | `help`         | Show usage help                      |
 
 ---
+
+## Script Validation
+
+Before executing any script command, validate that the required scripts exist:
+
+```bash
+SCRIPT_DIR="C:/Users/Dennis/.claude/skills/screen/scripts"
+
+# Check capture.py exists
+if [ ! -f "$SCRIPT_DIR/capture.py" ]; then
+    echo "Error: capture.py not found at $SCRIPT_DIR/capture.py"
+    echo "Check Claude Code installation or reinstall the screen skill"
+    exit 1
+fi
+
+# Check manage.py exists
+if [ ! -f "$SCRIPT_DIR/manage.py" ]; then
+    echo "Error: manage.py not found at $SCRIPT_DIR/manage.py"
+    echo "Check Claude Code installation or reinstall the screen skill"
+    exit 1
+fi
+```
+
+**Failure handling:** If scripts are missing, abort with clear error message directing the user to check the installation.
 
 ## Storage
 
@@ -134,6 +158,35 @@ ID is derived from the timestamp portion (HHMMSS) for easy reference.
 ## Action: Clean Old Screenshots
 
 `/screen clean`
+
+### Example Session
+
+```
+User: /screen clean
+
+Claude: **SKILL_STARTED:** screen
+
+Scanning for screenshots older than 7 days...
+
+Found 3 screenshots older than 7 days:
+
+- screen-20260116-091523.png (Jan 16, 09:15) - 234 KB
+- screen-20260115-182034.png (Jan 15, 18:20) - 156 KB
+- screen-20260112-143052.png (Jan 12, 14:30) - 89 KB
+
+Total: 479 KB to free
+
+Delete these screenshots? (yes/no)
+
+User: yes
+
+Claude: Deleting...
+- Deleted screen-20260116-091523.png
+- Deleted screen-20260115-182034.png
+- Deleted screen-20260112-143052.png
+
+Deleted 3 screenshots, freed 479 KB
+```
 
 ### 1. Find Old Screenshots
 

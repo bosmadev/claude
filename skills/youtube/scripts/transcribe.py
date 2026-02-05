@@ -24,12 +24,22 @@ def extract_video_id(url_or_id: str) -> str | None:
     for pattern in patterns:
         match = re.search(pattern, url_or_id)
         if match:
-            return match.group(1)
+            video_id = match.group(1)
+            # Sanitize: ensure video ID contains only valid YouTube characters
+            if re.fullmatch(r"[a-zA-Z0-9_-]{11}", video_id):
+                return video_id
+            else:
+                # Matched pattern but contains invalid characters (potential injection)
+                return None
     return None
 
 
 def fetch_metadata(video_id: str) -> dict:
     """Fetch video metadata using yt-dlp."""
+    # Validate video_id before inserting into URL to prevent command injection
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{11}", video_id):
+        raise ValueError(f"Invalid video ID format: {video_id}")
+
     try:
         result = subprocess.run(
             [
@@ -129,6 +139,26 @@ def format_timestamp(seconds: float) -> str:
     return f"[{minutes:02d}:{secs:02d}]"
 
 
+def escape_yaml_value(value: str) -> str:
+    """Escape a string value for safe YAML double-quoted string insertion.
+
+    Handles YAML special characters, escape sequences, and injection vectors.
+    Uses double-quoted strings which require escaping: \ " and control characters.
+    """
+    # Escape backslashes first (before other escapes that introduce backslashes)
+    value = value.replace("\\", "\\\\")
+    # Escape double quotes
+    value = value.replace('"', '\\"')
+    # Escape common control characters that could break YAML parsing
+    value = value.replace("\n", "\\n")
+    value = value.replace("\r", "\\r")
+    value = value.replace("\t", "\\t")
+    # Escape Unicode line/paragraph separators (rare but dangerous)
+    value = value.replace("\u2028", "\\u2028")
+    value = value.replace("\u2029", "\\u2029")
+    return value
+
+
 def generate_markdown(
     video_id: str,
     metadata: dict,
@@ -138,9 +168,9 @@ def generate_markdown(
     """Generate Markdown transcript with YAML frontmatter."""
     now = datetime.now(timezone.utc).isoformat()
 
-    # Escape quotes in title/author for YAML
-    title = metadata["title"].replace('"', '\\"')
-    author = metadata["author"].replace('"', '\\"')
+    # Escape title/author for safe YAML insertion
+    title = escape_yaml_value(metadata["title"])
+    author = escape_yaml_value(metadata["author"])
 
     # Build timestamped transcript
     # Handle both dict and object access (youtube-transcript-api returns objects)
@@ -197,8 +227,21 @@ url: "https://youtube.com/watch?v={video_id}"
 def track_usage(video_id: str, title: str, file_path: str) -> None:
     """Track YouTube transcript usage in project-local file for RALPH cleanup."""
     # Use YOUTUBE_PROJECT_DIR if set (allows tracking in project dir when script runs from ~/.claude/youtube)
-    project_dir = os.environ.get("YOUTUBE_PROJECT_DIR", ".")
-    tracker_file = Path(project_dir) / ".claude" / "youtube-session.json"
+    project_dir_raw = os.environ.get("YOUTUBE_PROJECT_DIR", ".")
+
+    # Validate environment variable to prevent path traversal attacks
+    project_dir = Path(project_dir_raw).resolve()
+
+    # Security check: ensure project_dir is a valid directory and not attempting path traversal
+    # Allow only absolute paths or current directory
+    if not project_dir.exists():
+        print(f"Warning: YOUTUBE_PROJECT_DIR does not exist: {project_dir}", file=sys.stderr)
+        project_dir = Path(".").resolve()
+    elif not project_dir.is_dir():
+        print(f"Warning: YOUTUBE_PROJECT_DIR is not a directory: {project_dir}", file=sys.stderr)
+        project_dir = Path(".").resolve()
+
+    tracker_file = project_dir / ".claude" / "youtube-session.json"
     tracker_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Load or create

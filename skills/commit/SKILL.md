@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Create commits with scope-prefix style. Auto-stages, generates message from tracked changes, shows preview.
+description: Two-phase commit workflow - generate pending-commit.md for review, then confirm to execute. Uses scope-prefix style with auto-staging and tracked changes.
 user-invocable: true
 context: fork
 argument-hint: "[confirm|abort|show|clear|log|summary|help]"
@@ -152,10 +152,20 @@ The change-tracker hook in `hooks/git.py` automatically writes file changes to t
    git rev-parse --show-toplevel
    ```
 
-2. **Auto-stage all changes**
+2. **Auto-stage all changes (with file preview)**
+
+   Show the user what files will be staged before proceeding:
+   ```bash
+   # Show unstaged changes
+   git status --porcelain
+   ```
+
+   If new (untracked) files exist, list them for transparency. Then stage all:
    ```bash
    git add -A
    ```
+
+   **Note:** `git add -A` stages all changes including new files. The change-tracker hook ensures visibility by logging all modifications to commit.md.
 
 3. **Read commit.md and merge sections**
    - Read `## Pending` section (hook-tracked changes)
@@ -169,10 +179,17 @@ The change-tracker hook in `hooks/git.py` automatically writes file changes to t
 5. **Auto-encrypt .env files (if dotenvx configured)**
    ```bash
    if grep -q '"env:encrypt"' package.json 2>/dev/null; then
-       pnpm env:encrypt
+       # Run with 30s timeout to prevent hanging
+       timeout 30 pnpm env:encrypt || {
+           echo "Warning: env:encrypt timed out after 30s"
+           echo "Run manually: pnpm env:encrypt"
+           exit 1
+       }
        git add .env .env.local .env.production .env.keys 2>/dev/null || true
    fi
    ```
+
+   **Timeout handling:** If `pnpm env:encrypt` hangs, it times out after 30 seconds and the commit is aborted with an error message. The user should run encryption manually and investigate the hang.
 
 6. **Update commit.md**
    - Move generated content to `## Ready` section
@@ -257,9 +274,31 @@ When user runs `/commit confirm`:
 7. **Push to remote (ALWAYS)**
    After every successful commit, immediately push (non-force):
    ```bash
-   git push origin HEAD
+   # Push with 60s timeout for slow networks
+   timeout 60 git push origin HEAD || {
+       EXIT_CODE=$?
+       if [ $EXIT_CODE -eq 124 ]; then
+           echo "Error: Push timed out after 60s"
+           echo "Check network connection or try: git push origin HEAD"
+           exit 1
+       else
+           echo "Error: Push failed (exit code $EXIT_CODE)"
+           # Check if remote is configured
+           if ! git remote get-url origin &>/dev/null; then
+               echo "No remote 'origin' configured"
+               echo "Add remote: git remote add origin <url>"
+           else
+               echo "Possible diverged history - try: git pull --rebase origin $(git branch --show-current)"
+           fi
+           exit 1
+       fi
+   }
    ```
-   - If push fails due to diverged history, report the error and suggest: `git pull --rebase origin <branch>` then retry push
+
+   **Error handling:**
+   - **No remote configured:** If `origin` doesn't exist, instruct user to add remote: `git remote add origin <url>`
+   - **Timeout:** If push hangs for >60s, abort and suggest manual push
+   - **Diverged history:** If push fails due to conflicts, suggest `git pull --rebase`
    - **Never force push** — let the user resolve merge conflicts manually
    - This ensures commits are never stranded locally
 
@@ -346,6 +385,22 @@ config: Windows migration, security hooks, init-repo skill
 - **Linux Scripts Removed (13 files):** Deleted .linux/hooks/* and .linux/scripts/* after Windows migration - statusline moved to scripts/statusline.py, token management unified in scripts/claude-github.py
 - **Configuration Updated (3 files):** Enhanced settings.json with hook registrations for security gates, updated .gitignore to exclude browser cache directories, added .claude.json model routing for 3-layer model assignment
 ```
+
+### Mixed Changes Example
+
+For commits with both categorized sections (10+ files) and simple changes (1-2 files), combine both formats:
+
+```markdown
+## Ready
+refactor: Windows migration and commit workflow update
+
+- **Security Hooks Added (4 files):** Created background-scanner.py for automated security scanning, sandbox-boundary.py for execution boundary enforcement, emergency-stop.py for critical halt mechanism, security-gate.py for pre-operation validation
+- **Linux Scripts Removed (13 files):** Deleted .linux/hooks/* and .linux/scripts/* after Windows migration
+- Fixed typo in README.md documentation header
+- Updated package.json scripts to use Windows-compatible paths
+```
+
+**Guideline:** Use categorized format for groups of 3+ related files. Use simple bullets for standalone changes (1-2 files). Mix both in the same commit when appropriate.
 
 ### Small Commits (< 10 files)
 

@@ -11,7 +11,7 @@ Usage:
 Exit codes:
     0 = Token valid (or refreshed successfully)
     1 = Token invalid and refresh failed
-    2 = No credentials file
+    2 = No credentials file (run 'claude auth login')
 """
 
 import json
@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from filelock import FileLock, Timeout as FileLockTimeout
 
 # Configuration
 _DEFAULT_CLAUDE_HOME = r"~/.claude" if sys.platform == "win32" else str(Path.home() / ".claude")
@@ -31,31 +32,55 @@ BUFFER_SECONDS = 600  # Refresh 10 min before expiry
 
 
 def get_token_status():
-    """Return (valid, expires_in_seconds, has_refresh_token)"""
+    """Return (valid, expires_in_seconds, has_refresh_token)
+
+    Raises OSError if credentials file cannot be accessed due to permission or I/O errors.
+    """
     if not CREDS_FILE.exists():
         return False, 0, False
 
-    try:
-        with open(CREDS_FILE) as f:
-            creds = json.load(f)
+    lock_file = CREDS_FILE.parent / ".credentials.lock"
+    max_retries = 3
 
-        oauth = creds.get("claudeAiOauth", {})
-        expires_at = oauth.get("expiresAt", 0)
-        refresh_token = oauth.get("refreshToken")
+    for attempt in range(max_retries):
+        try:
+            with FileLock(str(lock_file), timeout=2):
+                with open(CREDS_FILE) as f:
+                    creds = json.load(f)
 
-        now_ms = int(time.time() * 1000)
-        expires_in_sec = (expires_at - now_ms) // 1000
+                oauth = creds.get("claudeAiOauth", {})
+                expires_at = oauth.get("expiresAt", 0)
+                refresh_token = oauth.get("refreshToken")
 
-        has_refresh = bool(refresh_token and refresh_token != "null")
-        valid = expires_in_sec > BUFFER_SECONDS
+                now_ms = int(time.time() * 1000)
+                expires_in_sec = (expires_at - now_ms) // 1000
 
-        return valid, expires_in_sec, has_refresh
-    except (json.JSONDecodeError, KeyError):
-        return False, 0, False
+                has_refresh = bool(refresh_token and refresh_token != "null")
+                valid = expires_in_sec > BUFFER_SECONDS
+
+                return valid, expires_in_sec, has_refresh
+        except json.JSONDecodeError:
+            # Retry on corrupted JSON (likely due to concurrent write)
+            if attempt < max_retries - 1:
+                time.sleep(0.1 * (2 ** attempt))
+                continue
+            return False, 0, False
+        except (FileLockTimeout, KeyError):
+            return False, 0, False
+        except OSError as exc:
+            # Permission denied, disk full, etc - log and re-raise
+            import sys
+            print(f"[x] Cannot access credentials: {exc}", file=sys.stderr)
+            raise
+
+    return False, 0, False
 
 
 def refresh_token(force=False):
-    """Attempt to refresh the token. Returns True on success."""
+    """Attempt to refresh the token. Returns True on success.
+
+    Logs stderr output on failure for debugging.
+    """
     if not REFRESH_SCRIPT.exists():
         # Fallback to direct call
         _fallback_name = "claude-github.py"  # Cross-platform Python script
@@ -63,6 +88,7 @@ def refresh_token(force=False):
         if script.exists():
             args = [sys.executable, str(script), "refresh"]
         else:
+            print("[x] No refresh script found", file=sys.stderr)
             return False
     else:
         args = [sys.executable, str(REFRESH_SCRIPT)]
@@ -75,10 +101,17 @@ def refresh_token(force=False):
             args,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=120
         )
+        if result.returncode != 0 and result.stderr:
+            # Log stderr to help diagnose failures
+            print(f"[x] Refresh failed: {result.stderr.strip()}", file=sys.stderr)
         return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired:
+        print("[x] Refresh timed out after 120s", file=sys.stderr)
+        return False
+    except FileNotFoundError as exc:
+        print(f"[x] Refresh command not found: {exc}", file=sys.stderr)
         return False
 
 
@@ -133,26 +166,45 @@ def main():
             print(f"[+] Token valid ({format_time(expires_in)})")
         sys.exit(0)
 
-    # Token needs refresh
-    if not has_refresh:
+    # Token needs refresh - use lock to prevent concurrent refresh attempts
+    lock_file = Path.home() / ".claude" / ".refresh.lock"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with FileLock(str(lock_file), timeout=1):
+            # Token needs refresh
+            if not has_refresh:
+                if not quiet:
+                    print("[x] Token expired and no refresh token - run 'claude auth login'")
+                sys.exit(1)
+
+            if not quiet:
+                print(f"[!] Token {'expired' if expires_in <= 0 else 'expiring soon'} - refreshing...")
+
+            if refresh_token():
+                # Verify refresh worked
+                valid, expires_in, _ = get_token_status()
+                if valid:
+                    if not quiet:
+                        print(f"[+] Token refreshed ({format_time(expires_in)})")
+                    sys.exit(0)
+
+            if not quiet:
+                print("[x] Token refresh failed - run 'claude auth login'")
+            sys.exit(1)
+    except FileLockTimeout:
+        # Another process is already refreshing - wait and check result
         if not quiet:
-            print("[x] Token expired and no refresh token - run 'claude auth login'")
-        sys.exit(1)
-
-    if not quiet:
-        print(f"[!] Token {'expired' if expires_in <= 0 else 'expiring soon'} - refreshing...")
-
-    if refresh_token():
-        # Verify refresh worked
+            print("[i] Refresh already in progress, waiting...")
+        time.sleep(2)
         valid, expires_in, _ = get_token_status()
         if valid:
             if not quiet:
-                print(f"[+] Token refreshed ({format_time(expires_in)})")
+                print(f"[+] Token refreshed by other process ({format_time(expires_in)})")
             sys.exit(0)
-
-    if not quiet:
-        print("[x] Token refresh failed - run 'claude auth login'")
-    sys.exit(1)
+        if not quiet:
+            print("[x] Concurrent refresh failed")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

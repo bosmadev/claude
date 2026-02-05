@@ -15,6 +15,7 @@ Integration: PostToolUse hook for monitoring
 """
 
 import json
+import os
 import sys
 import time
 from datetime import datetime
@@ -26,9 +27,46 @@ from typing import Dict, List, Optional
 # Configuration
 # =============================================================================
 
+# Load configuration from environment or config file
+def _load_config():
+    """Load emergency stop configuration from environment or defaults."""
+    config_file = Path.home() / ".claude" / "security" / "emergency-config.json"
+    defaults = {
+        "block_threshold": 5,
+        "time_window": 60,
+    }
+
+    # Try environment variables first
+    env_threshold = os.environ.get("CLAUDE_EMERGENCY_THRESHOLD")
+    env_window = os.environ.get("CLAUDE_EMERGENCY_WINDOW")
+
+    if env_threshold:
+        try:
+            defaults["block_threshold"] = int(env_threshold)
+        except ValueError:
+            pass
+
+    if env_window:
+        try:
+            defaults["time_window"] = int(env_window)
+        except ValueError:
+            pass
+
+    # Try config file
+    if config_file.exists():
+        try:
+            with open(config_file, "r") as f:
+                config = json.load(f)
+                defaults.update(config)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return defaults
+
+_CONFIG = _load_config()
 STATE_FILE = Path.home() / ".claude" / "security" / "emergency-state.json"
-BLOCK_THRESHOLD = 5  # Blocks per minute to trigger shutdown
-TIME_WINDOW = 60  # seconds
+BLOCK_THRESHOLD = _CONFIG["block_threshold"]
+TIME_WINDOW = _CONFIG["time_window"]
 
 
 # =============================================================================
@@ -36,23 +74,35 @@ TIME_WINDOW = 60  # seconds
 # =============================================================================
 
 def load_state() -> Dict:
-    """Load emergency stop state."""
+    """Load emergency stop state with integrity checking."""
+    default_state = {
+        "blocks": [],  # List of (timestamp, reason) tuples
+        "shutdowns": [],  # List of shutdown events
+        "manual_kill": False,
+        "integrity_marker": "claude_emergency_state_v1"
+    }
+
     if not STATE_FILE.exists():
-        return {
-            "blocks": [],  # List of (timestamp, reason) tuples
-            "shutdowns": [],  # List of shutdown events
-            "manual_kill": False
-        }
+        return default_state
 
     try:
         with open(STATE_FILE, "r") as f:
-            return json.load(f)
-    except Exception:
-        return {
-            "blocks": [],
-            "shutdowns": [],
-            "manual_kill": False
-        }
+            state = json.load(f)
+
+        # Validate structure integrity
+        if state.get("integrity_marker") != "claude_emergency_state_v1":
+            # File tampered or corrupted - preserve but start fresh counts
+            state["blocks"] = []
+            state["integrity_marker"] = "claude_emergency_state_v1"
+
+        # Ensure required keys exist
+        for key in ["blocks", "shutdowns", "manual_kill"]:
+            if key not in state:
+                state[key] = default_state[key]
+
+        return state
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return default_state
 
 
 def save_state(state: Dict) -> None:
@@ -63,23 +113,59 @@ def save_state(state: Dict) -> None:
 
 
 def record_block(reason: str) -> None:
-    """Record a security block event."""
-    state = load_state()
-    now = time.time()
+    """Record a security block event with file locking."""
+    import fcntl
 
-    # Add new block
-    state["blocks"].append({"timestamp": now, "reason": reason})
+    # Validate and truncate reason to prevent disk exhaustion
+    if not isinstance(reason, str):
+        reason = str(reason)
+    reason = reason[:500]  # Limit reason length
 
-    # Prune blocks older than time window
-    cutoff = now - TIME_WINDOW
-    state["blocks"] = [b for b in state["blocks"] if b["timestamp"] > cutoff]
+    # Use file locking to prevent race conditions
+    lock_file = STATE_FILE.parent / ".emergency-state.lock"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
 
-    save_state(state)
+    try:
+        with open(lock_file, "w") as lock:
+            if sys.platform != "win32":
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+
+            state = load_state()
+            now = time.time()
+
+            # Add new block
+            state["blocks"].append({"timestamp": now, "reason": reason})
+
+            # Prune blocks older than time window
+            cutoff = now - TIME_WINDOW
+            state["blocks"] = [b for b in state["blocks"] if b["timestamp"] > cutoff]
+
+            save_state(state)
+
+            if sys.platform != "win32":
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    except (OSError, ImportError):
+        # Fallback: proceed without locking on Windows or if fcntl unavailable
+        state = load_state()
+        now = time.time()
+        state["blocks"].append({"timestamp": now, "reason": reason[:500]})
+        cutoff = now - TIME_WINDOW
+        state["blocks"] = [b for b in state["blocks"] if b["timestamp"] > cutoff]
+        save_state(state)
+
+
+# Severity weights for different block types
+SEVERITY_WEIGHTS = {
+    "secret_leak": 5,      # Critical - immediate concern
+    "blocked_command": 3,  # High - potentially dangerous
+    "sandbox_violation": 2, # Medium - boundary issues
+    "default": 1           # Low - minor issues
+}
 
 
 def check_threshold() -> Optional[str]:
     """
-    Check if block threshold exceeded.
+    Check if block threshold exceeded using severity-weighted scoring.
 
     Returns:
         Optional[str]: Shutdown reason if threshold exceeded
@@ -88,10 +174,22 @@ def check_threshold() -> Optional[str]:
     now = time.time()
     cutoff = now - TIME_WINDOW
 
-    # Count recent blocks
+    # Count recent blocks with severity weighting
     recent_blocks = [b for b in state["blocks"] if b["timestamp"] > cutoff]
 
-    if len(recent_blocks) >= BLOCK_THRESHOLD:
+    # Calculate weighted score
+    total_score = 0
+    for block in recent_blocks:
+        reason = block.get("reason", "")
+        weight = SEVERITY_WEIGHTS.get("default", 1)
+        for key, w in SEVERITY_WEIGHTS.items():
+            if key in reason.lower():
+                weight = w
+                break
+        total_score += weight
+
+    # Threshold is now severity-weighted (5 low = 1 critical)
+    if total_score >= BLOCK_THRESHOLD * SEVERITY_WEIGHTS["default"] * 5:
         reasons = [b["reason"] for b in recent_blocks[-5:]]
         return f"""
 🚨 EMERGENCY STOP - Security Threshold Exceeded
@@ -166,14 +264,41 @@ def pretool_emergency_check(tool_input: Dict) -> Optional[Dict]:
 
 def posttool_monitor(tool_name: str, tool_output: Dict) -> None:
     """
-    PostToolUse hook - monitor for security events.
+    PostToolUse hook - monitor for security events from all sources.
 
-    Records blocks from security-gate.py for threshold tracking.
+    Records blocks from security-gate.py and other hooks for threshold tracking.
     """
     # Check if security-gate blocked this operation
     if isinstance(tool_output, dict) and tool_output.get("blocked"):
         reason = tool_output.get("reason", "unknown")
         record_block(f"security-gate: {reason}")
+
+    # Monitor for blocks from other hook sources
+    if isinstance(tool_output, dict):
+        hook_output = tool_output.get("hookSpecificOutput", {})
+        if isinstance(hook_output, dict):
+            decision = hook_output.get("permissionDecision", "")
+            if decision == "deny":
+                reason = hook_output.get("permissionDecisionReason", "unknown")
+                source = hook_output.get("hookEventName", "unknown-hook")
+                record_block(f"{source}: {reason}")
+
+    # Alert user if approaching threshold (80% of threshold)
+    state = load_state()
+    now = time.time()
+    cutoff = now - TIME_WINDOW
+    recent_blocks = [b for b in state["blocks"] if b["timestamp"] > cutoff]
+
+    if len(recent_blocks) >= int(BLOCK_THRESHOLD * 0.8):
+        alert_file = STATE_FILE.parent / "emergency-alert.txt"
+        try:
+            alert_file.write_text(
+                f"WARNING: {len(recent_blocks)}/{BLOCK_THRESHOLD} blocks in last {TIME_WINDOW}s\n"
+                f"Approaching emergency shutdown threshold.\n"
+                f"Recent blocks: {[b['reason'] for b in recent_blocks[-3:]]}\n"
+            )
+        except OSError:
+            pass
 
 
 # =============================================================================

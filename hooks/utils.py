@@ -40,6 +40,9 @@ if IS_WIN:
 
 def _win_find_window_by_title(pattern: str) -> int | None:
     """Find a window handle whose title contains *pattern* (case-insensitive)."""
+    # Validate pattern to prevent matching all windows
+    if not pattern or not pattern.strip():
+        return None
     pattern_lower = pattern.lower()
     result: list[int] = []
 
@@ -55,11 +58,17 @@ def _win_find_window_by_title(pattern: str) -> int | None:
         length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
         if length == 0:
             return True
-        buf = ctypes.create_unicode_buffer(length + 1)
-        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
-        if pattern_lower in buf.value.lower():
-            result.append(hwnd)
-            return False  # stop enumeration
+        # Error handling for GetWindowTextW failures
+        try:
+            buf = ctypes.create_unicode_buffer(length + 1)
+            chars_copied = ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+            if chars_copied == 0:
+                return True  # Failed to get window text, continue enumeration
+            if pattern_lower in buf.value.lower():
+                result.append(hwnd)
+                return False  # stop enumeration
+        except (OSError, ValueError):
+            return True  # Error creating buffer or getting text, continue enumeration
         return True
 
     ctypes.windll.user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
@@ -176,6 +185,18 @@ def do_focus(cwd: str | None = None) -> None:
     if cwd is None:
         cwd = os.environ.get("HOME") or os.environ.get("USERPROFILE") or "."
 
+    # Validate and sanitize cwd path
+    try:
+        cwd_path = Path(cwd).resolve()
+        if not cwd_path.exists():
+            # Fall back to home directory if path doesn't exist
+            cwd = str(Path.home())
+        else:
+            cwd = str(cwd_path)
+    except (OSError, ValueError):
+        # Invalid path - use home directory
+        cwd = str(Path.home())
+
     if IS_WIN:
         # Windows priority: VS Code Insiders > VS Code > "claude" > Windows Terminal > Explorer
         if _focus_code_insiders(cwd):
@@ -189,13 +210,17 @@ def do_focus(cwd: str | None = None) -> None:
         if _focus_window("Explorer"):
             return
 
-        # Fallback: launch an editor / terminal
-        if shutil.which("code-insiders"):
-            subprocess.Popen(["code-insiders", "."], cwd=cwd, creationflags=subprocess.DETACHED_PROCESS)
-        elif shutil.which("wt"):
-            subprocess.Popen(["wt", "-d", cwd], creationflags=subprocess.DETACHED_PROCESS)
-        else:
-            subprocess.Popen(["explorer", cwd], creationflags=subprocess.DETACHED_PROCESS)
+        # Fallback: launch an editor / terminal with error handling
+        try:
+            if shutil.which("code-insiders"):
+                subprocess.Popen(["code-insiders", "."], cwd=cwd, creationflags=subprocess.DETACHED_PROCESS)
+            elif shutil.which("wt"):
+                subprocess.Popen(["wt", "-d", cwd], creationflags=subprocess.DETACHED_PROCESS)
+            else:
+                subprocess.Popen(["explorer", cwd], creationflags=subprocess.DETACHED_PROCESS)
+        except (OSError, PermissionError):
+            # Silently fail - focus is best-effort
+            pass
     else:
         # Linux priority: code-insiders > Kate > claude > Dolphin
         if _focus_code_insiders(cwd):
@@ -207,13 +232,17 @@ def do_focus(cwd: str | None = None) -> None:
         if _focus_window("Dolphin"):
             return
 
-        # Fallback: launch an editor / terminal
-        if _has_command("kate"):
-            subprocess.Popen(["kate", cwd])
-        elif _has_command("code-insiders"):
-            subprocess.Popen(["code-insiders", "."], cwd=cwd)
-        else:
-            subprocess.Popen(["konsole", "--workdir", cwd])
+        # Fallback: launch an editor / terminal with error handling
+        try:
+            if _has_command("kate"):
+                subprocess.Popen(["kate", cwd])
+            elif _has_command("code-insiders"):
+                subprocess.Popen(["code-insiders", "."], cwd=cwd)
+            else:
+                subprocess.Popen(["konsole", "--workdir", cwd])
+        except (OSError, PermissionError):
+            # Silently fail - focus is best-effort
+            pass
 
 
 # ===========================================================================
@@ -261,10 +290,25 @@ def _win_play_sound() -> None:
 
 def _win_show_notification(title: str, message: str) -> None:
     """Show a toast / balloon notification on Windows via PowerShell."""
-    # Escape single quotes for PowerShell
-    safe_title = title.replace("'", "''").replace('"', '`"')
-    safe_message = message.replace("'", "''").replace('"', '`"')
+    # Comprehensive escaping for PowerShell: single quotes, backticks, newlines, variables
+    def escape_powershell(text: str) -> str:
+        """Escape text for safe PowerShell string inclusion."""
+        # Replace single quotes (PowerShell string delimiter)
+        text = text.replace("'", "''")
+        # Replace backticks (PowerShell escape character)
+        text = text.replace("`", "``")
+        # Replace newlines
+        text = text.replace("\n", " ").replace("\r", "")
+        # Remove dollar signs (variable expansion)
+        text = text.replace("$", "")
+        # Truncate to prevent command length issues
+        return text[:200]
 
+    safe_title = escape_powershell(title)
+    safe_message = escape_powershell(message)
+
+    # Use -EncodedCommand to prevent injection via title/message
+    import base64
     ps_script = (
         "[void][System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms');"
         "$n = New-Object System.Windows.Forms.NotifyIcon;"
@@ -278,9 +322,12 @@ def _win_show_notification(title: str, message: str) -> None:
         "$n.Dispose()"
     ).format(title=safe_title, msg=safe_message)
 
+    # Encode to Base64 for -EncodedCommand (UTF-16LE required)
+    encoded_cmd = base64.b64encode(ps_script.encode("utf-16-le")).decode("ascii")
+
     try:
         subprocess.Popen(
-            ["powershell", "-NoProfile", "-Command", ps_script],
+            ["powershell", "-NoProfile", "-EncodedCommand", encoded_cmd],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.DETACHED_PROCESS,
@@ -408,7 +455,14 @@ def parse_model_id(model_id: str) -> dict:
         return result
 
     # Try short name lookup
-    short = model_id.strip().lower().split()[0]
+    # Handle empty strings and whitespace-only input
+    stripped = model_id.strip().lower()
+    if not stripped:
+        return result
+    parts = stripped.split()
+    if not parts:
+        return result
+    short = parts[0]
     if short in _SHORT_NAMES:
         info = _SHORT_NAMES[short]
         result.update({
@@ -419,7 +473,14 @@ def parse_model_id(model_id: str) -> dict:
         return result
 
     # Fallback: capitalize first word
-    first_word = model_id.strip().split()[0]
+    # Handle empty strings and whitespace-only input
+    stripped_fallback = model_id.strip()
+    if not stripped_fallback:
+        return result
+    words = stripped_fallback.split()
+    if not words:
+        return result
+    first_word = words[0]
     result.update({"family": first_word.capitalize(), "display": first_word.capitalize()})
     return result
 

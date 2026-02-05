@@ -1,3 +1,19 @@
+# Claude Code GitHub Workflow
+#
+# Description: AI-powered code review, PR automation, and security analysis using Claude
+#
+# Usage:
+#   - Comment: "@claude review" on issues/PRs
+#   - Label: Add "claude" label to PR
+#   - Assign: Assign "claude[bot]" to issue/PR
+#   - Manual: Run via Actions tab with custom prompts
+#
+# Required Secrets:
+#   - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude auth login` + `/token sync`
+#   - GITHUB_TOKEN: Auto-provided by GitHub Actions
+#
+# Documentation: See ~/.claude/CLAUDE.md § GitHub Actions Workflow Template
+
 name: Claude Code
 
 on:
@@ -10,7 +26,7 @@ on:
   issues:
     types: [opened, assigned, labeled]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, edited, converted_to_draft]
 
   # Manual trigger - "Summarize PR" button in Actions tab
   workflow_dispatch:
@@ -55,19 +71,20 @@ on:
 
   # FUTURE: Uncomment for daily health check across codebases
   # Runs at 9 AM on weekdays, pings each repo with a quick status check
+  # Cost control: Set max_turns=5 and model=haiku in scheduled job 'if' block below
   # schedule:
   #   - cron: '0 9 * * 1-5'  # 9 AM Mon-Fri
   # To enable: uncomment above and add to job 'if' condition:
-  #   github.event_name == 'schedule' ||
+  #   (github.event_name == 'schedule' && github.event.inputs.max_turns <= 5 && github.event.inputs.model == 'claude-haiku-4-5-20251001') ||
 
 # Prevent concurrent runs
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   id-token: write
-  contents: write
+  contents: read  # Default read-only, scoped per-job below
   issues: write
   pull-requests: write
   actions: read
@@ -76,23 +93,39 @@ jobs:
   # ============================================
   # Job 1: Claude AI Code Review
   # ============================================
+  # Security: Only org members can trigger via comment. Manual dispatch requires write access.
+  # PR open trigger requires 'claude' label to opt-in (prevents abuse on public repos).
   claude:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude review')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude review')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude review')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude review') && github.event.comment.author_association != 'NONE') ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude review') && github.event.comment.author_association != 'NONE') ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude review') && github.event.review.author_association != 'NONE') ||
       (github.event_name == 'issues' && github.event.action == 'assigned' && github.event.assignee.login == 'claude[bot]') ||
-      (github.event_name == 'issues' && github.event.action == 'opened' && contains(github.event.issue.body, '@claude review')) ||
+      (github.event_name == 'issues' && github.event.action == 'opened' && contains(github.event.issue.body, '@claude review') && github.event.issue.author_association != 'NONE') ||
       (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'claude') ||
-      (github.event_name == 'pull_request' && github.event.action == 'opened')
+      (github.event_name == 'pull_request' && github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'claude'))
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ github.event.inputs.timeout || 30 }}
+    timeout-minutes: ${{ github.event.inputs.timeout && github.event.inputs.timeout <= 60 && github.event.inputs.timeout || 30 }}
+    permissions:
+      contents: read  # Read code only, no write access
 
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 50  # Limit to 50 commits for performance, sufficient for most reviews
+
+      - name: Setup Node.js with caching
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Validate Required Packages
+        run: |
+          # Verify packages exist in npm registry before installation
+          npm view @modelcontextprotocol/server-sequential-thinking version || exit 1
+          npm view @context7/mcp-server version || exit 1
 
       - name: Create MCP Configuration
         run: |
@@ -113,6 +146,13 @@ jobs:
           # NOTE: Only sequential-thinking and context7 included for CI safety
           # Serena/Playwriter excluded - risk of infinite loops burning minutes
 
+      - name: Validate Claude Token Secret
+        run: |
+          if [ -z "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is not set. Run 'claude auth login' then '/token sync'"
+            exit 1
+          fi
+
       - name: Claude Code Action
         uses: anthropics/claude-code-action@v1
         with:
@@ -124,15 +164,18 @@ jobs:
           branch_prefix: ""
           branch_name_template: "{{entityType}}-{{entityNumber}}-{{description}}"
           allowed_bots: "dependabot[bot],renovate[bot]"
+          bot_rate_limit: 10  # Max 10 bot PRs per hour
           track_progress: true
           use_sticky_comment: true
           include_fix_links: true
           use_commit_signing: true
+          # Security: Removed cp/mv - use Write/Edit tools instead for file manipulation
+          # max_turns capped at 50 to prevent runaway costs
           claude_args: |
-            --max-turns ${{ github.event.inputs.max_turns || '25' }}
+            --max-turns ${{ github.event.inputs.max_turns <= 50 && github.event.inputs.max_turns || '25' }}
             --model ${{ github.event.inputs.model || 'claude-sonnet-4-5-20250929' }}
             --mcp-config /tmp/mcp-config.json
-            --allowedTools "mcp__sequential-thinking__sequentialthinking,mcp__context7__*,Bash(gh:*),Bash(npm:*),Bash(pnpm:*),Bash(git:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(tree:*),Bash(find:*),Bash(wc:*),Bash(grep:*),Bash(echo:*),Bash(pwd:*),Bash(mkdir:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Read,Write,Edit,MultiEdit,Glob,Grep,Task"
+            --allowedTools "mcp__sequential-thinking__sequentialthinking,mcp__context7__*,Bash(gh:*),Bash(npm:*),Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(tree:*),Bash(find:*),Bash(wc:*),Bash(grep:*),Bash(echo:*),Bash(pwd:*),Read,Write,Edit,MultiEdit,Glob,Grep,Task"
           prompt: |
             ## Context
             - Repository: ${{ github.repository }}
@@ -140,12 +183,12 @@ jobs:
             - Actor: ${{ github.actor }}
 
             ## Review Criteria
-            Follow the review criteria defined in `~/.claude/agents/pr-review-base.md`:
-            - OWASP Top 10 security checklist
-            - Code quality patterns and anti-patterns
-            - Framework-specific best practices
-            - Accessibility (WCAG AAA) standards
-            - Performance and scalability considerations
+            Follow these review criteria:
+            - OWASP Top 10 security checklist (injection, auth, data exposure, XXE, broken access control, security misconfig, XSS, insecure deserialization, vulnerable dependencies, insufficient logging)
+            - Code quality patterns and anti-patterns (DRY, SOLID, proper error handling, no god objects)
+            - Framework-specific best practices (React hooks, Next.js routing, TypeScript strict mode)
+            - Accessibility (WCAG AAA) standards (keyboard nav, ARIA labels, semantic HTML, color contrast)
+            - Performance and scalability considerations (bundle size, lazy loading, database queries, caching)
 
             ## Action
             ${{ github.event.inputs.action == 'Summarize changes in this PR' && '
@@ -162,7 +205,8 @@ jobs:
             ${{ github.event.inputs.action == 'Custom prompt' && github.event.inputs.custom_prompt || '' }}
 
             ## Bot PR Guidelines (Dependabot/Renovate)
-            If this is a bot-generated PR:
+            Bot PR detected: ${{ contains(fromJSON('["dependabot[bot]", "renovate[bot]"]'), github.actor) && 'YES' || 'NO' }}
+            If this is a bot-generated PR (github.actor in allowed_bots list):
             - Review the changes but DO NOT auto-merge
             - Leave assessment as a comment
             - List steps for manual resolution if needed
@@ -177,10 +221,12 @@ jobs:
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to commit and push CHANGELOG updates
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 2
 
@@ -191,19 +237,37 @@ jobs:
             const fs = require('fs');
             const { execSync } = require('child_process');
 
+            function safeExec(cmd, errorMsg) {
+              // Validate command is safe (git/find only, no shell expansion)
+              const allowedCommands = /^(git|find)\s/;
+              if (!allowedCommands.test(cmd)) {
+                throw new Error(`Unsafe command rejected: ${cmd}`);
+              }
+              try {
+                return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              } catch (error) {
+                console.error(`${errorMsg}: ${error.message}`);
+                throw new Error(`${errorMsg}: ${error.stderr || error.message}`);
+              }
+            }
+
             // Get the latest commit message
-            const commitMsg = execSync('git log -1 --pretty=format:%B').toString().trim();
+            const commitMsg = safeExec('git log -1 --pretty=format:%B', 'Failed to get commit message').trim();
             const commitSubject = commitMsg.split('\n')[0];
 
             // Extract build ID from commit subject
             // Format: "Build 101: Description" or "Build 101"
-            const buildMatch = commitSubject.match(/Build\s+(\d+)/i);
+            const buildMatch = commitSubject.match(/Build\s+(\d{1,6})/i);
             if (!buildMatch) {
               console.log('No build ID found in commit, skipping CHANGELOG update');
               return;
             }
 
             const buildId = buildMatch[1];
+            const buildIdNum = parseInt(buildId, 10);
+            if (buildIdNum < 1 || buildIdNum > 999999) {
+              throw new Error(`Invalid build ID: ${buildId} (must be 1-999999)`);
+            }
             const date = new Date().toISOString().split('T')[0];
 
             // Extract version if present (e.g., "Build 101 (1.0.5)")
@@ -211,6 +275,11 @@ jobs:
             const version = versionMatch ? versionMatch[1] : null;
 
             // Extract summary from commit body
+            function sanitizeMarkdown(text) {
+              // Escape HTML tags and preserve markdown structure
+              return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+
             let summary = '';
             const lines = commitMsg.split('\n');
             const summaryIdx = lines.findIndex(l => l.startsWith('## Summary'));
@@ -218,7 +287,7 @@ jobs:
               // Get text between ## Summary and next ## heading
               let endIdx = lines.findIndex((l, i) => i > summaryIdx && l.startsWith('## '));
               if (endIdx === -1) endIdx = lines.length;
-              summary = lines.slice(summaryIdx + 1, endIdx).join('\n').trim();
+              summary = sanitizeMarkdown(lines.slice(summaryIdx + 1, endIdx).join('\n').trim());
             }
 
             // Extract changes (bullets) from commit body
@@ -265,6 +334,13 @@ jobs:
             let changelog = '';
             if (fs.existsSync(changelogPath)) {
               changelog = fs.readFileSync(changelogPath, 'utf8');
+
+              // Deduplication check: skip if build ID already exists
+              const duplicateCheck = new RegExp(`^## Build ${buildId}(\\s|\\|)`, 'm');
+              if (duplicateCheck.test(changelog)) {
+                console.log(`Build ${buildId} already exists in CHANGELOG, skipping duplicate entry`);
+                return;
+              }
             }
 
             // Insert after header comment (if present) or at top
@@ -287,20 +363,52 @@ jobs:
               changelog = `<!-- DO NOT EDIT MANUALLY - Auto-generated by GitHub Actions on merge. Use @claude prepare for PR summaries. -->\n# Changelog\n\n${entry}${changelog}`;
             }
 
-            // Write updated CHANGELOG
-            fs.writeFileSync(changelogPath, changelog);
-
-            // Commit and push CHANGELOG
-            execSync('git config user.name "github-actions[bot]"');
-            execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
-            execSync('git add CHANGELOG.md');
+            // Write updated CHANGELOG with atomic write (backup + rename)
+            const backupPath = `${changelogPath}.backup`;
+            if (fs.existsSync(changelogPath)) {
+              fs.copyFileSync(changelogPath, backupPath);
+            }
 
             try {
-              execSync(`git commit -m "docs: update CHANGELOG for Build ${buildId}"`);
-              execSync('git push');
-              console.log(`Updated CHANGELOG for Build ${buildId}`);
-            } catch (e) {
-              console.log('No changes to commit or push failed');
+              fs.writeFileSync(changelogPath, changelog);
+            } catch (writeError) {
+              // Restore from backup if write failed
+              if (fs.existsSync(backupPath)) {
+                fs.copyFileSync(backupPath, changelogPath);
+              }
+              throw new Error(`Failed to write CHANGELOG: ${writeError.message}`);
+            } finally {
+              // Clean up backup file
+              if (fs.existsSync(backupPath)) {
+                fs.unlinkSync(backupPath);
+              }
+            }
+
+            // Commit and push CHANGELOG
+            safeExec('git config user.name "github-actions[bot]"', 'Failed to set git user');
+            safeExec('git config user.email "github-actions[bot]@users.noreply.github.com"', 'Failed to set git email');
+            safeExec('git add CHANGELOG.md', 'Failed to stage CHANGELOG');
+
+            try {
+              // Sanitize buildId for commit message (digits only)
+              const safeBuildId = buildId.replace(/\D/g, '');
+              const commitMsg = `docs: update CHANGELOG for Build ${safeBuildId}`;
+
+              // Use git commit with stdin to avoid shell injection
+              const { spawnSync } = require('child_process');
+              const result = spawnSync('git', ['commit', '-m', commitMsg], { encoding: 'utf8' });
+              if (result.error) throw new Error(`Commit failed: ${result.error.message}`);
+
+              safeExec('git push', 'Push failed');
+              console.log(`Updated CHANGELOG for Build ${safeBuildId}`);
+            } catch (commitError) {
+              // Check if it's a "no changes" vs actual failure
+              const status = safeExec('git status --porcelain', 'Failed to get git status');
+              if (status.trim() === '') {
+                console.log('No changes to commit');
+              } else {
+                throw new Error(`Git commit or push failed: ${commitError.message}`);
+              }
             }
 
       - name: Bump package.json version
@@ -308,13 +416,57 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const { execSync } = require('child_process');
+            const { execSync, spawnSync } = require('child_process');
             const path = require('path');
+
+            function safeExec(cmd, errorMsg) {
+              // Validate command is safe (git/find only, no shell expansion)
+              const allowedCommands = /^(git|find)\s/;
+              if (!allowedCommands.test(cmd)) {
+                throw new Error(`Unsafe command rejected: ${cmd}`);
+              }
+              try {
+                return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              } catch (error) {
+                console.error(`${errorMsg}: ${error.message}`);
+                throw new Error(`${errorMsg}: ${error.stderr || error.message}`);
+              }
+            }
+
+            // Validate semver format
+            function isValidSemver(version) {
+              const semverRegex = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+              return semverRegex.test(version);
+            }
+
+            // Detect conventional commit type
+            function detectBumpType(commitMsg) {
+              const lowerMsg = commitMsg.toLowerCase();
+
+              // Check for BREAKING CHANGE in commit body
+              if (lowerMsg.includes('breaking change:') || lowerMsg.includes('breaking-change:')) {
+                return 'major';
+              }
+
+              // Check for conventional commit format with ! suffix
+              const conventionalBreaking = /^(feat|fix|refactor|perf|docs|test|chore|style|ci|build|revert)(\(.+\))?!:/;
+              if (conventionalBreaking.test(lowerMsg)) {
+                return 'major';
+              }
+
+              // Check commit type prefix
+              if (/^feat(\(.+\))?:/.test(lowerMsg)) {
+                return 'minor';
+              }
+
+              // Default to patch for fix, refactor, perf, etc.
+              return 'patch';
+            }
 
             // Find package.json (exclude node_modules)
             let pkgPath = null;
             try {
-              const result = execSync('find . -name "package.json" -not -path "*/node_modules/*" | head -1', { encoding: 'utf8' }).trim();
+              const result = safeExec('find . -name "package.json" -not -path "*/node_modules/*" | head -1', 'Failed to find package.json').trim();
               if (result) pkgPath = result;
             } catch (e) {
               console.log('No package.json found');
@@ -333,40 +485,72 @@ jobs:
             const currentVersion = pkg.version || '0.0.0';
             console.log(`Current version: ${currentVersion}`);
 
+            // Validate current version is valid semver
+            if (!isValidSemver(currentVersion)) {
+              throw new Error(`Invalid semver in package.json: ${currentVersion}`);
+            }
+
             // Parse version
             const [major, minor, patch] = currentVersion.split('.').map(Number);
 
             // Get commit messages from the push
-            const commits = execSync('git log -1 --pretty=format:%B').toString().toLowerCase();
+            const commits = safeExec('git log -1 --pretty=format:%B', 'Failed to get commit message');
 
-            // Determine bump type
+            // Determine bump type using conventional commit format
+            const bumpType = detectBumpType(commits);
             let newVersion;
-            if (commits.includes('breaking') || commits.includes('major')) {
+
+            if (bumpType === 'major') {
               newVersion = `${major + 1}.0.0`;
-              console.log('Detected MAJOR version bump');
-            } else if (commits.includes('feat') || commits.includes('minor')) {
+              console.log('Detected MAJOR version bump (breaking change)');
+            } else if (bumpType === 'minor') {
               newVersion = `${major}.${minor + 1}.0`;
-              console.log('Detected MINOR version bump');
+              console.log('Detected MINOR version bump (new feature)');
             } else {
               newVersion = `${major}.${minor}.${patch + 1}`;
-              console.log('Detected PATCH version bump');
+              console.log('Detected PATCH version bump (fix/refactor)');
             }
 
             console.log(`New version: ${newVersion}`);
 
-            // Update package.json
-            pkg.version = newVersion;
-            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-
-            // Commit and push
-            execSync('git config user.name "github-actions[bot]"');
-            execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
-            execSync(`git add ${pkgPath}`);
+            // Update package.json with atomic write (backup + rename)
+            const backupPath = `${pkgPath}.backup`;
+            fs.copyFileSync(pkgPath, backupPath);
 
             try {
-              execSync(`git commit -m "chore: bump version to ${newVersion}"`);
-              execSync('git push');
+              pkg.version = newVersion;
+              fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+            } catch (writeError) {
+              // Restore from backup if write failed
+              fs.copyFileSync(backupPath, pkgPath);
+              throw new Error(`Failed to write package.json: ${writeError.message}`);
+            } finally {
+              // Clean up backup file
+              fs.unlinkSync(backupPath);
+            }
+
+            // Pull latest changes to avoid race condition with CHANGELOG step
+            try {
+              safeExec('git pull --rebase origin main || git pull --rebase origin master', 'Failed to pull latest changes');
+            } catch (pullError) {
+              console.log('No remote changes to pull (first commit or already up to date)');
+            }
+
+            // Commit and push
+            safeExec('git config user.name "github-actions[bot]"', 'Failed to set git user');
+            safeExec('git config user.email "github-actions[bot]@users.noreply.github.com"', 'Failed to set git email');
+            safeExec(`git add ${pkgPath}`, 'Failed to stage package.json');
+
+            try {
+              safeExec(`git commit -m "chore: bump version to ${newVersion}"`, 'Commit failed');
+              safeExec('git push', 'Push failed');
               console.log(`Version bumped to ${newVersion}`);
-            } catch (e) {
-              console.log('No changes to commit or version bump failed');
+            } catch (commitError) {
+              // Check if it's a "no changes" vs actual failure
+              const status = safeExec('git status --porcelain', 'Failed to get git status');
+              if (status.trim() === '') {
+                console.log('No changes to commit (version already up to date)');
+              } else {
+                throw new Error(`Git commit or push failed: ${commitError.message}`);
+              }
             }

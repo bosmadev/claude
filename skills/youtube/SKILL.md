@@ -1,7 +1,7 @@
 ---
 name: youtube
 description: Transcribe YouTube videos and manage transcripts. Use for video analysis, content extraction, or research.
-argument-hint: <video_id_or_url> | list | delete <id> | delete all
+argument-hint: <video_id_or_url> [list] [delete <id>] [delete all] [help]
 user-invocable: true
 context: fork
 ---
@@ -51,6 +51,20 @@ When user provides a video ID or URL:
 ```bash
 export YOUTUBE_PROJECT_DIR="$PWD" && cd C:/Users/Dennis/.claude/skills/youtube/scripts && uv run transcribe.py "$VIDEO_ID_OR_URL"
 ```
+
+**Error handling for failed transcriptions:**
+
+The script handles common failure scenarios and exits with descriptive errors:
+
+| Error Type | Cause | Script Output | User Action |
+|-----------|-------|---------------|-------------|
+| Private video | Video privacy set to private | `Error: Video is unavailable` | Ask uploader to make public or unlisted |
+| Age-restricted | Video requires age verification | `Error: Transcripts are disabled for this video` | Cannot transcribe (YouTube API limitation) |
+| Unavailable/deleted | Video removed or blocked | `Error: Video is unavailable` | Video cannot be accessed |
+| No transcripts | Captions disabled by uploader | `Error: No transcript found for this video` | Video has no captions available |
+| Network timeout | Connection issues | `Error: Could not fetch metadata: TimeoutExpired` | Check network, retry |
+
+When the script fails, report the error to the user with context about what went wrong and next steps.
 
 The `YOUTUBE_PROJECT_DIR` environment variable ensures the session tracker is created in the current project directory, not the script directory.
 
@@ -210,10 +224,12 @@ Deleted X transcripts, freed Y
 
 ### RALPH Integration
 
-When `<promise>RALPH_COMPLETE</promise>` is detected, the ralph-orchestrator.py hook will:
+When `<promise>RALPH_COMPLETE</promise>` is detected, the ralph.py hook (SubagentStop handler) will:
 1. Check for `.claude/youtube-session.json`
 2. Prompt user to delete session transcripts
 3. Clean up on confirmation
+
+**Hook location:** `scripts/ralph.py` → `hook-subagent-stop` function
 
 ---
 
@@ -224,6 +240,59 @@ When `<promise>RALPH_COMPLETE</promise>` is detected, the ralph-orchestrator.py 
 - **Never auto-delete transcripts**
 - **Keep transcripts in global location (`%USERPROFILE%\.claude\youtube\transcriptions\`)**
 - **Track per-session usage in project-local file**
+
+## Example Session
+
+Complete workflow example:
+
+```bash
+# Transcribe a video
+$ /youtube https://youtube.com/watch?v=dQw4w9WgXcQ
+
+**SKILL_STARTED:** youtube
+
+Video ID: dQw4w9WgXcQ
+
+Fetching metadata...
+  Title: Never Gonna Give You Up
+  Author: Rick Astley
+  Duration: 3:32
+
+Fetching transcript...
+  Language: en (manual)
+  Segments: 147
+
+Saved to: ~/.claude\youtube\transcriptions\youtube-dQw4w9WgXcQ.md
+
+Preview (first 500 chars):
+----------------------------------------
+Never gonna give you up Never gonna let you down
+Never gonna run around and desert you...
+
+# List all transcripts
+$ /youtube list
+
+YouTube Transcripts:
+
+ID          | Title                   | Author      | Duration | Created
+------------|-------------------------|-------------|----------|--------
+dQw4w9WgXcQ | Never Gonna Give You Up | Rick Astley | 3:32     | 2h ago
+
+Total: 1 transcript (45 KB)
+
+# Delete a transcript
+$ /youtube delete dQw4
+
+Delete transcript for "Never Gonna Give You Up" by "Rick Astley" (3:32)?
+File: ~/.claude\youtube\transcriptions\youtube-dQw4w9WgXcQ.md
+Size: 45 KB
+
+Type "yes" to confirm: yes
+
+Deleted transcript dQw4w9WgXcQ
+```
+
+---
 
 ## File Locations
 

@@ -138,7 +138,6 @@ def receive_context(agent_id: str, timeout: float = 0.1) -> str | None:
     Returns:
         Context string if available, None otherwise.
     """
-    # TODO-P2: Bare except catches all exceptions including KeyboardInterrupt - use specific exceptions (Exception) - Review agent 1
     # Try Redis first
     if REDIS_AVAILABLE:
         try:
@@ -150,7 +149,8 @@ def receive_context(agent_id: str, timeout: float = 0.1) -> str | None:
             redis.close()
             if message and message.get("type") == "message":
                 return message.get("data")
-        except Exception:
+        except (OSError, ConnectionError, TimeoutError):
+            # Specific exceptions for network/Redis failures only
             pass  # Fall through to file-based
 
     # Fallback to file-based
@@ -4675,10 +4675,12 @@ SPECIALTY FOCUS ({specialty}):
                     # Queue missing tasks and increment retry counter
                     state.plan_verification_retries += 1
                     self.write_state(state)
-                    
-                    # TODO: Queue missing tasks back to implementation phase
-                    # This would require restructuring run_loop to support looping back
-                    # For now, log the missing tasks and continue
+
+                    # Note: Missing tasks are logged but not re-queued to implementation phase.
+                    # Automatic looping back would require significant restructuring of run_loop
+                    # to handle phase transitions and prevent infinite loops. Instead, missing
+                    # tasks are surfaced in the verification report for manual follow-up or
+                    # can be addressed via a new /start invocation targeting the specific tasks.
                     self.log_activity(
                         f"Plan incomplete - {len(missing_tasks)} tasks missing (retry {state.plan_verification_retries}/2)"
                     )

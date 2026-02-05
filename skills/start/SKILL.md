@@ -1,7 +1,7 @@
 ---
 name: start
-description: Initialize ULTRATHINK mode with Ralph auto-loop. Use when starting work on complex features, planning implementations, or when deep analysis is needed.
-argument-hint: "[N] [M] [opus|sonnet|sonnet all] [task | noreview [task] | review [rN] [rM] [task] | import <source>]"
+description: "ULTRATHINK mode with Ralph auto-loop. Default: 3 agents, 3 iterations, Opus."
+argument-hint: "[N] [M] [opus|sonnet|sonnet all] [task | noreview | review [rN] [rM] | import <source> | help]"
 user-invocable: true
 ---
 # Start Workflow
@@ -77,6 +77,24 @@ I parsed your command as:
 - Task: "fix the auth"
 
 Is this correct? (yes/no)
+```
+
+### Validation Rules
+
+**Agent count (N):**
+- Minimum: 1
+- Maximum: 30 (hard cap to prevent resource exhaustion)
+- Default: 3
+
+**Iteration count (M):**
+- Minimum: 1
+- Maximum: 100 (hard cap to prevent infinite loops)
+- Default: 3
+
+If user requests values outside these bounds, cap at the limit and warn:
+```
+Warning: Requested 50 agents, capped at 30 (maximum)
+Warning: Requested 200 iterations, capped at 100 (maximum)
 ```
 
 ### Decision Tree
@@ -258,6 +276,24 @@ Research found 3 viable auth libraries:
 - Custom JWT implementation (Most control, no dependencies)
 - Other (please specify)
 ```
+
+## Plan File Location and Naming
+
+**Directory:** All plan files are created in `{repo}/.claude/plans/`
+
+**Naming convention:**
+- Format: `{type}-{slug}.md`
+- Examples:
+  - `feature-user-auth.md` - Feature implementation
+  - `fix-login-bug.md` - Bug fix
+  - `refactor-api-layer.md` - Refactoring work
+  - `research-graphql-migration.md` - Research/exploration
+
+**Slug generation:**
+- Derived from task description
+- Lowercase, hyphen-separated
+- Max 50 characters
+- Example: "Implement OAuth2 authentication" → `feature-oauth2-authentication.md`
 
 ## Plan File Format (MANDATORY)
 

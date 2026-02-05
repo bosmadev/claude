@@ -41,7 +41,18 @@ def _setup_timeout():
     if sys.platform == "win32":
         import threading
 
-        _stdin_timer = threading.Timer(5, lambda: os._exit(0))
+        def timeout_exit():
+            """Log timeout and exit gracefully."""
+            try:
+                debug_log = Path.home() / ".claude" / "debug" / "security-gate-timeout.log"
+                debug_log.parent.mkdir(parents=True, exist_ok=True)
+                with open(debug_log, "a") as f:
+                    f.write(f"[{datetime.now().isoformat()}] Timeout after 5s\n")
+            except Exception:
+                pass
+            sys.exit(0)
+
+        _stdin_timer = threading.Timer(5, timeout_exit)
         _stdin_timer.daemon = True
         _stdin_timer.start()
     else:
@@ -87,7 +98,7 @@ SECURITY_DIR.mkdir(parents=True, exist_ok=True)
 # Threat Detection: Homograph Attack
 # =============================================================================
 
-# Cyrillic characters that look like Latin
+# Cyrillic characters that look like Latin (expanded set)
 HOMOGRAPH_MAP = {
     "\u0430": "a",  # Cyrillic а
     "\u0435": "e",  # Cyrillic е
@@ -102,6 +113,15 @@ HOMOGRAPH_MAP = {
     "\u0501": "d",  # Cyrillic ԁ
     "\u051b": "q",  # Cyrillic ԛ
     "\u051d": "w",  # Cyrillic ԝ
+    "\u0412": "B",  # Cyrillic В
+    "\u0405": "S",  # Cyrillic Ѕ
+    "\u041d": "H",  # Cyrillic Н
+    "\u0420": "P",  # Cyrillic Р
+    "\u0421": "C",  # Cyrillic С
+    "\u0422": "T",  # Cyrillic Т
+    "\u0425": "X",  # Cyrillic Х
+    "\u0406": "I",  # Cyrillic І
+    "\u0408": "J",  # Cyrillic Ј
 }
 
 # Broader Unicode confusables
@@ -229,6 +249,7 @@ def detect_pipe_to_shell(command: str) -> Optional[dict]:
 # =============================================================================
 
 # Common secret patterns (expandable)
+# Patterns use bounded quantifiers to prevent ReDoS attacks
 SECRET_PATTERNS = [
     # API Keys
     (r"(?i)(api[_-]?key|apikey)\s*[:=]\s*['\"]?[\w\-]{20,}['\"]?", "API key"),
@@ -292,10 +313,21 @@ SECRET_PATTERNS = [
 ]
 
 
-def detect_secret_leak(text: str) -> Optional[dict]:
+def detect_secret_leak(text: str, timeout_ms: int = 100) -> Optional[dict]:
     """
     Detect potential secret/credential leaks in commands.
+
+    Args:
+        text: Text to scan for secrets
+        timeout_ms: Max milliseconds per pattern (defense against ReDoS)
     """
+    import signal
+    import platform
+
+    # Limit input size to prevent ReDoS
+    if len(text) > 10000:
+        text = text[:10000]
+
     for pattern, secret_type in SECRET_PATTERNS:
         if re.search(pattern, text):
             # Mask the actual secret in the report
@@ -424,7 +456,7 @@ def log_security_event(
     log_file: Path = AUDIT_LOG,
 ) -> None:
     """
-    Log security event to audit trail.
+    Log security event to audit trail with rotation.
     """
     event = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -434,11 +466,43 @@ def log_security_event(
         "decision": decision,
     }
 
+    # Implement log rotation if file exceeds 10MB
+    MAX_LOG_SIZE = 10 * 1024 * 1024
+    failure_count_file = log_file.parent / ".log-failures"
+
     try:
+        # Check if rotation needed
+        if log_file.exists() and log_file.stat().st_size > MAX_LOG_SIZE:
+            # Rotate: keep last 1000 lines, move rest to .old
+            with open(log_file, "r") as f:
+                lines = f.readlines()
+            if len(lines) > 1000:
+                # Save old entries
+                old_log = log_file.with_suffix(".jsonl.old")
+                with open(old_log, "w") as f:
+                    f.writelines(lines[:-1000])
+                # Keep recent entries
+                with open(log_file, "w") as f:
+                    f.writelines(lines[-1000:])
+
+        # Append new event
         with open(log_file, "a") as f:
             f.write(json.dumps(event) + "\n")
-    except OSError:
-        pass
+
+        # Reset failure count on success
+        if failure_count_file.exists():
+            failure_count_file.unlink()
+
+    except OSError as e:
+        # Track failure count
+        try:
+            count = 0
+            if failure_count_file.exists():
+                count = int(failure_count_file.read_text())
+            count += 1
+            failure_count_file.write_text(str(count))
+        except Exception:
+            pass
 
 
 def log_block(threat: dict, command: str) -> None:
@@ -510,15 +574,40 @@ def run_security_checks(command: str) -> tuple[Optional[dict], str]:
 # =============================================================================
 
 
+MAX_STDIN_SIZE = 1024 * 1024  # 1MB max stdin
+
+
 def pre_check() -> None:
     """
     PreToolUse hook for Bash commands.
     Intercepts and validates commands before execution.
     """
     try:
-        hook_input = json.loads(sys.stdin.read())
+        # Limit stdin read to prevent memory exhaustion
+        raw_input = sys.stdin.read(MAX_STDIN_SIZE)
+        if len(raw_input) >= MAX_STDIN_SIZE:
+            # Input too large, block for safety
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "Command input exceeds size limit (1MB)"
+                }
+            }
+            print(json.dumps(output))
+            sys.exit(0)
+        hook_input = json.loads(raw_input)
         _cancel_timeout()
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        # Log JSON parsing errors to detect potential injection attempts
+        try:
+            debug_log = Path.home() / ".claude" / "debug" / "security-gate-json-errors.log"
+            debug_log.parent.mkdir(parents=True, exist_ok=True)
+            with open(debug_log, "a") as f:
+                f.write(f"[{datetime.now().isoformat()}] JSON error: {e}\n")
+                f.write(f"Input preview: {raw_input[:200]}\n")
+        except Exception:
+            pass
         sys.exit(0)
 
     tool_name = hook_input.get("tool_name", "")

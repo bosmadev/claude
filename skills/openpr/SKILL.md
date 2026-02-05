@@ -1,7 +1,7 @@
 ---
 name: openpr
-description: Squash commits and create a pull request with auto-generated summary. Creates .claude/pending-pr.md for review before execution.
-argument-hint: [base-branch]
+description: Create PR with squashed commits and auto-generated summary
+argument-hint: "[base-branch|help]"
 user-invocable: true
 context: fork
 ---
@@ -66,6 +66,84 @@ Examples:
 Parse arguments:
 - `base-branch` (optional): Target branch for PR (default: `main`)
 - `help`: Show usage information
+
+## Error Handling Examples
+
+### Example 1: PR Already Exists
+
+```
+User: /openpr
+
+Claude: Running aggregate-pr.py...
+Squashing commits...
+Creating pull request...
+
+Error: A pull request already exists for this branch.
+
+Existing PR: https://github.com/user/repo/pull/42 (Open)
+Title: Build 101
+Created: 2 days ago
+
+Would you like to:
+1. Update the existing PR description
+2. Close the existing PR and create a new one
+3. Cancel
+
+User: 1
+
+Claude: Updating PR #42 description...
+Done! PR updated with latest changes.
+```
+
+### Example 2: Push Rejected (Diverged History)
+
+```
+User: /openpr confirm
+
+Claude: Squashing commits...
+Pushing to origin...
+
+Error: Push rejected - remote branch has commits not present locally.
+
+This usually happens when:
+- Someone else pushed to your branch
+- You rebased locally but remote has the old commits
+
+Recommended fix:
+git pull --rebase origin feature/b101
+# Resolve any conflicts
+/openpr confirm  # Try again
+
+Or force push (CAUTION - overwrites remote):
+git push origin HEAD --force-with-lease
+
+Cancel PR creation? (yes/no)
+
+User: yes
+
+Claude: PR creation cancelled. Please resolve the diverged history and try again.
+```
+
+### Example 3: No Commits to Include
+
+```
+User: /openpr
+
+Claude: Checking for commits...
+
+Error: No commits found to include in PR.
+
+Current branch: feature/b101
+Base branch: main
+Commits ahead: 0
+
+Possible causes:
+- All commits have already been merged
+- Branch is up to date with main
+- You're on the main branch (use a feature branch instead)
+
+Check your branch: git log main..HEAD
+```
 
 ## Pre-flight Checks
 

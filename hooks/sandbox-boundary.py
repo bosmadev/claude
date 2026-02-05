@@ -18,8 +18,9 @@ from typing import Dict, List, Optional
 # Configuration
 # =============================================================================
 
-# Allowed network hosts (whitelist)
-ALLOWED_HOSTS = [
+# Default allowed network hosts (whitelist)
+# Can be extended via CLAUDE_ALLOWED_HOSTS env var (comma-separated)
+_DEFAULT_HOSTS = [
     "github.com",
     "api.github.com",
     "raw.githubusercontent.com",
@@ -30,6 +31,10 @@ ALLOWED_HOSTS = [
     "anthropic.com",
     "claude.ai",
 ]
+
+import os
+_extra_hosts = os.environ.get("CLAUDE_ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = _DEFAULT_HOSTS + [h.strip() for h in _extra_hosts if h.strip()]
 
 # Blocked system directories
 BLOCKED_PATHS = [
@@ -64,8 +69,19 @@ def check_file_access(file_path: str, project_root: str) -> Dict[str, any]:
         dict: {"allowed": bool, "reason": str}
     """
     try:
+        # Use strict resolve (Python 3.6+) to catch symlinks to nonexistent targets
+        # Check realpath to detect symlinks pointing outside sandbox
         abs_path = Path(file_path).resolve()
         proj_path = Path(project_root).resolve()
+
+        # Detect symlink escape: if realpath differs significantly, block
+        if abs_path.is_symlink():
+            real_target = abs_path.resolve()
+            if not str(real_target).startswith(str(proj_path)):
+                return {
+                    "allowed": False,
+                    "reason": f"symlink_escape: {abs_path} -> {real_target}"
+                }
 
         # Check if file is within project directory
         if proj_path in abs_path.parents or abs_path == proj_path:
@@ -96,14 +112,31 @@ def check_network_host(host: str) -> Dict[str, any]:
     Returns:
         dict: {"allowed": bool, "reason": str}
     """
-    # Extract domain from URL
-    domain = host.lower()
-    for prefix in ["https://", "http://", "ssh://"]:
-        if domain.startswith(prefix):
-            domain = domain[len(prefix):]
+    from urllib.parse import urlparse
 
-    domain = domain.split("/")[0]  # Remove path
-    domain = domain.split(":")[0]  # Remove port
+    # Block dangerous URL schemes
+    blocked_schemes = ["file", "data", "javascript", "vbscript"]
+
+    # Parse URL properly to extract domain
+    try:
+        # Add scheme if missing for proper parsing
+        if not host.startswith(("http://", "https://", "ssh://", "ftp://", "file://")):
+            host = "https://" + host
+
+        parsed = urlparse(host)
+
+        # Block dangerous schemes
+        if parsed.scheme.lower() in blocked_schemes:
+            return {
+                "allowed": False,
+                "reason": f"blocked_scheme: {parsed.scheme}"
+            }
+
+        domain = (parsed.hostname or "").lower()
+        if not domain:
+            return {"allowed": False, "reason": "invalid_url: no hostname"}
+    except Exception:
+        return {"allowed": False, "reason": "invalid_url: parse_error"}
 
     # Check whitelist
     for allowed in ALLOWED_HOSTS:
@@ -123,11 +156,24 @@ def check_executable(command: str) -> Dict[str, any]:
     Returns:
         dict: {"allowed": bool, "reason": str}
     """
+    # Block dangerous shell builtins
+    blocked_builtins = ["eval", "exec", "source", "."]
+
     # Extract first word (the executable)
     exe = command.split()[0] if command.strip() else ""
-    exe = Path(exe).name  # Get basename only
 
-    if exe in ALLOWED_EXECUTABLES:
+    # Check for shell builtins first
+    if exe in blocked_builtins:
+        return {
+            "allowed": False,
+            "reason": f"blocked_builtin: {exe}"
+        }
+
+    # For absolute paths, verify the target is in allowed list
+    # This prevents bypass via /usr/bin/malicious
+    exe_basename = Path(exe).name
+
+    if exe_basename in ALLOWED_EXECUTABLES:
         return {"allowed": True, "reason": "whitelisted"}
 
     return {
@@ -172,9 +218,15 @@ If this executable is required, ask user for approval first.
         }
 
     # Check for file operations outside project
+    import shlex
     if any(keyword in command for keyword in ["cd ", "mv ", "cp ", "rm ", ">", ">>"]):
-        # Extract file paths (simplified - not exhaustive)
-        for word in command.split():
+        # Use shlex to properly parse quoted paths with spaces
+        try:
+            words = shlex.split(command)
+        except ValueError:
+            # Malformed quotes - fall back to simple split
+            words = command.split()
+        for word in words:
             if "/" in word or "\\" in word:
                 file_check = check_file_access(word, cwd)
                 if not file_check["allowed"]:

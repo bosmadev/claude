@@ -7,12 +7,14 @@ Used by: scheduled task (Windows) / systemd timer (Linux), resume hook, login ho
 Replaces: refresh-claude-token.sh
 """
 
+import os
 import socket
 import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from filelock import FileLock, Timeout as FileLockTimeout
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = Path.home() / ".claude" / "debug"
@@ -32,27 +34,51 @@ def ensure_log_dir():
         pass
 
 
+def _sanitize_message(message: str) -> str:
+    """Sanitize log messages to prevent credential leakage."""
+    import re
+    # Redact common token patterns
+    sanitized = re.sub(r'(access[_-]?token["\s:=]+)([a-zA-Z0-9_\-\.]{20,})', r'\1[REDACTED]', message, flags=re.IGNORECASE)
+    sanitized = re.sub(r'(refresh[_-]?token["\s:=]+)([a-zA-Z0-9_\-\.]{20,})', r'\1[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'(bearer\s+)([a-zA-Z0-9_\-\.]{20,})', r'\1[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'(sk-ant-[a-zA-Z0-9_\-]{20,})', r'[REDACTED_API_KEY]', sanitized)
+    return sanitized
+
 def log(message: str):
-    """Append timestamped message to log file."""
+    """Append timestamped message to log file with file locking."""
     ensure_log_dir()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] [refresh-token] {message}\n"
+    sanitized = _sanitize_message(message)
+    line = f"[{timestamp}] [refresh-token] {sanitized}\n"
+
+    lock_file = LOG_DIR / ".refresh-log.lock"
     try:
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(line)
-    except OSError:
+        # Use file lock to prevent interleaved writes from concurrent processes
+        with FileLock(str(lock_file), timeout=2):
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(line)
+    except (OSError, FileLockTimeout):
+        # If lock fails or file write fails, silently continue
         pass
 
 
 def check_network() -> bool:
-    """Check network connectivity using platform-appropriate method."""
+    """Check network connectivity using platform-appropriate method with SSL verification."""
+    import ssl
+
+    # Create SSL context for certificate verification
+    ssl_context = ssl.create_default_context()
+
     if sys.platform == "win32":
-        # Windows: socket connect is more reliable than ping
+        # Windows: socket connect with SSL verification
         for host in HOSTS:
             try:
-                socket.create_connection((host, 443), timeout=2)
+                sock = socket.create_connection((host, 443), timeout=2)
+                # Wrap socket with SSL for certificate verification
+                with ssl_context.wrap_socket(sock, server_hostname=host) as ssl_sock:
+                    pass  # Connection successful with verified cert
                 return True
-            except (OSError, socket.timeout):
+            except (OSError, socket.timeout, ssl.SSLError):
                 continue
     else:
         # Linux: use ping
@@ -85,33 +111,60 @@ def run_sync() -> bool:
         log("Sync skipped: claude-github.py not found")
         return False
 
+    # Get timeout from environment or use default
+    timeout = int(os.environ.get("CLAUDE_SYNC_TIMEOUT", "300"))
+
     try:
         log("Syncing token to GitHub repos...")
-        with open(LOG_FILE, "a", encoding="utf-8") as log_f:
-            result = subprocess.run(
-                [sys.executable, str(claude_github_py), "sync", "--all"],
-                stdout=log_f,
-                stderr=subprocess.STDOUT,
-                timeout=300,  # 5 min timeout for sync (scans multiple repos)
-            )
+        result = subprocess.run(
+            [sys.executable, str(claude_github_py), "sync", "--all"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
         if result.returncode == 0:
             log("GitHub sync completed successfully")
+            if result.stdout:
+                log(result.stdout.strip())
             return True
         else:
-            log(f"GitHub sync failed with exit code {result.returncode}")
+            # Parse stderr for actionable error messages
+            stderr = result.stderr.strip()
+            if "gh: command not found" in stderr or "gh.exe" in stderr:
+                log("GitHub sync failed: gh CLI not found in PATH")
+            elif "permission denied" in stderr.lower():
+                log(f"GitHub sync failed: permission error - {stderr}")
+            elif "network" in stderr.lower() or "connection" in stderr.lower():
+                log(f"GitHub sync failed: network error - {stderr}")
+            else:
+                log(f"GitHub sync failed (exit {result.returncode}): {stderr}")
             return False
     except subprocess.TimeoutExpired:
-        log("GitHub sync timed out after 300s")
+        log(f"GitHub sync timed out after {timeout}s - likely network issue")
         return False
-    except FileNotFoundError as e:
-        log(f"Sync ERROR: {e}")
+    except FileNotFoundError:
+        log("Sync ERROR: Python executable not found")
         return False
 
 
 def main():
     extra_args = sys.argv[1:]
-    log("Starting token refresh check...")
 
+    # Use lock to prevent concurrent executions
+    lock_file = Path.home() / ".claude" / ".refresh.lock"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with FileLock(str(lock_file), timeout=1):
+            log("Starting token refresh check...")
+            _run_refresh(extra_args)
+    except FileLockTimeout:
+        log("Another refresh is already running - skipping")
+        sys.exit(0)
+
+def _run_refresh(extra_args: list):
+    """Internal function to run the refresh logic (called within lock)."""
     # Wait for network if not available (useful after resume from sleep)
     retry_count = 0
     while not check_network():

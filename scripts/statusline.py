@@ -25,7 +25,14 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Timeout guard — kill process if stdin hangs (Windows-safe)
 # ---------------------------------------------------------------------------
-_kill_timer = threading.Timer(5, lambda: os._exit(0))
+def _timeout_cleanup():
+    """Clean shutdown on timeout - allows proper cleanup."""
+    try:
+        sys.exit(0)
+    except SystemExit:
+        os._exit(0)
+
+_kill_timer = threading.Timer(5, _timeout_cleanup)
 _kill_timer.daemon = True
 _kill_timer.start()
 
@@ -63,7 +70,14 @@ def git_run(cwd: str, *args: str) -> str:
             timeout=3,
         )
         return r.stdout.strip() if r.returncode == 0 else ""
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired:
+        # Git command timed out - likely hung on network operation
+        return ""
+    except FileNotFoundError:
+        # Git not in PATH - expected in non-git environments
+        return ""
+    except (OSError, PermissionError):
+        # Other OS-level errors (permission denied, etc.)
         return ""
 
 
@@ -156,8 +170,17 @@ def read_usage_cache(cache_path: Path) -> dict:
             result["five_hour_pct"] = str(int(float(val_5h)))
             # Reset time
             result["five_hour_resets_at"] = data.get("five_hour", {}).get("resets_at", "")
-        except (json.JSONDecodeError, OSError, ValueError, TypeError):
+        except json.JSONDecodeError:
+            # Cache file corrupted - will be refreshed on next cycle
             pass
+        except (OSError, PermissionError) as exc:
+            # I/O error reading cache - log to stderr
+            import sys
+            print(f"[!] Cannot read usage cache: {exc}", file=sys.stderr)
+        except (ValueError, TypeError, KeyError) as exc:
+            # Data format error - cache structure changed
+            import sys
+            print(f"[!] Invalid usage cache format: {exc}", file=sys.stderr)
     return result
 
 
@@ -188,7 +211,8 @@ def refresh_usage_cache_bg(cache_path: Path) -> None:
         except (OSError, json.JSONDecodeError):
             return
 
-        if not token or token == "null":
+        # Validate token format before using in header
+        if not token or token == "null" or not isinstance(token, str) or len(token) < 20:
             return
 
         try:
@@ -239,8 +263,10 @@ def save_last_output(output: str) -> None:
     try:
         cache_file = CACHE_DIR / ".statusline-last"
         cache_file.write_text(output, encoding="utf-8")
-    except OSError:
-        pass
+    except OSError as exc:
+        # Log write failures for debugging
+        import sys
+        print(f"[!] Cannot save statusline cache: {exc}", file=sys.stderr)
 
 
 def load_last_output() -> str:
@@ -282,6 +308,10 @@ def main() -> None:
     try:
         inp = json.loads(raw_input)
     except json.JSONDecodeError:
+        inp = {}
+
+    # Validate JSON structure
+    if not isinstance(inp, dict):
         inp = {}
 
     cwd     = inp.get("cwd", ".")

@@ -107,7 +107,10 @@ You DO NOT compromise on:
 | Criterion                 | Requirement                              |
 | ------------------------- | ---------------------------------------- |
 | 1.4.6 Contrast (Enhanced) | 7:1 for normal text, 4.5:1 for large     |
+| 2.2.3 No Timing           | No time limits or timeout warnings       |
 | 2.4.9 Link Purpose        | Links descriptive without context        |
+| 2.5.5 Target Size         | 44x44 CSS pixels minimum touch target    |
+| 3.1.3 Unusual Words       | Mechanisms to explain jargon/idioms      |
 | 3.1.5 Reading Level       | Lower secondary education level          |
 | 3.2.5 Change on Request   | No automatic changes without user action |
 | 3.3.6 Error Prevention    | Reversible for all submissions           |
@@ -273,6 +276,8 @@ Structure your accessibility report as:
 
 ## Quick Commands
 
+### Static Analysis
+
 ```bash
 # Run axe-core accessibility scan
 npx @axe-core/cli https://localhost:3000 --tags wcag2a,wcag2aa,wcag21aa
@@ -300,6 +305,79 @@ grep -rn 'aria-hidden="true"' --include="*.tsx" --include="*.jsx" | grep -E 'but
 
 # Scan for color-only indicators (no icon/text fallback)
 grep -rn 'text-red\|text-green\|text-yellow\|bg-red\|bg-green' --include="*.tsx" --include="*.jsx"
+```
+
+### Playwright Integration
+
+Use `mcp__playwright__execute` for dynamic accessibility testing:
+
+```javascript
+// Test keyboard navigation
+await mcp__playwright__execute({
+  code: `
+    await page.goto('https://localhost:3000');
+    await page.keyboard.press('Tab');
+    const focusedElement = await page.evaluate(() => document.activeElement.tagName);
+    console.log('First focusable element:', focusedElement);
+  `
+});
+
+// Test focus order matches visual order
+await mcp__playwright__execute({
+  code: `
+    const focusableElements = await page.$$('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    const positions = await Promise.all(focusableElements.map(async el => {
+      const box = await el.boundingBox();
+      return { y: box.y, x: box.x };
+    }));
+    console.log('Focus order positions:', positions);
+  `
+});
+
+// Check for focus trapping in modals
+await mcp__playwright__execute({
+  code: `
+    await page.click('[data-testid="open-modal"]');
+    const firstFocusable = await page.$('[role="dialog"] button');
+    await firstFocusable.focus();
+    await page.keyboard.press('Tab');
+    const isTrapped = await page.evaluate(() => {
+      const modal = document.querySelector('[role="dialog"]');
+      return modal.contains(document.activeElement);
+    });
+    console.log('Focus trapped in modal:', isTrapped);
+  `
+});
+
+// Verify aria-live announcements
+await mcp__playwright__execute({
+  code: `
+    const liveRegions = await page.$$('[aria-live]');
+    const announcements = await Promise.all(liveRegions.map(async el => ({
+      mode: await el.getAttribute('aria-live'),
+      text: await el.textContent()
+    })));
+    console.log('Live region announcements:', announcements);
+  `
+});
+
+// Check color contrast programmatically
+await mcp__playwright__execute({
+  code: `
+    const contrastResults = await page.evaluate(() => {
+      const elements = document.querySelectorAll('p, h1, h2, h3, button, a');
+      return Array.from(elements).slice(0, 10).map(el => {
+        const styles = window.getComputedStyle(el);
+        return {
+          tag: el.tagName,
+          color: styles.color,
+          background: styles.backgroundColor
+        };
+      });
+    });
+    console.log('Contrast check:', contrastResults);
+  `
+});
 ```
 
 ## Testing with Screen Readers
