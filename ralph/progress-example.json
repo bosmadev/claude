@@ -1,0 +1,60 @@
+{
+  "plan_id": "shimmering-sleeping-octopus",
+  "phase": "implementation",
+  "agents_total": 10,
+  "agents_completed": 3,
+  "agents_failed": 1,
+  "agents_active": 2,
+  "total_cost_usd": 0.45,
+  "budget_limit_usd": 5.0,
+  "started_at": "2026-02-05T14:00:00Z",
+  "updated_at": "2026-02-05T14:35:12Z",
+  "performance": {
+    "avg_cost_per_agent": 0.15,
+    "avg_turns_per_agent": 12,
+    "avg_duration_seconds": 450,
+    "total_turns": 36
+  },
+  "agents": [
+    {
+      "id": "agent-1",
+      "status": "completed",
+      "task_id": "t1",
+      "cost_usd": 0.12,
+      "num_turns": 10,
+      "duration_seconds": 420,
+      "started_at": "2026-02-05T14:00:30Z",
+      "completed_at": "2026-02-05T14:15:45Z"
+    },
+    {
+      "id": "agent-2",
+      "status": "active",
+      "task_id": "t2",
+      "cost_usd": 0.08,
+      "num_turns": 8,
+      "duration_seconds": 300,
+      "started_at": "2026-02-05T14:16:00Z",
+      "completed_at": null
+    },
+    {
+      "id": "agent-3",
+      "status": "failed",
+      "task_id": "t4",
+      "cost_usd": 0.15,
+      "num_turns": 15,
+      "duration_seconds": 540,
+      "started_at": "2026-02-05T14:20:00Z",
+      "completed_at": "2026-02-05T14:35:12Z"
+    },
+    {
+      "id": "agent-4",
+      "status": "active",
+      "task_id": "t3",
+      "cost_usd": 0.10,
+      "num_turns": 3,
+      "duration_seconds": 180,
+      "started_at": "2026-02-05T14:30:00Z",
+      "completed_at": null
+    }
+  ]
+}
