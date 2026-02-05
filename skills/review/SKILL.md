@@ -1,7 +1,7 @@
 ---
 name: review
-description: "Code review: multi-aspect analysis OR PR review. Use '/review' for code quality, '/review pr [N]' for pull requests, '/review security' for OWASP audit."
-argument-hint: "[agents] [iterations] [opus|sonnet|haiku] [working|impact|branch|staged|pr|security]"
+description: "Comprehensive code review with security (OWASP) and design (a11y) by default. Use '/review' for full review, '/review pr [N]' for pull requests."
+argument-hint: "[agents] [iterations] [opus|sonnet|haiku] [working|impact|branch|staged|pr]"
 user-invocable: true
 ---
 
@@ -9,7 +9,9 @@ user-invocable: true
 
 **When invoked, immediately output:** `**SKILL_STARTED:** review`
 
-Unified code review that runs ALL aspects by default. Spawns parallel review agents to analyze code comprehensively.
+Unified code review that runs ALL aspects by default, including security (OWASP Top 10) and design (accessibility/UI). Spawns parallel review agents to analyze code comprehensively.
+
+**Review agents ONLY leave TODO-P1/P2/P3 comments in code. They do NOT auto-fix issues.**
 
 ## Help Command
 
@@ -25,25 +27,23 @@ Displays usage information and examples.
 |-----------|---------|-------|
 | Agents | 10 | 1-10 (hard cap) |
 | Iterations | 3 | 1-5 |
-| Model | Sonnet 4.5 | opus / sonnet / haiku |
+| Model | Opus 4.5 | opus / sonnet / haiku |
 | Scope | working | working / impact / branch / staged / path / pr |
 
 ### Override Syntax
 
 ```
-/review                          → 10 agents, 3 iterations, Sonnet 4.5, working scope
-/review N                        → N agents, 3 iterations, Sonnet 4.5
-/review N M                      → N agents, M iterations, Sonnet 4.5
-/review N M opus                 → N agents, M iterations, Opus 4.5
+/review                          → 10 agents, 3 iterations, Opus 4.5, working scope
+/review N                        → N agents, 3 iterations, Opus 4.5
+/review N M                      → N agents, M iterations, Opus 4.5
+/review N M sonnet               → N agents, M iterations, Sonnet 4.5
 /review N M haiku                → N agents, M iterations, Haiku
 /review working                  → 10 agents, working tree only (R1)
 /review impact                   → 10 agents, working tree + Serena impact radius (R2)
 /review branch                   → 10 agents, full branch diff since main (R3)
-/review 5 2 opus branch          → 5 agents, 2 iter, Opus, full branch diff
-/review pr                       → Current branch PR
-/review pr 123                   → PR #123
-/review security                 → Security-focused OWASP audit
-/review security --owasp         → Full OWASP Top 10 audit
+/review 5 2 sonnet branch        → 5 agents, 2 iter, Sonnet, full branch diff
+/review pr                       → Current branch PR with full review
+/review pr 123                   → PR #123 with full review
 ```
 
 ## Model Routing (3-Layer System)
@@ -53,11 +53,11 @@ This skill runs in the **main Opus conversation** (no `context: fork`). It spawn
 | Layer | Mechanism | Effect |
 |-------|-----------|--------|
 | L1: Global Default | `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` (SessionStart) | Subagents default to Sonnet |
-| L3: Per-Agent Override | `model="sonnet"` in Task() calls | Each review agent uses parsed model |
+| L3: Per-Agent Override | `model="opus"` in Task() calls | Each review agent uses parsed model (default: opus) |
 
-**Implementation:** When spawning Task agents, pass the parsed model explicitly:
+**Implementation:** When spawning Task agents, pass the parsed model explicitly (default to "opus"):
 ```
-Task(subagent_type="general-purpose", model=parsed_model, ...)
+Task(subagent_type="general-purpose", model=parsed_model or "opus", ...)
 ```
 
 ## Scope Definitions
@@ -83,24 +83,26 @@ Scope: git diff main...HEAD --name-only (all changes since branch creation)
 
 ## Review Aspects (ALL Run by Default)
 
-| Aspect | What It Checks |
-|--------|---------------|
-| **Code Quality** | Bugs, logic errors, patterns, architecture |
-| **Security** | OWASP vulnerabilities, injection, auth issues |
-| **Standards** | Biome lint, TypeScript types, React patterns |
-| **Documentation** | Missing docs, incorrect comments |
-| **Design** | UI/UX patterns, accessibility, consistency |
-| **Architecture** | SOLID, coupling, layer violations |
-| **Tests** | Missing coverage, test quality |
-| **Performance** | Bottlenecks, memory leaks, inefficiencies |
+Review agents use criteria from `agents/review-coordinator.md` and specialized agent configs (`security-reviewer.md`, `a11y-reviewer.md`).
 
-## Security-Focused Review
+| Aspect | What It Checks | Agent Reference |
+|--------|---------------|----------------|
+| **Code Quality** | Bugs, logic errors, patterns, architecture | `review-coordinator` |
+| **Security (OWASP)** | OWASP Top 10, injection, auth, secrets | `security-reviewer` |
+| **Standards** | Biome lint, TypeScript types, React patterns | Pre-review quality check |
+| **Documentation** | Missing docs, incorrect comments | `review-coordinator` |
+| **Design & A11y** | WCAG AAA, UI/UX patterns, consistency | `a11y-reviewer` |
+| **Architecture** | SOLID, coupling, layer violations | `architecture-reviewer` |
+| **Tests** | Missing coverage, test quality | `review-coordinator` |
+| **Performance** | Bottlenecks, memory leaks, inefficiencies | `performance-reviewer` |
 
-`/review security` or `/review security --owasp`
+**Review agents reference specialized agent configs for domain-specific criteria but adapt to working in parallel batches.**
 
-Runs OWASP Top 10:2025 focused security audit.
+## Security & Design Included by Default
 
-### OWASP Top 10 Quick Reference
+Security (OWASP Top 10) and Design (WCAG AAA) are now **always included** in default `/review` runs. No separate flags needed.
+
+### OWASP Top 10 Quick Reference (Always Checked)
 
 | ID | Category | Key Checks |
 |----|----------|------------|
@@ -114,6 +116,14 @@ Runs OWASP Top 10:2025 focused security audit.
 | A08 | Data Integrity | Signed data, secure CI/CD |
 | A09 | Logging Failures | Auth logging, immutable logs, alerting |
 | A10 | SSRF | URL validation, allowlists |
+
+### WCAG AAA Quick Reference (Always Checked)
+
+| Level | Criteria | Key Checks |
+|-------|----------|------------|
+| A (Must) | Basic accessibility | Alt text, semantic HTML, keyboard access |
+| AA (Should) | Enhanced accessibility | 4.5:1 contrast, focus indicators, error messages |
+| AAA (Best) | Premium accessibility | 7:1 contrast, descriptive links, plain language |
 
 ### Framework-Specific Security
 
@@ -129,21 +139,14 @@ Runs OWASP Top 10:2025 focused security audit.
 - Security headers with Helmet.js
 - Never hardcode secrets - use `.env.local`
 
-### Security TODO Format
+### TODO Format for Security & Design Issues
 
 ```typescript
 // TODO-P1: SQL injection risk in user input - Review agent [ID]
 // TODO-P1: Missing rate limit on auth endpoint - Review agent [ID]
-// TODO-P1: Hardcoded API key detected - Review agent [ID]
+// TODO-P1: Image missing alt text - WCAG 1.1.1 - Review agent [ID]
+// TODO-P2: Color contrast 3.2:1 below 4.5:1 minimum - WCAG 1.4.3 - Review agent [ID]
 ```
-
-### Key Security Checks
-
-1. Are sensitive data (API keys, tokens) hardcoded?
-2. Is `target="_blank"` used without `rel="noopener"`?
-3. Is user input validated at API boundaries?
-4. Are passwords stored in plaintext?
-5. Is RBAC enforced server-side?
 
 ## Workflow
 
@@ -161,13 +164,34 @@ Output the skill started signal immediately, before any other processing:
 Parse arguments left-to-right:
 1. If "help" → show usage and exit
 2. If "pr" → PR review mode (next arg = PR number or current branch)
-3. If "security" → security-focused mode
-4. First number → agent count (default: 10, hard cap: 10)
-5. Second number → iteration count (default: 3)
-6. Model keyword → "opus" | "sonnet" | "haiku" (default: "sonnet")
-7. Scope keyword → "working" | "impact" | "branch" | "staged" (default: "working")
-8. Remaining path → file or directory scope override
+3. First number → agent count (default: 10, hard cap: 10)
+4. Second number → iteration count (default: 3)
+5. Model keyword → "opus" | "sonnet" | "haiku" (default: "opus")
+6. Scope keyword → "working" | "impact" | "branch" | "staged" (default: "working")
+7. Remaining path → file or directory scope override
 ```
+
+### Step 1.5: Quality Context Injection (Pre-Review)
+
+Before spawning review agents, run quality checks to provide context:
+
+```bash
+# Run Biome linting
+pnpm biome check --diagnostic-level=warn .
+
+# Run Knip for dead code detection
+pnpm knip --include unused,exports
+
+# Run TypeScript type checking
+pnpm tsc --noEmit
+```
+
+Capture results and inject into review agent prompts as context:
+- Known lint issues → agents can reference in findings
+- Dead exports → helps identify unused code
+- Type errors → guides review to type safety issues
+
+**If quality checks fail critically (blocking errors), report to user and ask if review should continue.**
 
 ### Step 2: Get Files to Review
 
@@ -199,7 +223,7 @@ Spawn agents using the **Task tool** with explicit model parameter:
 ```
 Task(
   subagent_type="general-purpose",
-  model=parsed_model,       # "sonnet" default, "opus"/"haiku" if overridden
+  model=parsed_model or "opus",  # Default: "opus", override with "sonnet"/"haiku"
   description="Review: [aspect] [files]",
   prompt="...",
 )
@@ -207,19 +231,21 @@ Task(
 
 Each agent receives:
 - Files to review (distributed across agents)
-- All review aspects checklist
+- All review aspects checklist (security + design + quality)
+- Quality check results (Biome/Knip/TSC output)
 - Context from CLAUDE.md and README.md
+- Reference to specialized agent configs for domain criteria
 
 **Agent naming convention:** `ralph-review-{aspect}-{n}` (e.g., `ralph-review-security-1`)
 
 **Hard cap:** Maximum 10 agents regardless of input. If user requests >10, cap at 10.
 
-Agents work in parallel analyzing:
+Agents work in parallel analyzing ALL aspects:
 1. Code quality and bugs
-2. Security vulnerabilities
-3. Standards compliance
+2. Security vulnerabilities (OWASP Top 10)
+3. Standards compliance (Biome/TypeScript/React)
 4. Documentation gaps
-5. Design issues
+5. Design & accessibility (WCAG AAA)
 6. Architecture concerns
 7. Test coverage
 8. Performance problems
@@ -295,12 +321,14 @@ This skill is the **manual review** mode (`/review` command). It differs from pl
 
 | Aspect | This Skill (/review) | Plan-Spawned (after /start) |
 |--------|---------------------|---------------------------|
-| Model | Sonnet 4.5 (default) | Opus 4.5 |
+| Model | Opus 4.5 (default) | Opus 4.5 |
 | Agents | 10 (default) | 2-5 (dynamic) |
 | Iterations | 3 (default) | 2-3 |
 | TODOs | MUST leave TODO-P1/P2/P3 | NEVER leave TODOs |
 | Behavior | Report only | Auto-fix + AskUserQuestion |
 | Max Agents | 10 (hard cap) | 10 (hard cap) |
+| Includes Security | Yes (OWASP Top 10) | Yes (OWASP Top 10) |
+| Includes Design | Yes (WCAG AAA) | Yes (WCAG AAA) |
 
 ## PR Review Mode
 
@@ -322,20 +350,23 @@ Includes summary of existing PR discussion and unresolved comments.
 ## Examples
 
 ```bash
-# Default review (10 agents, 3 iter, Sonnet, working tree)
+# Default review (10 agents, 3 iter, Opus, working tree, includes security + design)
 /review
 
-# Thorough Opus review of full branch
-/review 10 3 opus branch
+# Quick Sonnet scan (faster, lower cost)
+/review 5 2 sonnet
 
-# Quick Haiku scan
+# Quick Haiku scan (fastest, cheapest)
 /review 3 1 haiku
 
 # Review only staged files
 /review 5 2 staged
 
-# Impact-radius review
+# Impact-radius review (working + Serena dependency analysis)
 /review impact
+
+# Full branch review
+/review branch
 
 # Review a specific file
 /review 3 1 src/components/Button.tsx
@@ -343,15 +374,11 @@ Includes summary of existing PR discussion and unresolved comments.
 # Review entire directory
 /review 5 2 src/utils/
 
-# Review current branch PR
+# Review current branch PR (full review with security + design)
 /review pr
 
 # Review specific PR
 /review pr 123
-
-# Security audit
-/review security
-/review security --owasp
 ```
 
 ## Serena-Powered Semantic Analysis
@@ -441,11 +468,14 @@ All review report tables MUST use emoji-prefixed headers for visual scanning:
 
 ## Notes
 
-- ALL aspects run by default (no filtering)
-- Review agents work in parallel
-- TODO comments use standardized format
-- Use `/repotodo` to process findings
+- ALL aspects run by default: code quality, security (OWASP), design (WCAG AAA), architecture, tests, performance
+- Security and design are now **always included** - no separate flags needed
+- Review agents work in parallel and ONLY leave TODO-P1/P2/P3 comments (NO auto-fix)
+- Quality checks (Biome/Knip/TSC) run before review to provide context
+- TODO comments use standardized format with agent attribution
+- Use `/repotodo` to process findings after review
 - Re-run `/review` after fixes to verify
 - Prefer Serena tools for semantic code analysis
 - Hard cap: 10 agents maximum
-- Default model: Sonnet 4.5 (cost-effective for bulk scanning)
+- Default model: Opus 4.5 (comprehensive analysis with security + design)
+- Use `sonnet` or `haiku` override for faster/cheaper scans

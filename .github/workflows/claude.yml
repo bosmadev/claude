@@ -139,6 +139,14 @@ jobs:
             - Event: ${{ github.event_name }}
             - Actor: ${{ github.actor }}
 
+            ## Review Criteria
+            Follow the review criteria defined in `~/.claude/agents/pr-review-base.md`:
+            - OWASP Top 10 security checklist
+            - Code quality patterns and anti-patterns
+            - Framework-specific best practices
+            - Accessibility (WCAG AAA) standards
+            - Performance and scalability considerations
+
             ## Action
             ${{ github.event.inputs.action == 'Summarize changes in this PR' && '
             Summarize this PR in clear English paragraphs:
@@ -149,8 +157,8 @@ jobs:
 
             Format as a clean comment/description for the PR.
             ' || '' }}
-            ${{ github.event.inputs.action == 'Review code quality' && 'Review code quality: style, patterns, potential bugs, test coverage.' || '' }}
-            ${{ github.event.inputs.action == 'Security audit (OWASP)' && 'Perform OWASP Top 10 security audit. Check for injection, auth issues, data exposure.' || '' }}
+            ${{ github.event.inputs.action == 'Review code quality' && 'Review code quality: style, patterns, potential bugs, test coverage. Apply criteria from pr-review-base.md.' || '' }}
+            ${{ github.event.inputs.action == 'Security audit (OWASP)' && 'Perform OWASP Top 10 security audit. Check for injection, auth issues, data exposure. Use pr-review-base.md OWASP checklist.' || '' }}
             ${{ github.event.inputs.action == 'Custom prompt' && github.event.inputs.custom_prompt || '' }}
 
             ## Bot PR Guidelines (Dependabot/Renovate)
@@ -282,7 +290,7 @@ jobs:
             // Write updated CHANGELOG
             fs.writeFileSync(changelogPath, changelog);
 
-            // Commit and push
+            // Commit and push CHANGELOG
             execSync('git config user.name "github-actions[bot]"');
             execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
             execSync('git add CHANGELOG.md');
@@ -293,4 +301,72 @@ jobs:
               console.log(`Updated CHANGELOG for Build ${buildId}`);
             } catch (e) {
               console.log('No changes to commit or push failed');
+            }
+
+      - name: Bump package.json version
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+            const path = require('path');
+
+            // Find package.json (exclude node_modules)
+            let pkgPath = null;
+            try {
+              const result = execSync('find . -name "package.json" -not -path "*/node_modules/*" | head -1', { encoding: 'utf8' }).trim();
+              if (result) pkgPath = result;
+            } catch (e) {
+              console.log('No package.json found');
+              return;
+            }
+
+            if (!pkgPath || !fs.existsSync(pkgPath)) {
+              console.log('No package.json found');
+              return;
+            }
+
+            console.log(`Found package.json at ${pkgPath}`);
+
+            // Read current version
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            const currentVersion = pkg.version || '0.0.0';
+            console.log(`Current version: ${currentVersion}`);
+
+            // Parse version
+            const [major, minor, patch] = currentVersion.split('.').map(Number);
+
+            // Get commit messages from the push
+            const commits = execSync('git log -1 --pretty=format:%B').toString().toLowerCase();
+
+            // Determine bump type
+            let newVersion;
+            if (commits.includes('breaking') || commits.includes('major')) {
+              newVersion = `${major + 1}.0.0`;
+              console.log('Detected MAJOR version bump');
+            } else if (commits.includes('feat') || commits.includes('minor')) {
+              newVersion = `${major}.${minor + 1}.0`;
+              console.log('Detected MINOR version bump');
+            } else {
+              newVersion = `${major}.${minor}.${patch + 1}`;
+              console.log('Detected PATCH version bump');
+            }
+
+            console.log(`New version: ${newVersion}`);
+
+            // Update package.json
+            pkg.version = newVersion;
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+
+            // Commit and push
+            execSync('git config user.name "github-actions[bot]"');
+            execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
+            execSync(`git add ${pkgPath}`);
+
+            try {
+              execSync(`git commit -m "chore: bump version to ${newVersion}"`);
+              execSync('git push');
+              console.log(`Version bumped to ${newVersion}`);
+            } catch (e) {
+              console.log('No changes to commit or version bump failed');
             }

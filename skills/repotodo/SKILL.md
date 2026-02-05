@@ -45,25 +45,31 @@ Usage:
   /repotodo [command] [args]
 
 Commands:
-  list           List all TODOs by priority
-  P1 all         Process all P1 (critical) TODOs
-  P1 <N>         Process N P1 TODOs
-  P2 all         Process all P2 (high) TODOs
-  P2 <N>         Process N P2 TODOs
-  P3 all         Process all P3 (medium) TODOs
-  P3 <N>         Process N P3 TODOs
-  low all        Process all low-priority TODOs (plain TODO:)
-  low <N>        Process N low-priority TODOs
-  all            Process ALL TODOs (starts with P1)
-  verify         Check alignment between review findings and source TODOs
-  verify --fix   Inject missing TODOs from review findings into source
-  help           Show this help
+  list              List all TODOs by priority
+  P1 all            Process all P1 (critical) TODOs
+  P1 all --verify   Process all P1 TODOs + VERIFY+FIX agents
+  P1 <N>            Process N P1 TODOs
+  P2 all            Process all P2 (high) TODOs
+  P2 all --verify   Process all P2 TODOs + VERIFY+FIX agents
+  P2 <N>            Process N P2 TODOs
+  P3 all            Process all P3 (medium) TODOs
+  P3 all --verify   Process all P3 TODOs + VERIFY+FIX agents
+  P3 <N>            Process N P3 TODOs
+  low all           Process all low-priority TODOs (plain TODO:)
+  low all --verify  Process all low TODOs + VERIFY+FIX agents
+  low <N>           Process N low-priority TODOs
+  all               Process ALL TODOs (starts with P1)
+  all --verify      Process ALL TODOs + VERIFY+FIX agents
+  verify            Check alignment between review findings and source TODOs
+  verify --fix      Inject missing TODOs from review findings into source
+  help              Show this help
 
 Examples:
   /repotodo list
   /repotodo P1 all
+  /repotodo P1 all --verify
   /repotodo P2 1
-  /repotodo low 3
+  /repotodo all --verify
   /repotodo verify
   /repotodo verify --fix
 ```
@@ -97,6 +103,12 @@ Process ALL TODOs of the specified priority.
 
 Example: `/repotodo P1 all` - Fix all critical TODOs
 
+### `/repotodo <priority> all --verify`
+
+Process ALL TODOs of the specified priority, then run VERIFY+FIX agents.
+
+Example: `/repotodo P1 all --verify` - Fix all critical TODOs + verification
+
 ### `/repotodo <priority> <N>`
 
 Process N TODOs of the specified priority.
@@ -106,6 +118,12 @@ Example: `/repotodo P2 1` - Process one high-priority TODO
 ### `/repotodo all`
 
 Process all TODOs in priority order (P1 → P2 → P3 → low).
+
+### `/repotodo all --verify`
+
+Process all TODOs in priority order, then run VERIFY+FIX agents.
+
+Example: `/repotodo all --verify` - Fix all TODOs + verification
 
 ### `/repotodo verify`
 
@@ -248,7 +266,52 @@ echo "$(date +%s):$$" > "$LOCK_FILE"
 4. Remove the TODO comment after completion
 5. Release the lock
 
-### Phase 4: Cleanup
+### Phase 4: VERIFY+FIX (Optional, with --verify flag)
+
+After processing TODOs, run VERIFY+FIX agents to catch issues introduced during fixes:
+
+**Trigger:** Only runs when `--verify` flag is specified
+
+**VERIFY+FIX Workflow:**
+
+```
+/repotodo P1 all --verify
+    ↓
+Phase 1: Scan TODOs
+    ↓
+Phase 2: Lock Check
+    ↓
+Phase 3: Process each TODO (main context)
+    ↓
+Phase 4: VERIFY+FIX agents (if --verify)
+    ├─ Build check (pnpm build, tsc, cargo)
+    ├─ Type check (tsc --noEmit, pyright)
+    ├─ Lint check (biome check --write)
+    ├─ Dead-code check (pnpm knip)
+    ├─ Validate check (pnpm validate if exists)
+    ├─ Serena symbol integrity
+    ├─ Import verification
+    └─ Auto-fix or AskUserQuestion for complex issues
+    ↓
+Phase 5: Cleanup + Report
+```
+
+**VERIFY+FIX Agent Behavior:**
+- Reuses `agents/verify-fix.md` configuration
+- Auto-fixes simple issues (imports, types, formatting)
+- Escalates complex issues via AskUserQuestion
+- NEVER leaves new TODO comments - fix or escalate
+- Uses Opus model for verification
+
+**Example Commands:**
+
+```bash
+/repotodo P1 all           # Process P1 TODOs (no verify)
+/repotodo P1 all --verify  # Process P1 TODOs + VERIFY+FIX agents
+/repotodo all --verify     # Process ALL TODOs + VERIFY+FIX agents
+```
+
+### Phase 5: Cleanup
 
 After completing a TODO:
 1. Remove the TODO comment from the source file

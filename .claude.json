@@ -1,5 +1,5 @@
 {
-  "numStartups": 82,
+  "numStartups": 83,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -25,11 +25,12 @@
     "custom-agents": 77,
     "agent-flag": 77,
     "mobile-app": 77,
-    "guest-passes": 80,
+    "guest-passes": 83,
     "permissions": 82,
     "rename-conversation": 79,
     "custom-commands": 79,
-    "git-worktrees": 74
+    "git-worktrees": 74,
+    "frontend-design-plugin": 83
   },
   "promptQueueUseCount": 65,
   "showExpandedTodos": true,
@@ -238,7 +239,7 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770293674232
+      "timestamp": 1770303568059
     }
   },
   "groveConfigCache": {
@@ -257,7 +258,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770298387515
+      "timestamp": 1770308249167
     }
   },
   "lastReleaseNotesSeen": "2.1.31",
@@ -311,15 +312,15 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770295809985,
+  "lastPlanModeUse": 1770299425684,
   "skillUsage": {
     "start": {
-      "usageCount": 14,
-      "lastUsedAt": 1770295842025
+      "usageCount": 15,
+      "lastUsedAt": 1770299430827
     },
     "reviewplan": {
-      "usageCount": 13,
-      "lastUsedAt": 1770297997067
+      "usageCount": 15,
+      "lastUsedAt": 1770303422690
     },
     "commit": {
       "usageCount": 9,
@@ -332,13 +333,17 @@
     "chats": {
       "usageCount": 4,
       "lastUsedAt": 1770113517567
+    },
+    "repotodo": {
+      "usageCount": 1,
+      "lastUsedAt": 1770305832243
     }
   },
   "hasVisitedPasses": false,
   "passesLastSeenRemaining": 3,
   "clientDataCache": {
     "data": {},
-    "timestamp": 1770298210606
+    "timestamp": 1770308381972
   },
   "feedbackSurveyState": {
     "lastShownTime": 1770216511372

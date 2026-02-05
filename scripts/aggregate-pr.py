@@ -305,7 +305,7 @@ def format_pr_body(pr: PRSummary) -> str:
 """
 
 
-def format_squash_message(pr: PRSummary, pr_url: str = "") -> str:
+def format_squash_message(pr: PRSummary, pr_url: str = "", version: str = "") -> str:
     """
     Format the squash commit message.
 
@@ -332,7 +332,12 @@ def format_squash_message(pr: PRSummary, pr_url: str = "") -> str:
             details.append(commit.body)
     details_section = "\n".join(details) if details else ""
 
-    msg = f"""{pr.title}
+    # Add version to title if provided
+    title = pr.title
+    if version:
+        title += f" ({version})"
+
+    msg = f"""{title}
 
 ## Summary
 {pr.summary}
@@ -350,9 +355,9 @@ def format_squash_message(pr: PRSummary, pr_url: str = "") -> str:
     return msg
 
 
-def to_json(pr: PRSummary) -> str:
+def to_json(pr: PRSummary, version: str = "") -> str:
     """Convert PR summary to JSON for GitHub Actions."""
-    return json.dumps({
+    data = {
         "build_id": pr.build_id,
         "branch": pr.branch,
         "base_branch": pr.base_branch,
@@ -369,7 +374,12 @@ def to_json(pr: PRSummary) -> str:
             for c in pr.commits
         ],
         "body": format_pr_body(pr),
-    }, indent=2)
+    }
+
+    if version:
+        data["version"] = version
+
+    return json.dumps(data, indent=2)
 
 
 def print_help():
@@ -380,18 +390,19 @@ Usage:
   python aggregate-pr.py [options] [base-branch]
 
 Options:
-  --json        Output as JSON (for GitHub Actions)
-  --squash      Output squash commit message format
-  --help        Show this help
+  --json          Output as JSON (for GitHub Actions)
+  --squash        Output squash commit message format
+  --version VER   Include version in output (e.g., 1.0.6)
+  --help          Show this help
 
 Arguments:
-  base-branch   Target branch for PR (default: main)
+  base-branch     Target branch for PR (default: main)
 
 Examples:
-  python aggregate-pr.py                 # PR to main, markdown output
-  python aggregate-pr.py develop         # PR to develop
-  python aggregate-pr.py --json          # JSON output for Actions
-  python aggregate-pr.py --squash        # Squash commit message format
+  python aggregate-pr.py                        # PR to main, markdown output
+  python aggregate-pr.py develop                # PR to develop
+  python aggregate-pr.py --json                 # JSON output for Actions
+  python aggregate-pr.py --squash --version 1.0.6  # With version number
 """)
 
 
@@ -403,6 +414,21 @@ def main():
     output_json = "--json" in args
     output_squash = "--squash" in args
     show_help = "--help" in args or "-h" in args
+
+    # Parse --version flag
+    version = ""
+    if "--version" in args:
+        try:
+            version_index = args.index("--version")
+            if version_index + 1 < len(args):
+                version = args[version_index + 1]
+                # Remove both --version and its value
+                args = args[:version_index] + args[version_index + 2:]
+            else:
+                print("Error: --version requires a value", file=sys.stderr)
+                sys.exit(1)
+        except ValueError:
+            pass
 
     if show_help:
         print_help()
@@ -432,11 +458,15 @@ def main():
 
     # Output
     if output_json:
-        print(to_json(pr))
+        print(to_json(pr, version))
     elif output_squash:
-        print(format_squash_message(pr))
+        print(format_squash_message(pr, "", version))
     else:
-        print(f"# {pr.title}\n")
+        # For markdown output, add version to title if provided
+        title = pr.title
+        if version:
+            title += f" ({version})"
+        print(f"# {title}\n")
         print(format_pr_body(pr))
 
 
