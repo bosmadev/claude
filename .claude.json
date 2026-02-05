@@ -1,5 +1,5 @@
 {
-  "numStartups": 78,
+  "numStartups": 82,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -13,8 +13,8 @@
     "prompt-queue": 50,
     "enter-to-steer-in-relatime": 67,
     "todo-list": 67,
-    "install-github-app": 72,
-    "install-slack-app": 72,
+    "install-github-app": 82,
+    "install-slack-app": 82,
     "drag-and-drop-images": 74,
     "double-esc-code-restore": 74,
     "continue": 74,
@@ -25,13 +25,13 @@
     "custom-agents": 77,
     "agent-flag": 77,
     "mobile-app": 77,
-    "guest-passes": 77,
-    "permissions": 72,
-    "rename-conversation": 64,
-    "custom-commands": 64,
+    "guest-passes": 80,
+    "permissions": 82,
+    "rename-conversation": 79,
+    "custom-commands": 79,
     "git-worktrees": 74
   },
-  "promptQueueUseCount": 62,
+  "promptQueueUseCount": 65,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -81,15 +81,15 @@
     "tengu_tst_kx7": false,
     "tengu_plan_mode_interview_phase": false,
     "tengu_permission_explainer": true,
-    "tengu_plum_vx3": false,
+    "tengu_plum_vx3": true,
     "tengu_file_write_optimization": false,
-    "tengu_cork_m4q": false,
+    "tengu_cork_m4q": true,
     "tengu_session_memory": false,
     "tengu_sm_compact": false,
     "tengu_compact_cache_prefix": true,
     "tengu_compact_streaming_retry": false,
     "tengu_kv7_prompt_sort": false,
-    "tengu_oboe": false,
+    "tengu_oboe": true,
     "tengu_tst_names_in_messages": false,
     "tengu_vinteuil_phrase": false
   },
@@ -134,47 +134,22 @@
         "packageManager": null
       },
       "hasCompletedProjectOnboarding": true,
-      "lastCost": 36.903583999999974,
-      "lastAPIDuration": 5157209,
-      "lastAPIDurationWithoutRetries": 5155984,
-      "lastToolDuration": 9783406,
-      "lastDuration": 21150413,
-      "lastLinesAdded": 3452,
-      "lastLinesRemoved": 1462,
-      "lastTotalInputTokens": 657462,
-      "lastTotalOutputTokens": 258682,
-      "lastTotalCacheCreationInputTokens": 2833642,
-      "lastTotalCacheReadInputTokens": 23669891,
-      "lastTotalWebSearchRequests": 44,
-      "lastModelUsage": {
-        "claude-opus-4-5-20251101": {
-          "inputTokens": 12720,
-          "outputTokens": 91205,
-          "cacheReadInputTokens": 16349777,
-          "cacheCreationInputTokens": 1355070,
-          "webSearchRequests": 0,
-          "costUSD": 18.987800999999997
-        },
-        "claude-haiku-4-5-20251001": {
-          "inputTokens": 615066,
-          "outputTokens": 18786,
-          "cacheReadInputTokens": 0,
-          "cacheCreationInputTokens": 0,
-          "webSearchRequests": 0,
-          "costUSD": 0.7089960000000003
-        },
-        "claude-sonnet-4-5-20250929": {
-          "inputTokens": 29676,
-          "outputTokens": 148691,
-          "cacheReadInputTokens": 7320114,
-          "cacheCreationInputTokens": 1478572,
-          "webSearchRequests": 44,
-          "costUSD": 17.206787000000002
-        }
-      },
-      "lastSessionId": "9bcbc9fd-2f60-414c-a5a8-9b253a025a92",
-      "lastFpsAverage": 3.07,
-      "lastFpsLow1Pct": 15.03
+      "lastCost": 0,
+      "lastAPIDuration": 0,
+      "lastAPIDurationWithoutRetries": 0,
+      "lastToolDuration": 0,
+      "lastDuration": 33320,
+      "lastLinesAdded": 0,
+      "lastLinesRemoved": 0,
+      "lastTotalInputTokens": 0,
+      "lastTotalOutputTokens": 0,
+      "lastTotalCacheCreationInputTokens": 0,
+      "lastTotalCacheReadInputTokens": 0,
+      "lastTotalWebSearchRequests": 0,
+      "lastModelUsage": {},
+      "lastSessionId": "a973de11-4c18-4dad-a86c-2535eff3316f",
+      "lastFpsAverage": 1.75,
+      "lastFpsLow1Pct": 37.71
     },
     "D:/source/cwchat": {
       "allowedTools": [],
@@ -209,6 +184,43 @@
       "lastFpsLow1Pct": 107.8,
       "lastModelUsage": {},
       "lastSessionId": "963a502b-600b-4ebc-bdfe-d80a9958fb4f"
+    },
+    "D:/source/cwchat/main": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": false,
+      "projectOnboardingSeenCount": 0,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false,
+      "exampleFiles": [],
+      "reactVulnerabilityCache": {
+        "detected": false,
+        "package": null,
+        "packageName": null,
+        "version": null,
+        "packageManager": null
+      }
+    },
+    "D:/source/gswarm-api/main": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": true,
+      "projectOnboardingSeenCount": 0,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false,
+      "reactVulnerabilityCache": {
+        "detected": false,
+        "package": null,
+        "packageName": null,
+        "version": null,
+        "packageManager": null
+      }
     }
   },
   "githubRepoPaths": {
@@ -226,13 +238,13 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770215456151
+      "timestamp": 1770293674232
     }
   },
   "groveConfigCache": {
     "d944b29f-4832-4a63-b293-6eceae956e45": {
       "grove_enabled": true,
-      "timestamp": 1770201018942
+      "timestamp": 1770288755103
     }
   },
   "passesEligibilityCache": {
@@ -245,7 +257,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770233804711
+      "timestamp": 1770298387515
     }
   },
   "lastReleaseNotesSeen": "2.1.31",
@@ -258,12 +270,6 @@
   "officialMarketplaceAutoInstalled": true,
   "autoUpdatesProtectedForNative": true,
   "mcpServers": {
-    "vs-claude": {
-      "type": "stdio",
-      "command": "D:\\VSC\\extensions\\mariozechner.vs-claude-0.0.3\\build\\mcp\\mcp-server-windows-amd64.exe",
-      "args": [],
-      "env": {}
-    },
     "playwriter": {
       "type": "stdio",
       "command": "cmd",
@@ -305,15 +311,15 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770234741098,
+  "lastPlanModeUse": 1770295809985,
   "skillUsage": {
     "start": {
-      "usageCount": 9,
-      "lastUsedAt": 1770215475743
+      "usageCount": 14,
+      "lastUsedAt": 1770295842025
     },
     "reviewplan": {
-      "usageCount": 9,
-      "lastUsedAt": 1770214414637
+      "usageCount": 13,
+      "lastUsedAt": 1770297997067
     },
     "commit": {
       "usageCount": 9,
@@ -332,7 +338,7 @@
   "passesLastSeenRemaining": 3,
   "clientDataCache": {
     "data": {},
-    "timestamp": 1770236862576
+    "timestamp": 1770298210606
   },
   "feedbackSurveyState": {
     "lastShownTime": 1770216511372

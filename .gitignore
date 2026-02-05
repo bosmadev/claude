@@ -49,5 +49,4 @@ security_*.json
 settings.json.*
 nul
 .statusline-last
-.NOTES.md
 .model-info
