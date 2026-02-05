@@ -18,6 +18,7 @@ Usage:
   python3 guards.py skill-validator      # Skill validation checks
   python3 guards.py plan-rename-tracker  # Track plan file renames
   python3 guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
+  python3 guards.py quality-deprecation  # PostToolUse: Warn about /quality deprecation
 """
 
 import json
@@ -892,6 +893,52 @@ def insights_reminder() -> None:
 
 
 # =============================================================================
+# Quality Deprecation Hook (PostToolUse:Skill)
+# =============================================================================
+
+def quality_deprecation_hook() -> None:
+    """Emit deprecation warning when /quality is invoked.
+
+    Triggers on PostToolUse:Skill when skill name is "quality".
+    Informs user to use VERIFY+FIX phase, /review, or /rule instead.
+    """
+    try:
+        data = json.loads(sys.stdin.read())
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_name = data.get("tool_name", "")
+    if tool_name != "Skill":
+        sys.exit(0)
+
+    tool_input = data.get("tool_input", {})
+    skill_name = tool_input.get("skill", "")
+
+    if skill_name != "quality":
+        sys.exit(0)
+
+    # Emit deprecation warning
+    warning = """⚠️ /quality is deprecated. Use instead:
+  - Quality checks: Run automatically in VERIFY+FIX phase during /start
+  - CLAUDE.md audit: Automatic in VERIFY+FIX (AskUserQuestion proposals)
+  - Setup recommendations: Automatic in VERIFY+FIX (AskUserQuestion proposals)
+  - Design review: Included in default /review and VERIFY+FIX
+  - Security audit: Included in default /review
+  - Behavior rules: /rule add
+
+This skill will be removed in a future release."""
+
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": warning
+        }
+    }
+    print(json.dumps(output))
+    sys.exit(0)
+
+
+# =============================================================================
 # Ralph Enforcer (PostToolUse:ExitPlanMode)
 # =============================================================================
 
@@ -1042,7 +1089,7 @@ State file created: {state_path}"""
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print("Usage: guards.py [protect|guardian|plan-comments|plan-write-check|skill-parser|insights-reminder|ralph-enforcer|skill-interceptor|skill-validator|plan-rename-tracker|auto-ralph]", file=sys.stderr)
+        print("Usage: guards.py [protect|guardian|plan-comments|plan-write-check|skill-parser|insights-reminder|ralph-enforcer|skill-interceptor|skill-validator|plan-rename-tracker|auto-ralph|quality-deprecation]", file=sys.stderr)
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -1082,6 +1129,8 @@ def main() -> None:
         track_plan_rename()
     elif mode == "auto-ralph":
         auto_ralph_hook()
+    elif mode == "quality-deprecation":
+        quality_deprecation_hook()
     else:
         print(f"Unknown mode: {mode}", file=sys.stderr)
         sys.exit(1)

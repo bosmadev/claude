@@ -7,6 +7,18 @@ user-invocable: true
 
 # Quality Skill
 
+⚠️ **DEPRECATED**: This skill is deprecated and will be removed in a future release.
+
+**Use instead:**
+- **Quality checks (lint, types, dead-code)**: Run automatically in VERIFY+FIX phase during `/start`
+- **CLAUDE.md audit**: Automatic in VERIFY+FIX phase (agent uses AskUserQuestion for proposals)
+- **Setup recommendations**: Automatic in VERIFY+FIX phase (agent uses AskUserQuestion for proposals)
+- **Design review**: Included in default `/review` and VERIFY+FIX phase
+- **Security audit**: Included in default `/review`
+- **Behavior rules**: Use `/rule add` command directly
+
+---
+
 **When invoked, immediately output:** `**SKILL_STARTED:** quality`
 
 Unified code quality and Claude Code configuration management.

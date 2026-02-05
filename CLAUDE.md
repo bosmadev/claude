@@ -442,7 +442,15 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 | `/review security --owasp`      | Full OWASP Top 10 audit                    |
 | `/review help`                  | Show usage                                 |
 
-### /quality - Code Quality and Configuration
+### /quality - Code Quality and Configuration (DEPRECATED)
+
+⚠️ **DEPRECATED:** /quality is being phased out. Use instead:
+- Quality checks: Run automatically in VERIFY+FIX phase during /start
+- CLAUDE.md audit: Automatic in VERIFY+FIX (AskUserQuestion proposals)
+- Setup recommendations: Automatic in VERIFY+FIX (AskUserQuestion proposals)
+- Design review: Included in default /review and VERIFY+FIX
+- Security audit: Included in default /review
+- Behavior rules: `/rule add`
 
 | Command                    | Description                              |
 | -------------------------- | ---------------------------------------- |
@@ -450,7 +458,7 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 | `/quality audit`         | Audit CLAUDE.md files                    |
 | `/quality setup`         | Analyze codebase for automations         |
 | `/quality design [path]` | Frontend design review                   |
-| `/quality rule "<text>"` | Add behavior rule                        |
+| `/quality rule "<text>"` | Add behavior rule (use `/rule add`)    |
 | `/quality help`          | Show usage                               |
 
 ### /commit - Git Commit Workflow (scope-prefix style)
@@ -479,6 +487,11 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 
 **Integration:** Uses `scripts/aggregate-pr.py` for commit aggregation with build ID extraction.
 
+**Note:** `/openpr` does NOT automatically invoke `/review`. These are separate concerns:
+- Use `/review working` or `/review branch` BEFORE running `/openpr` if you want pre-merge review
+- `/openpr` focuses solely on PR creation with commit aggregation
+- Post-merge review happens via GitHub Actions workflow if configured
+
 ### /init-repo - Initialize Repository for Claude Code
 
 | Command                | Description                              |
@@ -497,20 +510,27 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 
 ### /repotodo - Process TODO Comments by Priority
 
-| Command                    | Description                                      |
-| -------------------------- | ------------------------------------------------ |
-| `/repotodo list`         | List all TODOs by priority                       |
-| `/repotodo P1 all`       | Process all P1 (critical) TODOs                  |
-| `/repotodo P1 [N]`       | Process N P1 TODOs                               |
-| `/repotodo P2 all`       | Process all P2 (high priority) TODOs             |
-| `/repotodo P3 all`       | Process all P3 (medium priority) TODOs           |
-| `/repotodo low all`      | Process all low priority (plain TODO:)           |
-| `/repotodo all`          | Process ALL TODOs (P1 → P2 → P3 → low)        |
-| `/repotodo verify`       | Check alignment: review findings vs source TODOs |
-| `/repotodo verify --fix` | Verify + inject missing TODOs from findings      |
-| `/repotodo help`         | Show usage                                       |
+| Command                        | Description                                      |
+| ------------------------------ | ------------------------------------------------ |
+| `/repotodo list`             | List all TODOs by priority                       |
+| `/repotodo P1 all`           | Process all P1 (critical) TODOs                  |
+| `/repotodo P1 all --verify`  | Process all P1 TODOs + VERIFY+FIX agents         |
+| `/repotodo P1 [N]`           | Process N P1 TODOs                               |
+| `/repotodo P2 all`           | Process all P2 (high priority) TODOs             |
+| `/repotodo P2 all --verify`  | Process all P2 TODOs + VERIFY+FIX agents         |
+| `/repotodo P3 all`           | Process all P3 (medium priority) TODOs           |
+| `/repotodo P3 all --verify`  | Process all P3 TODOs + VERIFY+FIX agents         |
+| `/repotodo low all`          | Process all low priority (plain TODO:)           |
+| `/repotodo low all --verify` | Process all low TODOs + VERIFY+FIX agents        |
+| `/repotodo all`              | Process ALL TODOs (P1 → P2 → P3 → low)        |
+| `/repotodo all --verify`     | Process ALL TODOs + VERIFY+FIX agents            |
+| `/repotodo verify`           | Check alignment: review findings vs source TODOs |
+| `/repotodo verify --fix`     | Verify + inject missing TODOs from findings      |
+| `/repotodo help`             | Show usage                                       |
 
 **TODO Format:** `TODO-P1:`, `TODO-P2:`, `TODO-P3:`, or plain `TODO:`
+
+**VERIFY+FIX Phase:** When `--verify` flag is used, runs VERIFY+FIX agents after processing TODOs to catch issues introduced during fixes. Reuses `agents/verify-fix.md` configuration with auto-fix for simple issues and AskUserQuestion escalation for complex problems.
 
 ### /reviewplan - Process Plan USER Comments
 
@@ -560,6 +580,30 @@ When cumulative cost exceeds the budget, remaining agents are skipped with `BUDG
 | `/token sync`                 | Push token to current repo secrets |
 | `/token sync all`             | Push token to all detected repos   |
 | `/token help`                 | Show usage                         |
+
+### /rule - Behavior Rule Management
+
+| Command              | Description                                  |
+| -------------------- | -------------------------------------------- |
+| `/rule add`        | Add behavior rule via AskUserQuestion TUI    |
+| `/rule list`       | List all rules from settings.json            |
+| `/rule remove`     | Remove rule pattern from settings.json       |
+| `/rule help`       | Show usage                                   |
+
+**Purpose:** Manage Claude Code behavior rules via direct `settings.json` modifications. Translates natural language rules into `permissions.deny` or `permissions.ask` patterns.
+
+**Example Workflow:**
+```
+/rule add
+  → AskUserQuestion: "What type of rule?"
+  → User: "Block bash command"
+  → AskUserQuestion: "Describe the rule"
+  → User: "Never use rm -rf"
+  → AskUserQuestion: "Adding rule to BLOCK: Bash(rm -rf:*). Accept?" [Yes/No]
+  → Writes to ~/.claude/settings.json
+```
+
+**No Extra Files:** Rules are stored directly in `settings.json` under `permissions.deny` or `permissions.ask` - no separate `behavior-rules.json` needed.
 
 ## GitHub Actions Workflow Template
 

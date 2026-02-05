@@ -3285,13 +3285,13 @@ Serena provides LSP-powered semantic code analysis. To enable:
             # Build verify-fix-specific prompt
             prompt = self._build_verify_fix_prompt(agent_state, task)
 
-            # Spawn subprocess (same mechanism as implementation agents)
+            # Spawn subprocess with Opus model (VERIFY+FIX requires Opus)
             try:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
                     None,
                     lambda: subprocess.run(
-                        ["claude", "--print", prompt],
+                        ["claude", "--print", "--model", "claude-opus-4-5-20251101", prompt],
                         cwd=str(self.base_dir),
                         capture_output=True,
                         text=True,
@@ -3353,6 +3353,19 @@ Serena provides LSP-powered semantic code analysis. To enable:
         except Exception:
             changed_files = ""
 
+        # Try to load quality check results from VERIFY+FIX phase
+        quality_context = ""
+        quality_log_path = self.base_dir / ".claude" / "verify-fix-quality.log"
+        if quality_log_path.exists():
+            try:
+                quality_results = quality_log_path.read_text(encoding="utf-8")
+                quality_context = f"""
+QUALITY CHECK RESULTS (from VERIFY+FIX phase):
+{quality_results[:2000]}  # Limit to 2000 chars to avoid bloat
+"""
+            except Exception:
+                pass
+
         # Assign review specialty based on agent ID
         specialties = [
             "security",      # Agent 0: Security vulnerabilities
@@ -3369,7 +3382,7 @@ TASK CONTEXT: {task or 'Review recent code changes'}
 
 CHANGED FILES:
 {changed_files or '(Use git diff --name-only HEAD to find changes)'}
-
+{quality_context}
 REVIEW PROTOCOL:
 1. Focus on {specialty} issues in the changed files
 2. For each issue found, leave a TODO comment in the code:
@@ -4601,15 +4614,24 @@ ITERATION: {agent.current_iteration + 1} of {agent.max_iterations}
 {vf_content[:3000] if vf_content else ''}
 
 WORK PROTOCOL:
-1. Run build checks for the project
+1. Run build checks for the project (pnpm build or npm run build)
 2. Use Serena tools to verify symbol integrity across modified files
-3. Run type checker and linter
-4. Auto-fix simple issues (imports, types, formatting)
-5. Use AskUserQuestion for complex issues requiring human decision
-6. Do NOT leave TODO comments — fix or escalate
-7. Use mcp__serena__think_about_whether_you_are_done before completion
-8. Push ALL commits before signaling completion
-9. When all verification is done, output EXACTLY:
+3. Run type checker (tsc --noEmit or equivalent)
+4. Run linter (pnpm lint or biome check)
+5. Run dead-code check (pnpm knip if configured)
+6. Run validate check (pnpm validate if exists)
+7. CLAUDE.md audit - use AskUserQuestion to propose rule additions/improvements
+8. Setup recommendations - use AskUserQuestion to suggest automation improvements
+9. Design review - verify UI/UX consistency if frontend changes present
+10. Auto-fix simple issues (imports, types, formatting)
+11. Use AskUserQuestion for complex issues requiring human decision
+12. Do NOT leave TODO comments — fix or escalate
+13. IMPORTANT: Write summary of quality check results (steps 1-9) to .claude/verify-fix-quality.log
+    - Include: build status, type errors, lint issues, dead code, validation results
+    - Format as concise bullet list for review phase context
+14. Use mcp__serena__think_about_whether_you_are_done before completion
+15. Push ALL commits before signaling completion
+16. When all verification is done, output EXACTLY:
    {self.RALPH_COMPLETE_SIGNAL}
    {self.EXIT_SIGNAL}
 
