@@ -138,6 +138,7 @@ def receive_context(agent_id: str, timeout: float = 0.1) -> str | None:
     Returns:
         Context string if available, None otherwise.
     """
+    # TODO-P2: Bare except catches all exceptions including KeyboardInterrupt - use specific exceptions (Exception) - Review agent 1
     # Try Redis first
     if REDIS_AVAILABLE:
         try:
@@ -317,6 +318,7 @@ class AgentStatus(str, Enum):
     """Status of an individual agent."""
     PENDING = "pending"
     RUNNING = "running"
+    PENDING_VERIFY = "pending_verify"  # Awaiting per-task verify+fix
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -344,6 +346,10 @@ class AgentState:
     completed_at: Optional[str] = None
     ralph_complete: bool = False
     exit_signal: bool = False
+    # Per-task verify+fix tracking
+    changed_files: list = field(default_factory=list)  # Files changed by this agent
+    verify_fix_passed: Optional[bool] = None  # Result of per-task verify+fix
+    verify_fix_agent_id: Optional[int] = None  # ID of scoped verify+fix agent
 
 
 @dataclass
@@ -361,6 +367,8 @@ class RalphState:
     phase: str = "implementation"  # implementation|review|complete
     process_pids: list = field(default_factory=list)  # PIDs for liveness check
     last_heartbeat: Optional[str] = None  # ISO timestamp of last activity
+    # Plan verification retry tracking
+    plan_verification_retries: int = 0
 
     def to_dict(self) -> dict:
         """Convert state to dictionary for JSON serialization."""
@@ -376,6 +384,7 @@ class RalphState:
             "phase": self.phase,
             "process_pids": self.process_pids,
             "last_heartbeat": self.last_heartbeat,
+            "plan_verification_retries": self.plan_verification_retries,
         }
 
     @classmethod
@@ -414,6 +423,8 @@ class RalphState:
             phase=data.get("phase", "implementation"),
             process_pids=data.get("process_pids", []),
             last_heartbeat=data.get("last_heartbeat") or data.get("lastHeartbeat"),
+            # Plan verification retry tracking
+            plan_verification_retries=data.get("plan_verification_retries", 0),
         )
 
 
@@ -3338,6 +3349,147 @@ Serena provides LSP-powered semantic code analysis. To enable:
             if semaphore:
                 semaphore.release()
 
+    def _get_agent_changed_files(self, initial_head: str) -> list[str]:
+        """Get list of files changed since the given commit (agent's initial HEAD).
+
+        Args:
+            initial_head: The git commit SHA when the agent started.
+
+        Returns:
+            List of file paths that were modified since initial_head.
+        """
+        if not initial_head:
+            return []
+
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", initial_head, "HEAD"],
+                cwd=str(self.base_dir),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+        except Exception as e:
+            self.log_activity(f"Failed to get changed files: {e}", level="WARN")
+
+        return []
+
+    async def _spawn_scoped_verify_fix(
+        self,
+        parent_agent: AgentState,
+        changed_files: list[str],
+        task: Optional[str] = None
+    ) -> bool:
+        """Spawn a verify+fix agent scoped to specific files changed by parent agent.
+
+        This runs AFTER an implementation agent completes, checking only the files
+        that agent modified. Uses Opus model for thorough verification.
+
+        Args:
+            parent_agent: The implementation agent that just completed.
+            changed_files: List of files to verify (from _get_agent_changed_files).
+            task: Original task description for context.
+
+        Returns:
+            True if verification passed, False if issues found.
+        """
+        if not changed_files:
+            self.log_activity(f"Agent {parent_agent.agent_id}: No changed files, skipping scoped verify")
+            return True
+
+        self.log_activity(f"Agent {parent_agent.agent_id}: Running scoped verify+fix on {len(changed_files)} files")
+        self._print_progress("VERIFY", parent_agent.agent_id, f"checking {len(changed_files)} files")
+
+        # Build scoped verify prompt
+        files_list = "\n".join(f"- {f}" for f in changed_files[:50])  # Cap at 50 files
+        prompt = f"""You are a SCOPED VERIFY+FIX agent for Agent {parent_agent.agent_id}.
+
+## SCOPE (ONLY check these files):
+{files_list}
+
+## Checklist:
+1. **Build check**: Does the project compile/build? (pnpm build, npm run build, etc.)
+2. **Type check**: Any TypeScript/Python type errors in scoped files?
+3. **Lint check**: Run linter on scoped files only (biome check, eslint, etc.)
+4. **Import verification**: All imports in scoped files valid and resolved?
+5. **Symbol integrity**: Use Serena find_referencing_symbols to verify no broken references
+
+## On Issues Found:
+- Auto-fix simple issues (formatting, imports, type annotations)
+- Escalate complex issues via AskUserQuestion
+- Do NOT leave TODO comments — fix or escalate immediately
+
+## Output Format (REQUIRED):
+When complete, output exactly:
+SCOPED_VERIFY_COMPLETE: [PASS|FAIL]
+ISSUES_FOUND: [count]
+ISSUES_FIXED: [count]
+ISSUES_ESCALATED: [count]
+
+Then if all issues resolved:
+{self.RALPH_COMPLETE_SIGNAL}
+{self.EXIT_SIGNAL}
+
+## Original Task Context:
+{task or 'Implementation task'}
+
+Begin scoped verification of {len(changed_files)} files now.
+"""
+
+        try:
+            # Spawn with Opus model (user preference: thorough verification)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["claude", "--print", "--model", "claude-opus-4-5-20251101", prompt],
+                    cwd=str(self.base_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=600,  # 10 min timeout
+                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
+                )
+            )
+
+            output = result.stdout + result.stderr
+            success = result.returncode == 0
+
+            # Parse result
+            passed = "SCOPED_VERIFY_COMPLETE: PASS" in output
+            issues_found = 0
+            issues_fixed = 0
+
+            # Extract counts
+            import re
+            found_match = re.search(r"ISSUES_FOUND:\s*(\d+)", output)
+            fixed_match = re.search(r"ISSUES_FIXED:\s*(\d+)", output)
+            if found_match:
+                issues_found = int(found_match.group(1))
+            if fixed_match:
+                issues_fixed = int(fixed_match.group(1))
+
+            if passed:
+                self._print_progress(
+                    "VERIFIED", parent_agent.agent_id,
+                    f"passed ({issues_fixed} fixes)"
+                )
+                return True
+            else:
+                self._print_progress(
+                    "VERIFY_FAIL", parent_agent.agent_id,
+                    f"{issues_found} issues"
+                )
+                return False
+
+        except subprocess.TimeoutExpired:
+            self._print_progress("VERIFY_TIMEOUT", parent_agent.agent_id)
+            return False
+        except Exception as e:
+            self.log_activity(f"Scoped verify-fix error for agent {parent_agent.agent_id}: {e}", level="ERROR")
+            return False
+
     def _build_review_prompt(self, agent: AgentState, task: Optional[str]) -> str:
         """Build prompt for a review agent."""
         # Get list of changed files
@@ -3527,6 +3679,7 @@ SPECIALTY FOCUS ({specialty}):
 
             # Record HEAD at agent start for push gate comparison
             # Review agents that make no commits won't be blocked on exit
+            initial_head = None  # Store locally for per-task verify+fix
             try:
                 head_result = subprocess.run(
                     ["git", "rev-parse", "HEAD"],
@@ -3534,7 +3687,8 @@ SPECIALTY FOCUS ({specialty}):
                     cwd=str(self.base_dir), timeout=5
                 )
                 if head_result.returncode == 0:
-                    env["RALPH_INITIAL_HEAD"] = head_result.stdout.strip()
+                    initial_head = head_result.stdout.strip()
+                    env["RALPH_INITIAL_HEAD"] = initial_head
             except Exception:
                 pass
 
@@ -3672,6 +3826,31 @@ SPECIALTY FOCUS ({specialty}):
                 if num_turns > 0:
                     detail_parts.append(f"{num_turns} turns")
                 self._print_progress("DONE", agent_state.agent_id, ", ".join(detail_parts) if detail_parts else "")
+
+                # Per-task verify+fix for implementation phase agents
+                # Skip review/verify-fix agents to avoid infinite loops
+                is_implementation_phase = (
+                    current_phase == LifecyclePhase.IMPLEMENT.value or
+                    env.get("RALPH_AGENT_TYPE") == LifecyclePhase.IMPLEMENT.value
+                )
+                
+                if is_implementation_phase and initial_head:
+                    # Get files changed by this agent
+                    changed_files = self._get_agent_changed_files(initial_head)
+                    agent_state.changed_files = changed_files
+                    
+                    if changed_files:
+                        # Spawn scoped verify+fix agent
+                        verify_passed = await self._spawn_scoped_verify_fix(
+                            agent_state, changed_files, task
+                        )
+                        agent_state.verify_fix_passed = verify_passed
+                        
+                        if not verify_passed:
+                            self.log_activity(
+                                f"Agent {agent_state.agent_id}: Verify+fix found issues (agent still marked complete)",
+                                level="WARN"
+                            )
             else:
                 agent_state.status = AgentStatus.FAILED.value
                 error_msg = stderr_text[:200] if stderr_text else stdout_text[:200]
