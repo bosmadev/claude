@@ -1,5 +1,5 @@
 {
-  "numStartups": 83,
+  "numStartups": 87,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -9,30 +9,30 @@
     "terminal-setup": 78,
     "memory-command": 77,
     "shift-enter-setup": 13,
-    "theme-command": 66,
+    "theme-command": 86,
     "prompt-queue": 50,
-    "enter-to-steer-in-relatime": 67,
-    "todo-list": 67,
+    "enter-to-steer-in-relatime": 87,
+    "todo-list": 87,
     "install-github-app": 82,
     "install-slack-app": 82,
-    "drag-and-drop-images": 74,
-    "double-esc-code-restore": 74,
-    "continue": 74,
+    "drag-and-drop-images": 84,
+    "double-esc-code-restore": 84,
+    "continue": 84,
     "shift-tab": 78,
-    "image-paste": 67,
+    "image-paste": 87,
     "desktop-app": 77,
     "web-app": 77,
     "custom-agents": 77,
     "agent-flag": 77,
     "mobile-app": 77,
-    "guest-passes": 83,
+    "guest-passes": 86,
     "permissions": 82,
     "rename-conversation": 79,
     "custom-commands": 79,
-    "git-worktrees": 74,
+    "git-worktrees": 84,
     "frontend-design-plugin": 83
   },
-  "promptQueueUseCount": 65,
+  "promptQueueUseCount": 66,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -92,7 +92,12 @@
     "tengu_kv7_prompt_sort": false,
     "tengu_oboe": true,
     "tengu_tst_names_in_messages": false,
-    "tengu_vinteuil_phrase": false
+    "tengu_vinteuil_phrase": true,
+    "tengu_chomp_inflection": true,
+    "tengu_silver_lantern": false,
+    "tengu_copper_lantern": false,
+    "tengu_workout2": true,
+    "tengu_marble_lantern_disabled": false
   },
   "respectGitignore": false,
   "userID": "3520addf8b5b30ecfb99bb041f75d40e7c8b9de3b6c265b034431ea8b3bf4580",
@@ -102,16 +107,16 @@
   "opusProMigrationComplete": true,
   "thinkingMigrationComplete": true,
   "cachedChromeExtensionInstalled": true,
-  "changelogLastFetched": 1770201038721,
+  "changelogLastFetched": 1770315400361,
   "oauthAccount": {
     "accountUuid": "d944b29f-4832-4a63-b293-6eceae956e45",
     "emailAddress": "dennis@bosma.dev",
     "organizationUuid": "18a6ba0d-8927-47b6-9571-0f549ada2369",
     "hasExtraUsageEnabled": false,
-    "displayName": "Dennis",
-    "organizationRole": "admin",
-    "workspaceRole": null,
-    "organizationName": "dennis@bosma.dev's Organization"
+    "billingType": "stripe_subscription",
+    "accountCreatedAt": "2025-12-29T23:46:05.033447Z",
+    "subscriptionCreatedAt": "2026-01-19T07:39:31.010175Z",
+    "displayName": "Dennis"
   },
   "claudeCodeFirstTokenDate": "2026-01-19T07:42:14.958502Z",
   "hasCompletedOnboarding": true,
@@ -139,7 +144,7 @@
       "lastAPIDuration": 0,
       "lastAPIDurationWithoutRetries": 0,
       "lastToolDuration": 0,
-      "lastDuration": 33320,
+      "lastDuration": 191226,
       "lastLinesAdded": 0,
       "lastLinesRemoved": 0,
       "lastTotalInputTokens": 0,
@@ -148,9 +153,7 @@
       "lastTotalCacheReadInputTokens": 0,
       "lastTotalWebSearchRequests": 0,
       "lastModelUsage": {},
-      "lastSessionId": "a973de11-4c18-4dad-a86c-2535eff3316f",
-      "lastFpsAverage": 1.75,
-      "lastFpsLow1Pct": 37.71
+      "lastSessionId": "d6b9b335-b504-463d-acb9-44702e8d65dc"
     },
     "D:/source/cwchat": {
       "allowedTools": [],
@@ -193,7 +196,7 @@
       "enabledMcpjsonServers": [],
       "disabledMcpjsonServers": [],
       "hasTrustDialogAccepted": false,
-      "projectOnboardingSeenCount": 0,
+      "projectOnboardingSeenCount": 8,
       "hasClaudeMdExternalIncludesApproved": false,
       "hasClaudeMdExternalIncludesWarningShown": false,
       "exampleFiles": [],
@@ -212,7 +215,7 @@
       "enabledMcpjsonServers": [],
       "disabledMcpjsonServers": [],
       "hasTrustDialogAccepted": true,
-      "projectOnboardingSeenCount": 0,
+      "projectOnboardingSeenCount": 85,
       "hasClaudeMdExternalIncludesApproved": false,
       "hasClaudeMdExternalIncludesWarningShown": false,
       "reactVulnerabilityCache": {
@@ -239,7 +242,7 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770303568059
+      "timestamp": 1770314542540
     }
   },
   "groveConfigCache": {
@@ -258,7 +261,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770308249167
+      "timestamp": 1770312567273
     }
   },
   "lastReleaseNotesSeen": "2.1.31",
@@ -312,15 +315,15 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770299425684,
+  "lastPlanModeUse": 1770313424681,
   "skillUsage": {
     "start": {
       "usageCount": 15,
       "lastUsedAt": 1770299430827
     },
     "reviewplan": {
-      "usageCount": 15,
-      "lastUsedAt": 1770303422690
+      "usageCount": 19,
+      "lastUsedAt": 1770315639047
     },
     "commit": {
       "usageCount": 9,
@@ -335,17 +338,24 @@
       "lastUsedAt": 1770113517567
     },
     "repotodo": {
+      "usageCount": 3,
+      "lastUsedAt": 1770310120036
+    },
+    "review": {
       "usageCount": 1,
-      "lastUsedAt": 1770305832243
+      "lastUsedAt": 1770308884336
     }
   },
   "hasVisitedPasses": false,
   "passesLastSeenRemaining": 3,
   "clientDataCache": {
     "data": {},
-    "timestamp": 1770308381972
+    "timestamp": 1770313638027
   },
   "feedbackSurveyState": {
     "lastShownTime": 1770216511372
+  },
+  "hasShownOpus46Notice": {
+    "18a6ba0d-8927-47b6-9571-0f549ada2369": true
   }
 }

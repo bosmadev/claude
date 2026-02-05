@@ -1,8 +1,8 @@
 ---
 name: quality
-description: Code quality, CLAUDE.md management, automation setup, and frontend design standards. Includes Biome linting, Knip dead-code detection, WCAG AAA accessibility, TypeScript type safety, React/JSX patterns, architecture review, and behavior rules.
-argument-hint: "[audit|setup|design|rule]"
-user-invocable: true
+description: "[DEPRECATED] Use /review for quality checks. Migrate to: /rule for behavior rules, VERIFY+FIX for audits."
+argument-hint: "(deprecated - use /review instead)"
+user-invocable: false
 ---
 
 # Quality Skill

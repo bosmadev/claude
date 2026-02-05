@@ -12,11 +12,20 @@ from pathlib import Path
 
 def main() -> None:
     """Redirect to scripts/guards.py with all original arguments."""
-    result = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve().parent.parent / "scripts" / "guards.py")] + sys.argv[1:],
-        input=sys.stdin.buffer.read() if not sys.stdin.isatty() else b"",
-        capture_output=True,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parent.parent / "scripts" / "guards.py")] + sys.argv[1:],
+            input=sys.stdin.buffer.read() if not sys.stdin.isatty() else b"",
+            capture_output=True,
+            timeout=30,  # 30 second timeout for guards operations
+        )
+    except subprocess.TimeoutExpired:
+        print("Error: guards.py timed out after 30s", file=sys.stderr)
+        sys.exit(1)
+    except (FileNotFoundError, PermissionError) as e:
+        print(f"Error executing guards.py: {e}", file=sys.stderr)
+        sys.exit(1)
+
     if result.stdout:
         sys.stdout.buffer.write(result.stdout)
     if result.stderr:

@@ -1,7 +1,7 @@
 ---
 name: review
-description: "Comprehensive code review with security (OWASP) and design (a11y) by default. Use '/review' for full review, '/review pr [N]' for pull requests."
-argument-hint: "[agents] [iterations] [opus|sonnet|haiku] [working|impact|branch|staged|pr]"
+description: "Code review with security (OWASP) and design (a11y). Default: 10 agents, 3 iterations, Sonnet."
+argument-hint: "[agents] [iterations] [opus|sonnet|haiku] [working|impact|branch|staged|pr|help]"
 user-invocable: true
 ---
 
@@ -42,13 +42,19 @@ Displays usage information and examples.
 /review impact                   → 10 agents, working tree + Serena impact radius (R2)
 /review branch                   → 10 agents, full branch diff since main (R3)
 /review 5 2 sonnet branch        → 5 agents, 2 iter, Sonnet, full branch diff
+/review src/                     → 10 agents, 3 iter, review src/ directory only
+/review 5 2 haiku impact         → 5 agents, 2 iter, Haiku, impact radius analysis
 /review pr                       → Current branch PR with full review
 /review pr 123                   → PR #123 with full review
 ```
 
 ## Model Routing (3-Layer System)
 
-This skill runs in the **main Opus conversation** (no `context: fork`). It spawns review Task agents with explicit model routing via L3 per-agent override:
+This skill runs in the **main Opus conversation** (no `context: fork`) to maintain context continuity across all review agents. Review agents are spawned via Task tool with explicit model routing.
+
+**Why no fork?** Review requires cross-agent context synthesis. Running in main conversation allows the orchestrator to aggregate findings from all agents and generate unified reports without context loss.
+
+This differs from `/commit` which forks because it performs isolated pattern matching with no need for cross-agent synthesis.
 
 | Layer | Mechanism | Effect |
 |-------|-----------|--------|
@@ -145,7 +151,7 @@ Security (OWASP Top 10) and Design (WCAG AAA) are now **always included** in def
 // TODO-P1: SQL injection risk in user input - Review agent [ID]
 // TODO-P1: Missing rate limit on auth endpoint - Review agent [ID]
 // TODO-P1: Image missing alt text - WCAG 1.1.1 - Review agent [ID]
-// TODO-P2: Color contrast 3.2:1 below 4.5:1 minimum - WCAG 1.4.3 - Review agent [ID]
+// TODO-P2: Color contrast 3.2:1 below 4.5:1 minimum (WCAG AA requires 4.5:1 for normal text, 3:1 for large text) - Review agent [ID]
 ```
 
 ## Workflow
@@ -176,16 +182,29 @@ Parse arguments left-to-right:
 Before spawning review agents, run quality checks to provide context:
 
 ```bash
-# Run Biome linting
-pnpm biome check --diagnostic-level=warn .
+# Check if tools are available before running
+if command -v pnpm &>/dev/null; then
+    # Run Biome linting with 2min timeout
+    timeout 120 pnpm biome check --diagnostic-level=warn . 2>/dev/null || echo "Biome check failed or timed out"
 
-# Run Knip for dead code detection
-pnpm knip --include unused,exports
+    # Run Knip for dead code detection with 3min timeout
+    timeout 180 pnpm knip --include unused,exports 2>/dev/null || echo "Knip check failed or timed out"
 
-# Run TypeScript type checking
-pnpm tsc --noEmit
+    # Run TypeScript type checking with 5min timeout
+    timeout 300 pnpm tsc --noEmit 2>/dev/null || echo "TypeScript check failed or timed out"
+else
+    echo "Warning: pnpm not found - skipping quality checks"
+fi
 ```
 
+**Timeout specifications:**
+- **Biome:** 2 minutes (fast linter, should complete quickly)
+- **Knip:** 3 minutes (analyzes dependency graph, can be slow on large projects)
+- **TypeScript:** 5 minutes (type-checking can be expensive on large codebases)
+
+**Tool availability:** If `pnpm`, `biome`, or `knip` are not installed, the checks are skipped gracefully with warnings. Review continues with code-only analysis.
+
+**Output handling:**
 Capture results and inject into review agent prompts as context:
 - Known lint issues → agents can reference in findings
 - Dead exports → helps identify unused code
@@ -196,25 +215,51 @@ Capture results and inject into review agent prompts as context:
 ### Step 2: Get Files to Review
 
 ```bash
-# For working scope (default)
-FILES=$(git diff --name-only && git diff --cached --name-only)
+# File extension filter for code files only
+CODE_EXTS='\.ts$|\.tsx$|\.js$|\.jsx$|\.py$|\.go$|\.rs$|\.java$|\.kt$|\.c$|\.cpp$|\.h$'
+
+# For working scope (default) - deduplicate unstaged + staged
+FILES=$(git diff --name-only 2>/dev/null && git diff --cached --name-only 2>/dev/null | sort -u | grep -E "$CODE_EXTS")
+
+# Handle git errors gracefully
+if [ $? -ne 0 ]; then
+    # Check for common issues
+    if ! git rev-parse --git-dir &>/dev/null; then
+        echo "Error: Not a git repository"
+        exit 1
+    elif git rev-parse --verify HEAD &>/dev/null; then
+        # Detached HEAD or initial commit - use different commands
+        if [ -z "$(git log --oneline -1 2>/dev/null)" ]; then
+            echo "Error: No commits yet - cannot generate diff"
+            exit 1
+        fi
+    fi
+fi
 
 # For staged scope
-FILES=$(git diff --cached --name-only)
+FILES=$(git diff --cached --name-only 2>/dev/null | grep -E "$CODE_EXTS")
 
 # For impact scope
-FILES=$(git diff --name-only)
+FILES=$(git diff --name-only 2>/dev/null | grep -E "$CODE_EXTS")
 # PLUS: Use mcp__serena__find_referencing_symbols for each changed symbol
 
-# For branch scope
-FILES=$(git diff main...HEAD --name-only)
+# For branch scope (with fallback for detached HEAD)
+MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+FILES=$(git diff ${MAIN_BRANCH}...HEAD --name-only 2>/dev/null | grep -E "$CODE_EXTS")
 
 # For PR scope
-gh pr diff [PR_NUMBER] --name-only
+gh pr diff [PR_NUMBER] --name-only | grep -E "$CODE_EXTS"
 
 # For path scope
-find "$SCOPE" -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \)
+find "$SCOPE" -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" -o -name "*.go" -o -name "*.rs" \)
 ```
+
+**Error handling:**
+- **Not a git repo:** Detect and abort with clear error
+- **No commits:** Detect initial state and abort (cannot diff)
+- **Detached HEAD:** Use fallback logic to find main branch dynamically
+- **File filtering:** Only review code files (not images, binaries, vendor files)
+- **Deduplication:** `sort -u` removes duplicate files from unstaged + staged
 
 ### Step 3: Spawn Review Agents
 
@@ -257,6 +302,8 @@ All `/review` agents **MUST** leave TODO-P1/P2/P3 inline comments in source file
 Review agents do NOT auto-fix issues. They REPORT findings as TODO comments.
 
 ### Step 5: Generate Report
+
+**Report behavior:** ALWAYS **overwrites** `.claude/review-agents.md` on each review run. Previous findings are archived by appending timestamp to the old report (`.claude/review-agents-{timestamp}.md`).
 
 Output to `.claude/review-agents.md`:
 

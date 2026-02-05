@@ -33,14 +33,33 @@ def _setup_timeout():
     global _stdin_timer
     if sys.platform == "win32":
         import threading
-        _stdin_timer = threading.Timer(5, lambda: os._exit(0))
+
+        def timeout_exit():
+            """Log timeout and exit gracefully."""
+            try:
+                debug_log = Path.home() / ".claude" / "debug" / "hook-timeout.log"
+                debug_log.parent.mkdir(parents=True, exist_ok=True)
+                with open(debug_log, "a") as f:
+                    f.write(f"[{datetime.now().isoformat()}] git.py timeout after 5s\n")
+            except Exception:
+                pass
+            sys.exit(0)
+
+        _stdin_timer = threading.Timer(5, timeout_exit)
         _stdin_timer.daemon = True
         _stdin_timer.start()
     else:
         import signal
 
         def timeout_handler(signum, frame):
-            """Silent exit on timeout - prevents hooks from hanging."""
+            """Log timeout and exit to prevent hooks from hanging."""
+            try:
+                debug_log = Path.home() / ".claude" / "debug" / "hook-timeout.log"
+                debug_log.parent.mkdir(parents=True, exist_ok=True)
+                with open(debug_log, "a") as f:
+                    f.write(f"[{datetime.now().isoformat()}] git.py timeout after 5s\n")
+            except Exception:
+                pass
             sys.exit(0)
 
         signal.signal(signal.SIGALRM, timeout_handler)
@@ -73,12 +92,20 @@ def check_unpushed_commits(cwd: str | None = None) -> tuple[bool, int, str]:
     Returns:
         Tuple of (has_unpushed, count, branch):
         - has_unpushed: True if there are commits not pushed to remote
-        - count: Number of unpushed commits (0 if none or error)
-        - branch: Current branch name (empty string if not in repo)
+        - count: Number of unpushed commits (0 if none, -1 on error)
+        - branch: Current branch name (empty string if not in repo, "ERROR" on git failure)
+
+    Error cases:
+        - Git not found: (False, -1, "ERROR")
+        - Not in git repo: (False, 0, "")
+        - No remote configured: (False, 0, branch_name)
+        - No commits to push: (False, 0, branch_name)
 
     Examples:
         >>> has_unpushed, count, branch = check_unpushed_commits()
-        >>> if has_unpushed:
+        >>> if count == -1:
+        ...     print("Git not available or error occurred")
+        >>> elif has_unpushed:
         ...     print(f"{count} unpushed commits on {branch}")
     """
     cwd = cwd or "."
@@ -98,10 +125,14 @@ def check_unpushed_commits(cwd: str | None = None) -> tuple[bool, int, str]:
             timeout=5,
         )
         if result.returncode != 0:
-            return (False, 0, "")
+            return (False, -1, "ERROR")
         branch = result.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return (False, 0, "")
+    except FileNotFoundError:
+        # Git command not found
+        return (False, -1, "ERROR")
+    except (subprocess.TimeoutExpired, OSError):
+        # Other git execution errors
+        return (False, -1, "ERROR")
 
     # Check if remote exists (any remote)
     try:
@@ -116,8 +147,10 @@ def check_unpushed_commits(cwd: str | None = None) -> tuple[bool, int, str]:
             # No remotes configured
             return (False, 0, branch)
         remotes = result.stdout.strip().split("\n")
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return (False, 0, branch)
+    except FileNotFoundError:
+        return (False, -1, "ERROR")
+    except (subprocess.TimeoutExpired, OSError):
+        return (False, -1, "ERROR")
 
     # Get tracking branch for current branch
     try:
@@ -168,8 +201,10 @@ def check_unpushed_commits(cwd: str | None = None) -> tuple[bool, int, str]:
                     else:
                         # No valid upstream found
                         return (False, 0, branch)
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return (False, 0, branch)
+    except FileNotFoundError:
+        return (False, -1, "ERROR")
+    except (subprocess.TimeoutExpired, OSError):
+        return (False, -1, "ERROR")
 
     # Count commits ahead of upstream
     try:
@@ -181,11 +216,16 @@ def check_unpushed_commits(cwd: str | None = None) -> tuple[bool, int, str]:
             timeout=5,
         )
         if result.returncode != 0:
-            return (False, 0, branch)
+            return (False, -1, "ERROR")
         count = int(result.stdout.strip())
         return (count > 0, count, branch)
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
-        return (False, 0, branch)
+    except FileNotFoundError:
+        return (False, -1, "ERROR")
+    except (subprocess.TimeoutExpired, OSError):
+        return (False, -1, "ERROR")
+    except ValueError:
+        # Failed to parse count as integer
+        return (False, -1, "ERROR")
 
 
 # =============================================================================
@@ -200,7 +240,15 @@ def commit_review() -> None:
     try:
         hook_input = json.loads(sys.stdin.read())
         _cancel_timeout()
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        # Log JSON error for debugging
+        try:
+            debug_log = Path.home() / ".claude" / "debug" / "hook-errors.log"
+            debug_log.parent.mkdir(parents=True, exist_ok=True)
+            with open(debug_log, "a") as f:
+                f.write(f"[{datetime.now().isoformat()}] commit_review JSON error: {e}\n")
+        except Exception:
+            pass
         sys.exit(0)
 
     tool_input = hook_input.get("tool_input", {})
@@ -210,21 +258,39 @@ def commit_review() -> None:
     if not re.match(r"^git\s+commit\b", command):
         sys.exit(0)
 
-    # Extract message - check HEREDOC first (more specific), then -m flag
-    heredoc_match = re.search(r'cat\s*<<[\'"]?EOF[\'"]?\n(.*?)\nEOF', command, re.DOTALL)
+    # Extract message - improved HEREDOC and -m flag parsing
+    # Handle HEREDOC with optional quotes and proper escaping
+    heredoc_match = re.search(r'cat\s*<<\s*[\'"]?EOF[\'"]?\s*\n(.*?)\nEOF', command, re.DOTALL)
     if heredoc_match:
         msg = heredoc_match.group(1).strip()
     else:
-        msg_match = re.search(r'-m\s+["\']([^"\']+)["\']', command)
+        # Handle -m flag with single/double quotes, including escaped quotes
+        # Use non-greedy match and handle escaped quotes
+        msg_match = re.search(r'-m\s+(["\'])((?:(?!\1).|\\.)*)\1', command, re.DOTALL)
         if msg_match:
-            msg = msg_match.group(1)
+            msg = msg_match.group(2)
+            # Unescape any escaped quotes
+            msg = msg.replace(r'\"', '"').replace(r"\'", "'")
         else:
             msg = "(No commit message provided - please add one)"
 
     # Get project directory
     project_dir = hook_input.get("cwd", ".")
     commit_file = Path(project_dir) / ".claude" / "pending-commit.md"
-    commit_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Error handling for mkdir/write failures
+    try:
+        commit_file.parent.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError) as e:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": f"Failed to create .claude directory: {e}"
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
 
     commit_content = f"""# Edit your commit message below
 # Lines starting with # will be ignored
@@ -234,7 +300,18 @@ def commit_review() -> None:
 {msg}
 """
 
-    commit_file.write_text(commit_content)
+    try:
+        commit_file.write_text(commit_content)
+    except (OSError, PermissionError) as e:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": f"Failed to write commit file: {e}"
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
 
     output = {
         "hookSpecificOutput": {
@@ -377,6 +454,10 @@ def categorize_file(relative_path: str) -> tuple[str, str]:
     Categorize a file based on its path.
     Returns (category_key, description_template).
     """
+    # Validate input to prevent errors on empty or malformed paths
+    if not relative_path or not relative_path.strip():
+        return ("other", "{files}")
+
     # Normalize to forward slashes so regex patterns match on Windows
     normalized_path = relative_path.replace("\\", "/")
     for pattern, category, desc_template in CATEGORY_PATTERNS:
@@ -534,7 +615,7 @@ def update_commit_md(repo_root: Path, relative_path: str, action_type: str, desc
 def log_receipt(repo_root: Path, relative_path: str, action_type: str) -> None:
     """
     Log file change receipt with SHA-256 hash for audit trail.
-    
+
     Creates immutable audit record in .claude/receipts.json:
     - SHA-256 hash of file content
     - Timestamp (ISO 8601 UTC)
@@ -542,43 +623,103 @@ def log_receipt(repo_root: Path, relative_path: str, action_type: str) -> None:
     - Relative path
     """
     import hashlib
-    
+    import fcntl
+
     receipts_file = repo_root / ".claude" / "receipts.json"
     receipts_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Load existing receipts
-    receipts = []
-    if receipts_file.exists():
-        try:
-            receipts = json.loads(receipts_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            receipts = []
-    
-    # Compute SHA-256 hash of file content
-    file_path = repo_root / relative_path
-    if file_path.exists() and action_type != "removed":
-        try:
-            content = file_path.read_bytes()
-            file_hash = hashlib.sha256(content).hexdigest()
-        except OSError:
-            file_hash = "ERROR_READING_FILE"
-    else:
-        file_hash = "DELETED" if action_type == "removed" else "FILE_NOT_FOUND"
-    
-    # Create receipt entry
-    receipt = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "path": relative_path,
-        "action": action_type,
-        "sha256": file_hash,
-    }
-    
-    # Append and save
-    receipts.append(receipt)
+
+    # Use file locking to prevent race conditions
+    lock_file = repo_root / ".claude" / ".receipts.lock"
+
     try:
-        receipts_file.write_text(json.dumps(receipts, indent=2), encoding="utf-8")
-    except OSError:
-        pass  # Silent fail - don't block commits
+        with open(lock_file, "w") as lock:
+            if sys.platform != "win32":
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+
+            # Load existing receipts
+            receipts = []
+            if receipts_file.exists():
+                try:
+                    receipts = json.loads(receipts_file.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    # Backup corrupted receipts before resetting
+                    backup_file = receipts_file.with_suffix(".json.corrupt")
+                    try:
+                        if receipts_file.exists():
+                            receipts_file.rename(backup_file)
+                    except OSError:
+                        pass
+                    receipts = []
+
+            # Validate path is within repo to prevent path traversal
+            file_path = (repo_root / relative_path).resolve()
+            if not str(file_path).startswith(str(repo_root.resolve())):
+                # Path traversal attempt - skip this file silently
+                return
+
+            # Compute SHA-256 hash of file content
+            if file_path.exists() and action_type != "removed":
+                try:
+                    content = file_path.read_bytes()
+                    file_hash = hashlib.sha256(content).hexdigest()
+                except OSError:
+                    file_hash = "ERROR_READING_FILE"
+            else:
+                file_hash = "DELETED" if action_type == "removed" else "FILE_NOT_FOUND"
+
+            # Create receipt entry
+            receipt = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "path": relative_path,
+                "action": action_type,
+                "sha256": file_hash,
+            }
+
+            # Append and save
+            receipts.append(receipt)
+            try:
+                receipts_file.write_text(json.dumps(receipts, indent=2), encoding="utf-8")
+            except OSError:
+                pass  # Silent fail - don't block commits
+
+            if sys.platform != "win32":
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    except (OSError, ImportError):
+        # Fallback: proceed without locking on Windows or if fcntl unavailable
+        receipts = []
+        if receipts_file.exists():
+            try:
+                receipts = json.loads(receipts_file.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                receipts = []
+
+        # Validate path is within repo to prevent path traversal
+        file_path = (repo_root / relative_path).resolve()
+        if not str(file_path).startswith(str(repo_root.resolve())):
+            return
+
+        # Compute SHA-256 hash of file content
+        if file_path.exists() and action_type != "removed":
+            try:
+                content = file_path.read_bytes()
+                file_hash = hashlib.sha256(content).hexdigest()
+            except OSError:
+                file_hash = "ERROR_READING_FILE"
+        else:
+            file_hash = "DELETED" if action_type == "removed" else "FILE_NOT_FOUND"
+
+        receipt = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "path": relative_path,
+            "action": action_type,
+            "sha256": file_hash,
+        }
+
+        receipts.append(receipt)
+        try:
+            receipts_file.write_text(json.dumps(receipts, indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
 
 def change_tracker() -> None:
@@ -754,18 +895,28 @@ def check_env_encryption() -> None:
         return
 
     # Check staged .env files for encryption
+    # Improved pattern: matches .env, .env.*, .env.backup, env/.env, etc.
     unencrypted_envs = []
     for file in staged_files:
         if not file:
             continue
-        # Match .env, .env.local, .env.production, etc.
-        if file.startswith(".env") or "/.env" in file:
-            env_path = repo_root / file
+        # Match various .env patterns
+        filename = Path(file).name
+        if filename.startswith(".env") or filename == "env" or ".env." in filename:
+            # Validate path is within repo to prevent path traversal
+            env_path = (repo_root / file).resolve()
+            if not str(env_path).startswith(str(repo_root.resolve())):
+                continue  # Skip files outside repo
             if env_path.exists():
                 try:
                     content = env_path.read_text(encoding="utf-8", errors="replace")
-                    # dotenvx encrypted files start with #/---
-                    if not content.startswith("#/---"):
+                    # dotenvx encrypted files start with #/--- and contain encryption metadata
+                    # Improved validation: check for both header and encryption structure
+                    is_encrypted = (
+                        content.startswith("#/---") and
+                        ("#/public-key:" in content or "#/ciphertext:" in content)
+                    )
+                    if not is_encrypted:
                         unencrypted_envs.append(file)
                 except OSError:
                     pass

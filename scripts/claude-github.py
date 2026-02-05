@@ -29,6 +29,9 @@ CREDS_FILE = Path.home() / ".claude" / ".credentials.json"
 LOG_FILE = Path.home() / ".claude" / "debug" / "token-refresh.log"
 BUFFER_SECONDS = 600  # Refresh 10 min before expiry
 
+# Timestamp threshold: values below this are epoch seconds, above are milliseconds
+TIMESTAMP_MS_THRESHOLD = 10**12  # ~2286 in seconds, ~Sept 2001 in milliseconds
+
 # Colors (ANSI - works on Windows Terminal and most modern terminals)
 RED = "\033[31m"
 GREEN = "\033[32m"
@@ -75,12 +78,30 @@ def ensure_log_dir() -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _sanitize_message(message: str) -> str:
+    """Sanitize log messages to prevent credential leakage."""
+    import re
+    # Redact common token patterns
+    sanitized = re.sub(r'(access[_-]?token["\s:=]+)([a-zA-Z0-9_\-\.]{20,})', r'\1[REDACTED]', message, flags=re.IGNORECASE)
+    sanitized = re.sub(r'(refresh[_-]?token["\s:=]+)([a-zA-Z0-9_\-\.]{20,})', r'\1[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'(bearer\s+)([a-zA-Z0-9_\-\.]{20,})', r'\1[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'(sk-ant-[a-zA-Z0-9_\-]{20,})', r'[REDACTED_API_KEY]', sanitized)
+    return sanitized
+
 def log(message: str) -> None:
-    """Log a message with timestamp to both stdout and log file."""
+    """Log a message with timestamp to both stdout and log file with automatic rotation."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] {message}"
+    sanitized = _sanitize_message(message)
+    line = f"[{timestamp}] {sanitized}"
     print(line)
     try:
+        # Rotate log if it exceeds 10MB
+        if LOG_FILE.exists() and LOG_FILE.stat().st_size > 10 * 1024 * 1024:
+            backup_path = LOG_FILE.with_suffix(".log.old")
+            if backup_path.exists():
+                backup_path.unlink()
+            LOG_FILE.rename(backup_path)
+
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except OSError:
@@ -88,29 +109,70 @@ def log(message: str) -> None:
 
 
 def read_credentials() -> dict | None:
-    """Read and parse the credentials JSON file."""
+    """Read and parse the credentials JSON file with schema validation."""
     if not CREDS_FILE.is_file():
         return None
     try:
         with open(CREDS_FILE, "r", encoding="utf-8") as f:
-            return json.loads(f.read())
-    except (json.JSONDecodeError, OSError):
+            data = json.loads(f.read())
+
+        # Schema validation - ensure required structure exists
+        required_keys = ["claudeAiOauth"]
+        oauth_keys = ["accessToken", "expiresAt", "refreshToken"]
+
+        if not isinstance(data, dict):
+            debug_log("Invalid credentials: not a dict")
+            return None
+
+        for key in required_keys:
+            if key not in data:
+                debug_log(f"Missing required key: {key}")
+                return None
+
+        oauth = data.get("claudeAiOauth", {})
+        if not isinstance(oauth, dict):
+            debug_log("Invalid claudeAiOauth: not a dict")
+            return None
+
+        for key in oauth_keys:
+            if key not in oauth:
+                debug_log(f"Missing oauth key: {key}")
+                return None
+
+        return data
+    except (json.JSONDecodeError, OSError) as e:
+        debug_log(f"Credentials read error: {e}")
         return None
 
 
-def write_credentials(data: dict) -> None:
-    """Write credentials to file with appropriate permissions."""
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".json",
-        dir=str(CREDS_FILE.parent),
-        delete=False,
-        encoding="utf-8",
-    ) as tmp:
-        tmp.write(json.dumps(data, indent=2))
-        tmp_path = Path(tmp.name)
+def write_credentials(data: dict, max_retries: int = 3) -> None:
+    """Write credentials to file with appropriate permissions and retry logic."""
+    import time
 
-    shutil.move(str(tmp_path), str(CREDS_FILE))
+    for attempt in range(max_retries):
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".json",
+                dir=str(CREDS_FILE.parent),
+                delete=False,
+                encoding="utf-8",
+            ) as tmp:
+                tmp.write(json.dumps(data, indent=2))
+                tmp_path = Path(tmp.name)
+
+            shutil.move(str(tmp_path), str(CREDS_FILE))
+            return  # Success
+
+        except (OSError, PermissionError) as e:
+            if attempt < max_retries - 1:
+                # Exponential backoff: 0.1s, 0.2s, 0.4s
+                delay = 0.1 * (2 ** attempt)
+                debug_log(f"Write failed (attempt {attempt + 1}), retrying in {delay}s: {e}")
+                time.sleep(delay)
+            else:
+                debug_log(f"Write failed after {max_retries} attempts: {e}")
+                raise
 
     if sys.platform == "win32":
         pass  # Windows file permissions handled by user account
@@ -130,28 +192,28 @@ def get_repo_secret_mtime(repo: str) -> float:
     """Get repo secret updated_at as epoch seconds, 0 if not found."""
     try:
         result = subprocess.run(
-            ["gh", "secret", "list", "--repo", repo],
+            ["gh", "secret", "list", "--repo", repo, "--json", "name,updated_at"],
             capture_output=True,
             text=True,
             timeout=30,
         )
         if result.returncode != 0:
+            if result.stderr:
+                debug_log(f"Failed to get secret for {repo}: {result.stderr.strip()}")
             return 0.0
 
-        for line in result.stdout.splitlines():
-            if "CLAUDE_CODE_OAUTH_TOKEN" in line:
-                # Format: NAME\tUPDATED_AT
-                parts = line.split()
-                if len(parts) >= 2:
-                    updated_at_str = parts[1]
+        secrets = json.loads(result.stdout)
+        for secret in secrets:
+            if secret.get("name") == "CLAUDE_CODE_OAUTH_TOKEN":
+                updated_at_str = secret.get("updated_at", "")
+                if updated_at_str:
                     try:
-                        # Parse ISO 8601 date string
                         dt = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
                         return dt.timestamp()
                     except (ValueError, TypeError):
                         return 0.0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as exc:
+        debug_log(f"Error accessing secret for {repo}: {exc}")
     return 0.0
 
 
@@ -164,29 +226,45 @@ def find_all_repos() -> list[str]:
         if not search_path.is_dir():
             continue
 
-        # Walk directories looking for .git (equivalent to find -maxdepth 3 -name .git)
-        for git_dir in search_path.glob("**/.git"):
-            # Enforce maxdepth 3: .git must be at most 3 levels below search_path
-            try:
-                relative = git_dir.relative_to(search_path)
-            except ValueError:
-                continue
-            if len(relative.parts) > 4:  # parts includes ".git" itself
-                continue
+        # Use os.walk with maxdepth instead of unbounded glob
+        try:
+            for root, dirs, files in os.walk(search_path):
+                # Calculate depth
+                try:
+                    depth = len(Path(root).relative_to(search_path).parts)
+                except ValueError:
+                    continue
 
-            repo_path = git_dir.parent
-            try:
-                result = subprocess.run(
-                    ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(repo_path),
-                    timeout=15,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    repos.add(result.stdout.strip())
-            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                continue
+                # Enforce maxdepth 3
+                if depth >= 3:
+                    dirs.clear()  # Don't recurse deeper
+                    continue
+
+                # Check for .git directory
+                if ".git" in dirs:
+                    repo_path = Path(root)
+                    try:
+                        result = subprocess.run(
+                            ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+                            capture_output=True,
+                            text=True,
+                            cwd=str(repo_path),
+                            timeout=15,
+                        )
+                        if result.returncode == 0 and result.stdout.strip():
+                            repos.add(result.stdout.strip())
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
+                    except PermissionError:
+                        debug_log(f"Permission denied accessing {repo_path}")
+                        continue
+        except PermissionError:
+            # Skip directories we can't access
+            debug_log(f"Permission denied scanning {search_path}")
+            continue
+        except OSError as exc:
+            debug_log(f"Error scanning {search_path}: {exc}")
+            continue
 
     return sorted(repos)
 
@@ -340,8 +418,14 @@ def cmd_status() -> None:
 # ============================================================================
 # REFRESH - Refresh local OAuth token
 # ============================================================================
-def cmd_refresh(force: bool = False) -> None:
-    """Refresh local OAuth token."""
+def cmd_refresh(force: bool = False, max_retries: int = 3) -> None:
+    """Refresh local OAuth token with retry logic and SSL verification."""
+    import ssl
+    import time as time_mod
+
+    # Create SSL context for certificate verification
+    ssl_context = ssl.create_default_context()
+
     log("Starting token refresh...")
 
     if not CREDS_FILE.is_file():
@@ -384,19 +468,36 @@ def cmd_refresh(force: bool = False) -> None:
         method="POST",
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            response_data = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
+    # Retry logic with exponential backoff
+    last_error = None
+    for attempt in range(max_retries):
         try:
-            error_body = json.loads(e.read().decode("utf-8"))
-            error_msg = error_body.get("error", error_body.get("message", "Unknown error"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            error_msg = str(e)
-        log(f"{RED}x Refresh failed: {error_msg}{RESET}")
-        sys.exit(1)
-    except urllib.error.URLError as e:
-        log(f"{RED}x Refresh failed: {e.reason}{RESET}")
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as resp:
+                response_data = json.loads(resp.read().decode("utf-8"))
+            break  # Success
+        except urllib.error.HTTPError as e:
+            # Auth errors (401/403) should not retry
+            if e.code in (401, 403):
+                try:
+                    error_body = json.loads(e.read().decode("utf-8"))
+                    # Sanitize logs - don't include tokens
+                    error_msg = error_body.get("error", error_body.get("message", "Auth error"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    error_msg = f"HTTP {e.code}"
+                log(f"{RED}x Refresh failed: {error_msg}{RESET}")
+                sys.exit(1)
+            last_error = e
+        except urllib.error.URLError as e:
+            last_error = e
+
+        # Retry with exponential backoff for transient errors
+        if attempt < max_retries - 1:
+            delay = 0.5 * (2 ** attempt)
+            log(f"Request failed, retrying in {delay}s...")
+            time_mod.sleep(delay)
+    else:
+        # All retries exhausted
+        log(f"{RED}x Refresh failed after {max_retries} attempts: {last_error}{RESET}")
         sys.exit(1)
 
     if "access_token" not in response_data:
@@ -407,6 +508,11 @@ def cmd_refresh(force: bool = False) -> None:
     new_access = response_data["access_token"]
     new_refresh = response_data.get("refresh_token", "")
 
+    # Validate token format
+    if not new_access or not isinstance(new_access, str) or len(new_access) < 20:
+        log(f"{RED}x Refresh failed: received invalid access token format{RESET}")
+        sys.exit(1)
+
     # Determine expiry: separate handling for expires_in (duration) vs expires_at (absolute)
     if "expires_in" in response_data:
         # Duration in seconds from now
@@ -415,7 +521,7 @@ def cmd_refresh(force: bool = False) -> None:
     elif "expires_at" in response_data:
         # Absolute timestamp - determine if seconds or milliseconds
         expires_at_val = response_data["expires_at"]
-        if isinstance(expires_at_val, (int, float)) and expires_at_val < 10**12:
+        if isinstance(expires_at_val, (int, float)) and expires_at_val < TIMESTAMP_MS_THRESHOLD:
             # Epoch seconds (e.g. 1738300000) -> convert to ms
             new_expires = int(expires_at_val * 1000)
         else:
@@ -443,7 +549,18 @@ def cmd_refresh(force: bool = False) -> None:
 # SYNC - Push token to GitHub secrets (with stale detection)
 # ============================================================================
 def cmd_sync(sync_all: bool = False, force: bool = False) -> None:
-    """Push token to GitHub secrets."""
+    """Push token to GitHub secrets with gh CLI verification."""
+    import shutil
+
+    # Verify gh CLI is from expected location
+    gh_path = shutil.which("gh")
+    if not gh_path:
+        print(f"{RED}x GitHub CLI (gh) not found in PATH{RESET}")
+        sys.exit(1)
+
+    # Log gh location for audit trail
+    debug_log(f"Using gh CLI at: {gh_path}")
+
     if not CREDS_FILE.is_file():
         print(f"{RED}x No credentials file - run 'claude auth login'{RESET}")
         sys.exit(1)
@@ -502,6 +619,10 @@ def cmd_sync(sync_all: bool = False, force: bool = False) -> None:
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 print(f"{YELLOW}  ! {repo} (failed or no access){RESET}")
                 failed += 1
+
+            # Rate limiting: 200ms delay between API calls to avoid secondary rate limits
+            if repo != repos[-1]:  # Skip delay after last repo
+                time.sleep(0.2)
 
         print()
         print(f"Summary: {GREEN}{synced} synced{RESET}, {GREY}{skipped} skipped{RESET}, {YELLOW}{failed} failed{RESET}")

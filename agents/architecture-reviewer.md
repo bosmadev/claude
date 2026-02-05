@@ -209,6 +209,61 @@ class OrderService {
 }
 ```
 
+**Python Example:**
+
+```python
+# BAD: Direct dependency
+class OrderService:
+    def __init__(self):
+        self.emailer = SmtpEmailer()  # Concrete dependency
+
+    async def process_order(self, order: Order):
+        await self.emailer.send(order.email, 'Order confirmed')
+
+# GOOD: Dependency injection with Protocol
+from typing import Protocol
+
+class Emailer(Protocol):
+    async def send(self, to: str, body: str) -> None: ...
+
+class OrderService:
+    def __init__(self, emailer: Emailer):  # Abstract dependency
+        self.emailer = emailer
+
+    async def process_order(self, order: Order):
+        await self.emailer.send(order.email, 'Order confirmed')
+```
+
+**Go Example:**
+
+```go
+// BAD: Direct dependency
+type OrderService struct {
+    emailer *SmtpEmailer  // Concrete dependency
+}
+
+func (s *OrderService) ProcessOrder(order Order) error {
+    return s.emailer.Send(order.Email, "Order confirmed")
+}
+
+// GOOD: Dependency injection with interface
+type Emailer interface {
+    Send(to, body string) error
+}
+
+type OrderService struct {
+    emailer Emailer  // Abstract dependency
+}
+
+func NewOrderService(emailer Emailer) *OrderService {
+    return &OrderService{emailer: emailer}
+}
+
+func (s *OrderService) ProcessOrder(order Order) error {
+    return s.emailer.Send(order.Email, "Order confirmed")
+}
+```
+
 ## Coupling Analysis
 
 ### Coupling Types (Bad to Good)
@@ -364,6 +419,8 @@ Circular Dependencies: [list]
 
 ## Quick Commands
 
+### TypeScript/JavaScript
+
 ```bash
 # Detect circular dependencies
 npx madge --circular --extensions ts src/
@@ -391,6 +448,50 @@ grep -rn "from.*infrastructure" src/domain/ src/application/
 
 # Count dependencies per file
 for f in src/**/*.ts; do echo "$(grep -c "^import" "$f") $f"; done | sort -rn | head -20
+```
+
+### Python
+
+```bash
+# Visualize dependencies with pydeps
+pydeps src --max-bacon 2 -o deps.svg
+
+# Detect circular dependencies
+pydeps src --show-cycles
+
+# Check import complexity
+pydeps src --max-cluster-size 5 --min-cluster-size 2
+
+# List all imports per module
+find src -name "*.py" -exec grep -c "^import\|^from" {} + | sort -rn
+
+# Find large modules (potential SRP violations)
+find src -name "*.py" -size +500c -exec ls -lh {} +
+
+# Detect cross-layer imports (domain importing infrastructure)
+grep -rn "from.*infrastructure" src/domain/ src/application/
+```
+
+### Go
+
+```bash
+# Visualize module dependencies
+go mod graph | dot -Tsvg -o deps.svg
+
+# List direct dependencies
+go list -m all
+
+# Find modules with many dependencies
+go list -f '{{.ImportPath}} {{len .Imports}}' ./... | sort -k2 -rn | head -20
+
+# Detect circular imports
+go list -f '{{.ImportPath}} {{join .Imports "\n"}}' ./... | awk 'NF>1{print}' | sort
+
+# Find large packages (lines of code)
+find . -name "*.go" -exec wc -l {} + | sort -n
+
+# Check import depth
+grep -rn 'import.*"\.\./\.\./\.\."' .
 ```
 
 ## TODO Insertion Protocol

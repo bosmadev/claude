@@ -225,13 +225,43 @@ def check_tmpdir() -> dict:
         results["configured"] = True
         results["path"] = tmpdir
 
-        tmppath = Path(tmpdir)
+        # Validate and resolve path to prevent traversal
+        try:
+            tmppath = Path(tmpdir).resolve()
+
+            # Additional safety: ensure path doesn't escape to sensitive locations
+            forbidden_parents = [Path("/etc"), Path("/sys"), Path("/proc"), Path.home() / ".ssh"]
+            if sys.platform == "win32":
+                forbidden_parents.extend([Path("C:/Windows"), Path("C:/System32")])
+
+            is_forbidden = any(
+                str(tmppath).startswith(str(forbidden.resolve()))
+                for forbidden in forbidden_parents
+                if forbidden.exists()
+            )
+
+            if is_forbidden:
+                results["recommendation"] = f"CLAUDE_CODE_TMPDIR points to forbidden location: {tmpdir}"
+                return results
+
+        except (OSError, ValueError):
+            results["recommendation"] = f"CLAUDE_CODE_TMPDIR path is invalid: {tmpdir}"
+            return results
+
         if tmppath.exists() and tmppath.is_dir():
-            # Test write access
+            # Test write access with proper cleanup
             test_file = tmppath / ".claude-write-test"
             try:
                 test_file.write_text("test")
-                test_file.unlink()
+                # Ensure cleanup even if unlink fails
+                try:
+                    test_file.unlink()
+                except OSError:
+                    # Try alternative cleanup
+                    try:
+                        test_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                 results["writable"] = True
             except (OSError, PermissionError):
                 results["writable"] = False

@@ -1,7 +1,7 @@
 ---
 name: launch
 description: Run debug mode and browser testing for visual verification. Use when you need to visually verify UI changes, check for visual regressions, or test interactive elements. Manual invocation only - use /launch to run.
-argument-hint: "[--only <browser>] | help"
+argument-hint: "[--only <browser>] [--skip <browser>] [help]"
 user-invocable: true
 context: fork
 ---
@@ -243,6 +243,28 @@ For critical visual verification, check with multiple browsers:
 
 ---
 
+## Error Handling
+
+| Error Scenario | Detection | Resolution |
+|---------------|-----------|------------|
+| **Port 3000 blocked** | `EADDRINUSE` error from server | Kill blocking process: `npx kill-port 3000`, then retry |
+| **launch.js script not found** | `ENOENT` error when running `pnpm launch` | Check package.json scripts, verify launch.js exists in project root |
+| **Browser unavailable** | MCP server timeout or connection refused | Check browser installation, verify MCP server running in settings.json |
+| **Playwriter not connected** | Extension shows "Not connected" | Click Playwriter extension icon on the target tab to enable |
+| **Chrome MCP tab creation fails** | Error creating tab in `tabs_create_mcp` | Ensure Chrome is running, extension installed, check MCP logs |
+| **System browser doesn't open** | `start` command fails silently | URL not passed correctly - manually open http://localhost:3000 |
+| **Server won't start** | Port blocked or build errors | Check `.next` cache corruption - delete and retry: `rm -rf .next` |
+| **All browsers fail** | Network/firewall blocking localhost | Check firewall settings, verify localhost not blocked |
+
+**Debugging steps:**
+1. Check server logs for specific error messages
+2. Verify port 3000 is free: `netstat -ano | findstr :3000` (Windows)
+3. Check MCP server status in Claude Code settings
+4. Verify browser processes: Task Manager (Windows) or Activity Monitor (macOS)
+5. Try manual browser open as fallback: navigate to `http://localhost:3000`
+
+---
+
 ## Browser Tool Reference
 
 ### Browser 1: System Browser
@@ -306,67 +328,45 @@ mcp__claude-in-chrome__form_input(ref: "ref_2", value: "test@example.com", tabId
 
 **Capabilities:**
 - Chrome extension integration (reuses existing cookies/auth)
-- Vimium-style ref labels for element selection
+- Vimium-style ref labels for element selection via `aria-ref` attributes
 - 80% less context via accessibility snapshots
 - Maintains authenticated sessions
-- Form filling with field type awareness
+- JavaScript execution in page context
 
-**MCP Tools:**
+**Core MCP Tool:**
 
-```
-# Navigation
-mcp__playwriter__browser_navigate(url)
-mcp__playwriter__browser_navigate_back()
+Playwriter uses a single `execute` tool that runs JavaScript code with special browser context:
 
-# Interaction
-mcp__playwriter__browser_click(element, ref)
-mcp__playwriter__browser_type(element, ref, text)
-mcp__playwriter__browser_fill_form(fields)
-mcp__playwriter__browser_select_option(element, ref, values)
-mcp__playwriter__browser_hover(element, ref)
-mcp__playwriter__browser_drag(startElement, startRef, endElement, endRef)
-mcp__playwriter__browser_press_key(key)
+```javascript
+// mcp__playwriter__execute(code: string, timeout?: number)
 
-# Page State
-mcp__playwriter__browser_snapshot()           # Accessibility tree with refs
-mcp__playwriter__browser_take_screenshot()    # Visual capture
-mcp__playwriter__browser_console_messages()   # Console logs
-mcp__playwriter__browser_network_requests()   # Network activity
+// Example: Navigate to URL
+await page.goto('http://localhost:3000', { waitUntil: 'domcontentloaded' });
 
-# Tabs
-mcp__playwriter__browser_tabs(action: "list|new|close|select")
+// Example: Get accessibility snapshot with refs
+const snapshot = await accessibilitySnapshot({ page });
+console.log(snapshot);
 
-# Utilities
-mcp__playwriter__browser_wait_for(text|textGone|time)
-mcp__playwriter__browser_evaluate(function)
-mcp__playwriter__browser_file_upload(paths)
-mcp__playwriter__browser_handle_dialog(accept)
-mcp__playwriter__browser_resize(width, height)
-mcp__playwriter__browser_close()
-mcp__playwriter__browser_install()            # Install browser if needed
+// Example: Click using aria-ref
+await page.locator('aria-ref=e5').click();
+
+// Example: Fill form inputs
+await page.locator('aria-ref=e10').fill('test@example.com');
+await page.locator('aria-ref=e11').fill('password123');
+
+// Example: Take screenshot
+await page.screenshot({ path: 'result.png', scale: 'css' });
 ```
 
-**Example Workflow:**
+**Available globals in execute context:**
+- `page` - Current Playwright page instance
+- `context` - Browser context (all tabs)
+- `state` - Persistent state object (survives across execute calls)
+- `accessibilitySnapshot({ page })` - Get aria-ref labeled tree
+- `screenshotWithAccessibilityLabels({ page })` - Visual capture with labels
+- `waitForPageLoad({ page })` - Smart load detection
 
-```
-# 1. Navigate to page
-mcp__playwriter__browser_navigate(url: "http://localhost:3000")
-
-# 2. Get accessibility snapshot with refs
-mcp__playwriter__browser_snapshot()
-
-# 3. Click using ref from snapshot
-mcp__playwriter__browser_click(element: "Login button", ref: "e1")
-
-# 4. Fill form fields
-mcp__playwriter__browser_fill_form(fields: [
-  {"name": "Email", "type": "textbox", "ref": "e2", "value": "test@example.com"},
-  {"name": "Password", "type": "textbox", "ref": "e3", "value": "secret123"}
-])
-
-# 5. Take screenshot
-mcp__playwriter__browser_take_screenshot(filename: "result.png")
-```
+**For full tool documentation:** See Playwriter best practices in the main system prompt.
 
 ---
 

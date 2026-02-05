@@ -53,9 +53,17 @@ When invoked, spawn specialized reviewers in parallel using the Task tool:
    - Focus: OWASP Top 10, auth/authz, secrets management
    - Scope: Auth flows, data handling, dependencies
 
-3. **Performance Profiler** (`performance-profiler`)
+3. **Performance Profiler** (`performance-reviewer`)
    - Focus: N+1 queries, algorithmic complexity, resource usage
    - Scope: Database queries, loops, memory-intensive operations
+
+4. **Accessibility Reviewer** (`a11y-reviewer`)
+   - Focus: WCAG AAA compliance, keyboard navigation, screen reader support
+   - Scope: UI components, forms, dynamic content
+
+5. **Architecture Reviewer** (`architecture-reviewer`)
+   - Focus: Layer violations, coupling, dependency direction
+   - Scope: Module boundaries, imports, design patterns
 
 ## Execution Pattern
 
@@ -101,6 +109,16 @@ Wait for all agents to complete, then synthesize findings.
 
 ## Next Steps
 1. [Prioritized action items]
+
+## TODO Injection Summary
+
+All findings have been inserted as TODO comments in source code. See `.claude/review-agents.md` for the complete log:
+
+| File | Line | Priority | Issue | Agent |
+|------|------|----------|-------|-------|
+| [Aggregated from all reviewer agents] |
+
+**Note:** Individual reviewer agents insert TODOs directly at issue locations. This summary consolidates all insertions for tracking.
 ```
 
 ## Connected Skills

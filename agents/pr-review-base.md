@@ -9,7 +9,7 @@
 
 ---
 
-## Security Checklist (OWASP Top 10)
+## Security Checklist (OWASP Top 10 2021)
 
 ### A01 - Broken Access Control
 - [ ] Authorization checks on all protected routes/endpoints
@@ -51,11 +51,22 @@
 - [ ] Cloud storage buckets properly secured
 
 ### A06 - Vulnerable and Outdated Components
-- [ ] All dependencies current (check `npm audit`, `pnpm audit`)
+- [ ] All dependencies current (check `npm audit`, `pnpm audit`, `pip list --outdated`, `uv pip check`)
 - [ ] No known CVEs in dependencies
 - [ ] Unused dependencies removed
-- [ ] Lock files committed (package-lock.json, pnpm-lock.yaml)
+- [ ] Lock files committed (package-lock.json, pnpm-lock.yaml, requirements.txt, uv.lock)
 - [ ] Automated dependency updates configured
+
+**Audit Commands:**
+```bash
+# JavaScript/TypeScript
+npm audit
+pnpm audit
+
+# Python
+pip list --outdated
+uv pip check
+```
 
 ### A07 - Identification and Authentication Failures
 - [ ] Multi-factor authentication available for sensitive accounts
@@ -180,6 +191,12 @@
 - [ ] Heading hierarchy correct (no skipped levels)
 - [ ] Touch targets >= 44x44px (mobile)
 - [ ] Error messages associated with fields (aria-describedby)
+- [ ] Screen reader testing (NVDA, JAWS, VoiceOver) for critical flows
+- [ ] Live regions (aria-live) for dynamic content updates
+- [ ] No automatic timeouts or time limits (WCAG 2.2.3 AAA)
+- [ ] Plain language used, jargon explained (WCAG 3.1.3 AAA)
+- [ ] Color contrast >= 7:1 for normal text (WCAG 1.4.6 AAA)
+- [ ] Cognitive load minimized (clear instructions, consistent patterns)
 
 ### Layout & Spacing
 - [ ] Spacing follows 8px grid (8, 16, 24, 32, 48, 64px)

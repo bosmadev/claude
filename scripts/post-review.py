@@ -41,7 +41,13 @@ from review_parser import Finding, parse_review_findings
 
 if sys.platform == "win32":
     import threading
-    _timeout_timer = threading.Timer(10, lambda: os._exit(0))
+    def _timeout_cleanup():
+        """Clean shutdown on timeout - allows proper cleanup."""
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
+    _timeout_timer = threading.Timer(10, _timeout_cleanup)
     _timeout_timer.daemon = True
     _timeout_timer.start()
 else:
@@ -99,11 +105,12 @@ def _comment_prefix(file_path: str) -> str:
     ext = Path(file_path).suffix.lower()
     if ext in (".py", ".rb", ".sh", ".bash", ".yaml", ".yml", ".toml"):
         return "#"
-    if ext in (".html", ".md"):
+    if ext in (".html", ".md", ".xml", ".svg"):
         return "<!--"
-    if ext in (".css", ".scss"):
+    if ext in (".css", ".scss", ".sass", ".less"):
         return "/*"
-    # Default: JS/TS/Go/Rust/Java style
+    # JS/TS family and other C-style languages
+    # Covers: .js .jsx .ts .tsx .vue .svelte .astro .go .rs .java .c .cpp .h .swift .kt
     return "//"
 
 
@@ -161,8 +168,20 @@ def _inject_todo(
 
     Returns one of: "injected", "existed", "no_file", "stale_line", "error:..."
     """
-    if not file_path.exists():
+    # Validate path to prevent path traversal attacks
+    try:
+        resolved_path = file_path.resolve()
+        # Ensure path doesn't escape repository root (basic sanity check)
+        if ".." in file_path.parts:
+            return "error: path traversal attempt detected"
+    except (OSError, ValueError):
+        return "error: invalid file path"
+
+    if not resolved_path.exists():
         return "no_file"
+
+    # Update file_path to use resolved path for all operations
+    file_path = resolved_path
 
     try:
         content = file_path.read_text(encoding="utf-8", errors="replace")
@@ -208,9 +227,30 @@ def _inject_todo(
     insert_idx = target_line - 1
     file_lines.insert(insert_idx, todo_line)
 
+    # Atomic write with temporary file
+    import tempfile
     try:
-        file_path.write_text("".join(file_lines))
+        # Write to temporary file first
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=file_path.suffix,
+            dir=str(file_path.parent),
+            delete=False,
+            encoding="utf-8"
+        ) as tmp:
+            tmp.write("".join(file_lines))
+            tmp_path = Path(tmp.name)
+
+        # Atomic replace (atomic on POSIX, best-effort on Windows)
+        import shutil
+        shutil.move(str(tmp_path), str(file_path))
     except OSError as exc:
+        # Clean up temp file on error
+        if 'tmp_path' in locals() and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
         return f"error: {exc}"
 
     return "injected"
@@ -310,8 +350,16 @@ def hook_post_review() -> None:
     except json.JSONDecodeError:
         sys.exit(0)
 
+    # Validate JSON structure
+    if not isinstance(data, dict):
+        sys.exit(0)
+
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
+
+    # Validate tool_input is a dict
+    if not isinstance(tool_input, dict):
+        sys.exit(0)
 
     # Only trigger after the Skill tool completes for "review"
     if tool_name != "Skill":

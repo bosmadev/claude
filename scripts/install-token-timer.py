@@ -47,6 +47,23 @@ def windows_install():
     python_exe = find_python()
     script_path = str(REFRESH_SCRIPT)
 
+    # Integrity check: verify paths are within expected locations
+    python_path = Path(python_exe).resolve()
+    script_full = Path(script_path).resolve()
+
+    # Verify script is within .claude directory
+    claude_dir = Path.home() / ".claude"
+    if not str(script_full).startswith(str(claude_dir)):
+        print(f"  {RED}FAIL{RESET} Script path not within ~/.claude: {script_full}")
+        sys.exit(1)
+
+    # Verify script exists and is a file (not a symlink to outside)
+    if script_full.is_symlink():
+        real_target = script_full.resolve()
+        if not str(real_target).startswith(str(claude_dir)):
+            print(f"  {RED}FAIL{RESET} Script symlink points outside ~/.claude")
+            sys.exit(1)
+
     print(f"Platform: {GREEN}Windows{RESET}")
     print(f"Python:   {CYAN}{python_exe}{RESET}")
     print(f"Script:   {CYAN}{script_path}{RESET}")
@@ -76,7 +93,9 @@ def windows_install():
 
     # --- Task 2: Power resume / startup trigger ---
     print("Creating startup/resume trigger task...")
-    # schtasks.exe cannot create event-based triggers easily, use PowerShell
+    import base64
+
+    # Use -EncodedCommand to prevent injection via paths with special characters
     ps_script = f'''
 $action = New-ScheduledTaskAction -Execute "{python_exe}" -Argument '"{script_path}" --sync'
 $triggerStartup = New-ScheduledTaskTrigger -AtStartup
@@ -90,8 +109,10 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 Register-ScheduledTask -TaskName "{TASK_NAME_RESUME}" -Action $action -Trigger @($triggerStartup, $triggerResume) -Settings $settings -Force -Description "Refresh Claude OAuth token on startup/resume"
 '''
     try:
+        # Encode to Base64 for -EncodedCommand (UTF-16LE required)
+        encoded_cmd = base64.b64encode(ps_script.encode("utf-16-le")).decode("ascii")
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_script],
+            ["powershell", "-NoProfile", "-EncodedCommand", encoded_cmd],
             capture_output=True,
             text=True,
         )

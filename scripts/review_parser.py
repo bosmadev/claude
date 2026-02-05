@@ -66,8 +66,9 @@ class Finding:
 # ---------------------------------------------------------------------------
 
 # Matches file references like `file.ts:42` or `file.ts:42-50`
+# Supports common web framework and language file extensions
 FILE_LINE_RE = re.compile(
-    r"`([^`]+?\.(?:ts|tsx|js|jsx|py|rs|go|java|rb|css|scss|html|md|json|yaml|yml|toml))"
+    r"`([^`]+?\.(?:ts|tsx|js|jsx|vue|svelte|astro|py|rs|go|java|rb|css|scss|sass|less|html|md|json|yaml|yml|toml|xml|sh|bash))"
     r"(?::(\d+)(?:-(\d+))?)?`"
 )
 
@@ -105,6 +106,11 @@ def _parse_table_findings(
     Returns (findings, next_line_index).
     """
     findings: list[Finding] = []
+
+    # Validate start_idx bounds
+    if start_idx < 0 or start_idx >= len(lines):
+        return findings, start_idx
+
     idx = start_idx
 
     # Skip header row
@@ -290,8 +296,31 @@ def extract_file_references(content: str) -> list[tuple[str, Optional[int], Opti
     references = []
     for match in FILE_LINE_RE.finditer(content):
         file_path = match.group(1)
-        line_start = int(match.group(2)) if match.group(2) else None
-        line_end = int(match.group(3)) if match.group(3) else None
+        line_start_str = match.group(2)
+        line_end_str = match.group(3)
+
+        # Validate line numbers
+        line_start = None
+        line_end = None
+
+        if line_start_str:
+            try:
+                line_start = int(line_start_str)
+                # Validate positive line numbers
+                if line_start < 1:
+                    continue  # Skip invalid line numbers
+            except (ValueError, TypeError):
+                continue
+
+        if line_end_str:
+            try:
+                line_end = int(line_end_str)
+                # Validate positive and ensure end >= start
+                if line_end < 1 or (line_start and line_end < line_start):
+                    line_end = None  # Ignore invalid end line
+            except (ValueError, TypeError):
+                line_end = None
+
         references.append((file_path, line_start, line_end))
     return references
 

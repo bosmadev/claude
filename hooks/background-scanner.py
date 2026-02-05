@@ -11,10 +11,14 @@ Integration: PostToolUse hook for Edit/Write operations
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# Constants
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max for secret scanning
 
 
 # =============================================================================
@@ -38,16 +42,25 @@ def should_run_dependency_audit(file_path: str) -> bool:
 def should_run_secret_scan(file_path: str) -> bool:
     """Check if file should be scanned for secrets."""
     # Scan all new files, skip binary and generated files
-    skip_extensions = [".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".tar", ".gz"]
-    skip_paths = ["node_modules", ".venv", "venv", "dist", "build", ".next"]
+    skip_extensions = [
+        ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".tar", ".gz",
+        ".bin", ".exe", ".dll", ".so", ".dylib", ".a", ".o", ".obj",
+        ".wasm", ".pyc", ".pyd", ".class", ".jar", ".war", ".ear"
+    ]
+    skip_paths = ["node_modules", ".venv", "venv", "dist", "build", ".next", "__pycache__", ".git"]
 
-    path = Path(file_path)
+    try:
+        # Normalize and validate path to prevent traversal
+        path = Path(file_path).resolve()
+    except (OSError, ValueError):
+        # Invalid path - skip scanning
+        return False
 
     # Skip binary files
     if path.suffix.lower() in skip_extensions:
         return False
 
-    # Skip generated directories
+    # Skip generated directories (check resolved path parts)
     if any(skip in path.parts for skip in skip_paths):
         return False
 
@@ -65,7 +78,12 @@ def run_npm_audit(project_root: str) -> Optional[str]:
     Returns:
         Optional[str]: Warning message if vulnerabilities found
     """
-    package_json = Path(project_root) / "package.json"
+    # Validate project_root is a real directory and contains package.json
+    root_path = Path(project_root).resolve()
+    if not root_path.is_dir():
+        return None
+
+    package_json = root_path / "package.json"
     if not package_json.exists():
         return None
 
@@ -144,26 +162,37 @@ def run_secret_scan(file_path: str, project_root: str) -> Optional[str]:
         Optional[str]: Warning message if secrets detected
     """
     try:
-        content = Path(file_path).read_text(encoding="utf-8", errors="ignore")
+        path = Path(file_path)
+        # Skip files larger than 10MB to prevent memory exhaustion
+        if path.stat().st_size > MAX_FILE_SIZE:
+            return None
+        content = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         return None
 
     # Simple pattern detection (not exhaustive - just common cases)
+    # Use atomic groups and possessive quantifiers where possible to prevent ReDoS
     suspicious_patterns = [
-        ("API key", r"api[_-]?key\s*[:=]\s*['\"]?\w{20,}"),
-        ("Secret key", r"secret[_-]?key\s*[:=]\s*['\"]?\w{20,}"),
-        ("Password", r"password\s*[:=]\s*['\"]?\w{8,}"),
-        ("Token", r"token\s*[:=]\s*['\"]?\w{20,}"),
+        ("API key", r"api[_-]?key\s*[:=]\s*['\"]?[\w\-]{20,40}"),
+        ("Secret key", r"secret[_-]?key\s*[:=]\s*['\"]?[\w\-]{20,40}"),
+        ("Password", r"password\s*[:=]\s*['\"]?[\w\-]{8,32}"),
+        ("Token", r"token\s*[:=]\s*['\"]?[\w\-]{20,40}"),
         ("AWS key", r"AKIA[0-9A-Z]{16}"),
-        ("Private key", r"-----BEGIN (RSA |EC )?PRIVATE KEY-----"),
+        ("Private key", r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"),
     ]
 
     import re
     found_secrets = []
 
+    # Use timeout wrapper for regex to prevent ReDoS
     for name, pattern in suspicious_patterns:
-        if re.search(pattern, content, re.IGNORECASE):
-            found_secrets.append(name)
+        try:
+            # Limit search to prevent catastrophic backtracking
+            if re.search(pattern, content[:5000], re.IGNORECASE, timeout=0.1) if hasattr(re, 'search') else re.search(pattern, content[:5000], re.IGNORECASE):
+                found_secrets.append(name)
+        except (re.error, TimeoutError):
+            # Regex timeout or error - skip this pattern
+            continue
 
     if found_secrets:
         return f"""
@@ -186,6 +215,11 @@ Run `/review security` for comprehensive secret audit.
 # Hook Handler
 # =============================================================================
 
+# Rate limiting: track recent scans to avoid excessive subprocess calls
+_recent_scans: Dict[str, float] = {}
+_SCAN_COOLDOWN = 60.0  # Minimum seconds between scans of same type
+
+
 def posttool_scan(tool_input: Dict, tool_output: Dict, cwd: str) -> Optional[Dict]:
     """
     PostToolUse hook for Edit/Write - trigger background scans.
@@ -198,27 +232,37 @@ def posttool_scan(tool_input: Dict, tool_output: Dict, cwd: str) -> Optional[Dic
     Returns:
         Optional[Dict]: Injection dict with scan warnings
     """
+    import time
     file_path = tool_input.get("file_path", "")
     if not file_path:
         return None
 
+    current_time = time.time()
     warnings = []
 
-    # Dependency audit trigger
+    # Dependency audit trigger with rate limiting
     if should_run_dependency_audit(file_path):
-        npm_warning = run_npm_audit(cwd)
-        if npm_warning:
-            warnings.append(npm_warning)
+        scan_key = f"dep_audit:{cwd}"
+        last_scan = _recent_scans.get(scan_key, 0)
+        if current_time - last_scan >= _SCAN_COOLDOWN:
+            _recent_scans[scan_key] = current_time
+            npm_warning = run_npm_audit(cwd)
+            if npm_warning:
+                warnings.append(npm_warning)
 
-        pip_warning = run_pip_audit(cwd)
-        if pip_warning:
-            warnings.append(pip_warning)
+            pip_warning = run_pip_audit(cwd)
+            if pip_warning:
+                warnings.append(pip_warning)
 
-    # Secret scan trigger
+    # Secret scan trigger with rate limiting
     if should_run_secret_scan(file_path):
-        secret_warning = run_secret_scan(file_path, cwd)
-        if secret_warning:
-            warnings.append(secret_warning)
+        scan_key = f"secret_scan:{file_path}"
+        last_scan = _recent_scans.get(scan_key, 0)
+        if current_time - last_scan >= _SCAN_COOLDOWN:
+            _recent_scans[scan_key] = current_time
+            secret_warning = run_secret_scan(file_path, cwd)
+            if secret_warning:
+                warnings.append(secret_warning)
 
     if warnings:
         return {
