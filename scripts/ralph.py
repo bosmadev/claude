@@ -1259,6 +1259,145 @@ class ReviewSummary:
         return "\n".join(lines)
 
 
+@dataclass
+class PlanCompletionSummary:
+    """Summary generated when Ralph session completes."""
+    session_id: str
+    plan_id: str
+    task: str
+    total_agents: int
+    completed_tasks: int
+    failed_tasks: int
+    total_cost: float
+    duration_seconds: float
+    phases_completed: list
+    performance: dict
+    plan_verification: dict
+    verify_fix_summary: dict
+    completed_at: str
+
+    def to_markdown(self) -> str:
+        """Generate .claude/plan-completion-summary.md content."""
+        lines = [
+            f"# Plan Completion Summary",
+            f"",
+            f"## 📊 Overview",
+            f"| Metric | Value |",
+            f"|--------|-------|",
+            f"| Session | `{self.session_id}` |",
+            f"| Plan | `{self.plan_id}` |",
+            f"| Task | {self.task} |",
+            f"| Total Agents | {self.total_agents} |",
+            f"| Completed | {self.completed_tasks} ✅ |",
+            f"| Failed | {self.failed_tasks} ❌ |",
+            f"| Total Cost | ${self.total_cost:.2f} |",
+            f"| Duration | {self.duration_seconds/60:.1f} min |",
+            f"",
+            f"## 🔍 Plan Verification",
+            f"",
+        ]
+        
+        # Format plan verification section
+        if self.plan_verification:
+            status = self.plan_verification.get("status", "unknown")
+            verified_tasks = self.plan_verification.get("verified_tasks", 0)
+            missing_tasks = self.plan_verification.get("missing_tasks", 0)
+            
+            lines.append(f"**Status:** {'✅ PASS' if status == 'pass' else '❌ FAIL'}")
+            lines.append(f"**Verified Tasks:** {verified_tasks}")
+            lines.append(f"**Missing Tasks:** {missing_tasks}")
+            lines.append(f"")
+            
+            if missing_tasks > 0 and "missing" in self.plan_verification:
+                lines.append(f"### Missing Tasks")
+                lines.append(f"")
+                for task in self.plan_verification.get("missing", []):
+                    lines.append(f"- ❌ {task}")
+                lines.append(f"")
+        else:
+            lines.append(f"No plan verification data available.")
+            lines.append(f"")
+        
+        lines.extend([
+            f"## 🛠️ Verify+Fix Summary",
+            f"",
+        ])
+        
+        # Format verify+fix summary section
+        if self.verify_fix_summary:
+            total_checks = self.verify_fix_summary.get("total_checks", 0)
+            issues_found = self.verify_fix_summary.get("issues_found", 0)
+            issues_fixed = self.verify_fix_summary.get("issues_fixed", 0)
+            issues_escalated = self.verify_fix_summary.get("issues_escalated", 0)
+            
+            lines.append(f"| Metric | Count |")
+            lines.append(f"|--------|-------|")
+            lines.append(f"| Total Checks | {total_checks} |")
+            lines.append(f"| Issues Found | {issues_found} |")
+            lines.append(f"| Issues Fixed | {issues_fixed} ✅ |")
+            lines.append(f"| Issues Escalated | {issues_escalated} ⚠️ |")
+            lines.append(f"")
+        else:
+            lines.append(f"No verify+fix data available.")
+            lines.append(f"")
+        
+        lines.extend([
+            f"## ⚡ Performance by Agent",
+            f"",
+        ])
+        
+        # Format performance table
+        if self.performance and "agents" in self.performance:
+            lines.append(f"| Agent | Status | Cost | Turns | Duration |")
+            lines.append(f"|-------|--------|------|-------|----------|")
+            
+            for agent in self.performance["agents"]:
+                agent_name = agent.get("agent_name", f"Agent {agent.get('agent_id', '?')}")
+                status = agent.get("status", "unknown")
+                cost = agent.get("cost_usd", 0.0)
+                turns = agent.get("num_turns", 0)
+                duration = agent.get("duration_seconds", 0.0)
+                
+                status_icon = "✅" if status == "completed" else "❌"
+                duration_str = f"{duration/60:.1f}m" if duration > 0 else "-"
+                
+                lines.append(
+                    f"| {agent_name} | {status_icon} {status} | ${cost:.2f} | {turns} | {duration_str} |"
+                )
+            lines.append(f"")
+            
+            # Add summary stats
+            total_cost = self.performance.get("total_cost_usd", 0.0)
+            total_turns = self.performance.get("total_turns", 0)
+            avg_cost = self.performance.get("avg_cost_per_agent", 0.0)
+            
+            lines.append(f"**Summary:** {total_turns} total turns, ${total_cost:.2f} total cost, ${avg_cost:.2f} avg per agent")
+            lines.append(f"")
+        else:
+            lines.append(f"No performance data available.")
+            lines.append(f"")
+        
+        lines.extend([
+            f"## 📋 Phases Completed",
+            f"",
+        ])
+        
+        # Format phases list
+        if self.phases_completed:
+            for phase in self.phases_completed:
+                lines.append(f"- ✅ {phase}")
+        else:
+            lines.append(f"No phases recorded.")
+        
+        lines.extend([
+            f"",
+            f"---",
+            f"*Generated: {self.completed_at}*",
+        ])
+        
+        return "\n".join(lines)
+
+
 # =============================================================================
 # Activity Scheduling + Performance Tracking
 # =============================================================================
@@ -2455,6 +2594,118 @@ class RalphProtocol:
         except (json.JSONDecodeError, OSError, AttributeError):
             return False
 
+    def _generate_completion_summary(self) -> Optional[PlanCompletionSummary]:
+        """
+        Generate completion summary when Ralph session completes.
+        
+        Aggregates data from state, performance tracker, and plan verification.
+        
+        Returns:
+            PlanCompletionSummary object or None if state unavailable.
+        """
+        state = self.read_state()
+        if not state:
+            return None
+        
+        # Load performance data
+        performance = {}
+        try:
+            progress_file = self.base_dir / ".claude" / "ralph" / "progress.json"
+            if progress_file.exists():
+                with open(progress_file, 'r') as f:
+                    progress_data = json.load(f)
+                    performance = progress_data.get("performance", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+        
+        # Load plan verification data (if available)
+        plan_verification = {}
+        try:
+            verification_file = self.base_dir / ".claude" / "plan-verification.json"
+            if verification_file.exists():
+                with open(verification_file, 'r') as f:
+                    plan_verification = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+        
+        # Load verify+fix summary (if available)
+        verify_fix_summary = {}
+        try:
+            verify_fix_file = self.base_dir / ".claude" / "verify-fix-summary.json"
+            if verify_fix_file.exists():
+                with open(verify_fix_file, 'r') as f:
+                    verify_fix_summary = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+        
+        # Count completed/failed tasks from task queue
+        completed_tasks = 0
+        failed_tasks = 0
+        try:
+            plan_file = state.checkpoint_path or ""
+            if plan_file:
+                plan_name = Path(plan_file).stem
+                queue_file = self.base_dir / ".claude" / f"task-queue-{plan_name}.json"
+            else:
+                claude_dir = self.base_dir / ".claude"
+                queue_files = list(claude_dir.glob("task-queue-*.json"))
+                queue_file = queue_files[0] if queue_files else None
+            
+            if queue_file and queue_file.exists():
+                with open(queue_file, 'r') as f:
+                    queue_data = json.load(f)
+                    tasks = queue_data.get("tasks", [])
+                    for task in tasks:
+                        status = task.get("status", "pending")
+                        if status == "completed":
+                            completed_tasks += 1
+                        elif status == "failed":
+                            failed_tasks += 1
+        except (json.JSONDecodeError, OSError, AttributeError):
+            pass
+        
+        # Calculate duration
+        duration_seconds = 0.0
+        if state.started_at:
+            try:
+                start = datetime.fromisoformat(state.started_at)
+                end = datetime.now(timezone.utc)
+                if state.completed_at:
+                    end = datetime.fromisoformat(state.completed_at)
+                duration_seconds = (end - start).total_seconds()
+            except (ValueError, TypeError):
+                pass
+        
+        # Get phases completed
+        phases_completed = []
+        if hasattr(state, 'phase_history'):
+            phases_completed = state.phase_history or []
+        elif state.phase:
+            phases_completed = [state.phase]
+        
+        # Extract plan_id from checkpoint_path or state
+        plan_id = ""
+        if state.checkpoint_path:
+            plan_id = Path(state.checkpoint_path).stem
+        elif hasattr(state, 'plan_id'):
+            plan_id = state.plan_id or ""
+        
+        return PlanCompletionSummary(
+            session_id=state.session_id,
+            plan_id=plan_id,
+            task=state.task or "No task description",
+            total_agents=performance.get("total_agents", 0),
+            completed_tasks=completed_tasks,
+            failed_tasks=failed_tasks,
+            total_cost=performance.get("total_cost_usd", 0.0),
+            duration_seconds=duration_seconds,
+            phases_completed=phases_completed,
+            performance=performance,
+            plan_verification=plan_verification,
+            verify_fix_summary=verify_fix_summary,
+            completed_at=datetime.now(timezone.utc).isoformat()
+        )
+
     # =========================================================================
     # Hook Handlers
     # =========================================================================
@@ -2600,12 +2851,50 @@ EXIT_SIGNAL
 
         if has_complete and has_exit:
             self.log_activity("Exit allowed: Both signals present in transcript")
+            
+            # Generate completion summary before cleanup
+            summary = self._generate_completion_summary()
+            inject_msg = ""
+            
+            if summary:
+                try:
+                    # Write summary to .claude/plan-completion-summary.md
+                    summary_path = self.base_dir / ".claude" / "plan-completion-summary.md"
+                    summary_path.parent.mkdir(parents=True, exist_ok=True)
+                    summary_path.write_text(summary.to_markdown(), encoding="utf-8")
+                    
+                    # Prepare injection message with summary preview
+                    inject_msg = f"""✅ RALPH SESSION COMPLETE
+
+Plan completion summary written to: {summary_path}
+
+## Summary Preview
+
+**Session:** {summary.session_id}
+**Total Agents:** {summary.total_agents}
+**Completed Tasks:** {summary.completed_tasks} ✅
+**Failed Tasks:** {summary.failed_tasks} ❌
+**Total Cost:** ${summary.total_cost:.2f}
+**Duration:** {summary.duration_seconds/60:.1f} minutes
+
+Full details available in {summary_path}
+"""
+                except Exception as e:
+                    self.log_activity(f"Failed to generate completion summary: {e}", level="ERROR")
+                    inject_msg = "✅ RALPH SESSION COMPLETE\n\n(Failed to generate completion summary)"
+            
             cleanup_results = self.cleanup_ralph_session(keep_activity_log=False)
-            return {
+            
+            response = {
                 "decision": "approve",
                 "reason": "Ralph protocol complete",
                 "cleanup": cleanup_results
             }
+            
+            if inject_msg:
+                response["inject_message"] = inject_msg
+            
+            return response
 
         # CHECK 7: All tasks completed (work done in main conversation without agents)
         # Still require completion signals, but inject prompt to output them
@@ -3490,6 +3779,166 @@ Begin scoped verification of {len(changed_files)} files now.
             self.log_activity(f"Scoped verify-fix error for agent {parent_agent.agent_id}: {e}", level="ERROR")
             return False
 
+
+    async def _spawn_plan_verification_agent(self, task: Optional[str] = None) -> dict:
+        """Verify 100% plan completion before allowing RALPH_COMPLETE.
+        
+        Reads the plan file, verifies each task/requirement is implemented using
+        Serena symbol search, and returns verification status.
+        
+        Args:
+            task: Original task description for context.
+            
+        Returns:
+            dict with keys:
+                - verified (bool): True if all tasks completed
+                - missing_tasks (list): List of incomplete task descriptions
+                - verified_count (int): Number of verified tasks
+                - total_count (int): Total tasks in plan
+        """
+        self.log_activity("Starting plan verification phase")
+        self._print_progress("PLAN_VERIFY", -1, "checking plan completion")
+        
+        # Find plan file
+        plans_dir = self.base_dir / ".claude" / "plans"
+        if not plans_dir.exists():
+            self.log_activity("No plans directory found, skipping verification")
+            return {"verified": True, "missing_tasks": [], "verified_count": 0, "total_count": 0}
+        
+        # Get most recent plan file
+        plan_files = sorted(plans_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not plan_files:
+            self.log_activity("No plan files found, skipping verification")
+            return {"verified": True, "missing_tasks": [], "verified_count": 0, "total_count": 0}
+        
+        plan_file = plan_files[0]
+        self.log_activity(f"Verifying plan: {plan_file.name}")
+        
+        # Build verification prompt
+        prompt = f"""You are a PLAN VERIFICATION agent. Your job is to verify that ALL tasks in the plan have been implemented.
+
+## Instructions:
+
+1. Read the plan file: {plan_file}
+2. For each task/requirement in the plan:
+   - Use Serena find_symbol to verify implementation exists
+   - Check for actual code, not TODOs or placeholders
+   - Mark as ✅ DONE or ❌ MISSING
+3. Output a structured verification report
+
+## Verification Rules:
+
+- A task is DONE if: code exists, tests pass, no TODOs remain for that feature
+- A task is MISSING if: no implementation found, only TODOs, or incomplete
+- Use Serena find_referencing_symbols to verify integration
+- Check multiple files if a feature spans components
+
+## Output Format (REQUIRED):
+
+When complete, output exactly:
+
+PLAN_VERIFICATION_COMPLETE: [PASS|FAIL]
+VERIFIED_TASKS: [count]
+MISSING_TASKS: [count]
+
+Then for each MISSING task, output:
+MISSING: [Brief task description]
+
+Then if verification passes:
+{self.RALPH_COMPLETE_SIGNAL}
+{self.EXIT_SIGNAL}
+
+## Original Task Context:
+{task or 'Implementation task'}
+
+Begin plan verification now. Be thorough - this is the final gate before review.
+"""
+        
+        try:
+            # Spawn with Opus model for thorough verification
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["claude", "--print", "--model", "claude-opus-4-5-20251101", prompt],
+                    cwd=str(self.base_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=600,  # 10 min timeout
+                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
+                )
+            )
+            
+            output = result.stdout + result.stderr
+            success = result.returncode == 0
+            
+            # Parse result
+            passed = "PLAN_VERIFICATION_COMPLETE: PASS" in output
+            verified_count = 0
+            missing_count = 0
+            missing_tasks = []
+            
+            # Extract counts
+            import re
+            verified_match = re.search(r"VERIFIED_TASKS:\s*(\d+)", output)
+            missing_match = re.search(r"MISSING_TASKS:\s*(\d+)", output)
+            
+            if verified_match:
+                verified_count = int(verified_match.group(1))
+            if missing_match:
+                missing_count = int(missing_match.group(1))
+            
+            # Extract missing task descriptions
+            missing_pattern = re.compile(r"MISSING:\s*(.+?)(?=\n(?:MISSING:|PLAN_VERIFICATION_COMPLETE:|$))", re.DOTALL)
+            for match in missing_pattern.finditer(output):
+                task_desc = match.group(1).strip()
+                if task_desc:
+                    missing_tasks.append(task_desc)
+            
+            total_count = verified_count + missing_count
+            
+            if passed:
+                self._print_progress(
+                    "PLAN_VERIFIED", -1,
+                    f"all {verified_count} tasks complete"
+                )
+                self.log_activity(f"Plan verification PASSED: {verified_count}/{total_count} tasks complete")
+            else:
+                self._print_progress(
+                    "PLAN_INCOMPLETE", -1,
+                    f"{missing_count} missing"
+                )
+                self.log_activity(
+                    f"Plan verification FAILED: {missing_count}/{total_count} tasks missing"
+                )
+                for i, task in enumerate(missing_tasks[:5], 1):  # Log first 5
+                    self.log_activity(f"  Missing task {i}: {task[:80]}")
+            
+            return {
+                "verified": passed,
+                "missing_tasks": missing_tasks,
+                "verified_count": verified_count,
+                "total_count": total_count,
+            }
+            
+        except subprocess.TimeoutExpired:
+            self._print_progress("PLAN_VERIFY_TIMEOUT", -1)
+            self.log_activity("Plan verification timed out", level="ERROR")
+            return {
+                "verified": False,
+                "missing_tasks": ["Verification timeout - unable to complete"],
+                "verified_count": 0,
+                "total_count": 0,
+            }
+        except Exception as e:
+            self.log_activity(f"Plan verification error: {e}", level="ERROR")
+            return {
+                "verified": False,
+                "missing_tasks": [f"Verification error: {str(e)}"],
+                "verified_count": 0,
+                "total_count": 0,
+            }
+
     def _build_review_prompt(self, agent: AgentState, task: Optional[str]) -> str:
         """Build prompt for a review agent."""
         # Get list of changed files
@@ -4169,6 +4618,79 @@ SPECIALTY FOCUS ({specialty}):
                 f"{self._C_DIM}{verify_fix_failed}{self._C_RESET} failed",
                 flush=True
             )
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+
+        # =====================================================================
+        # PLAN VERIFICATION PHASE - Verify 100% plan completion
+        # =====================================================================
+        plan_verified = True
+        plan_verification_result = None
+        
+        if successful > 0 and plan_file:
+            # Run plan verification
+            plan_verification_result = await self._spawn_plan_verification_agent(task)
+            plan_verified = plan_verification_result["verified"]
+            missing_tasks = plan_verification_result["missing_tasks"]
+            verified_count = plan_verification_result["verified_count"]
+            total_count = plan_verification_result["total_count"]
+            
+            # Print verification summary
+            print(flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(f"{self._C_BOLD}  Plan Verification Complete{self._C_RESET}", flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            
+            if plan_verified:
+                print(
+                    f"  Status: {self._C_GREEN}PASS{self._C_RESET} - All {verified_count} tasks completed",
+                    flush=True
+                )
+            else:
+                print(
+                    f"  Status: {self._C_DIM}INCOMPLETE{self._C_RESET} - {len(missing_tasks)} tasks missing",
+                    flush=True
+                )
+                print(
+                    f"  Verified: {self._C_GREEN}{verified_count}{self._C_RESET}/{total_count}",
+                    flush=True
+                )
+                
+                # Check if we should retry
+                state = self.read_state()
+                if state and state.plan_verification_retries < 2:
+                    print(
+                        f"  {self._C_DIM}Retry {state.plan_verification_retries + 1}/2 - queuing missing tasks{self._C_RESET}",
+                        flush=True
+                    )
+                    
+                    # Queue missing tasks and increment retry counter
+                    state.plan_verification_retries += 1
+                    self.write_state(state)
+                    
+                    # TODO: Queue missing tasks back to implementation phase
+                    # This would require restructuring run_loop to support looping back
+                    # For now, log the missing tasks and continue
+                    self.log_activity(
+                        f"Plan incomplete - {len(missing_tasks)} tasks missing (retry {state.plan_verification_retries}/2)"
+                    )
+                    for i, missing_task in enumerate(missing_tasks[:5], 1):
+                        self.log_activity(f"  Missing: {missing_task[:100]}")
+                else:
+                    max_retries_msg = " (max retries reached)" if state and state.plan_verification_retries >= 2 else ""
+                    print(
+                        f"  {self._C_DIM}Proceeding to review{max_retries_msg}{self._C_RESET}",
+                        flush=True
+                    )
+            
             print(
                 f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
                 flush=True
