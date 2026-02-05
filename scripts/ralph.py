@@ -54,6 +54,17 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from zoneinfo import ZoneInfo
 
+# Import Ralph library functions
+from ralph_lib import (
+    build_agent_prompt,
+    load_agent_config,
+    match_agent_to_task,
+    discover_agent_configs,
+    generate_agent_name,
+    _get_agents_dir,
+    AGENT_SPECIALTIES,
+)
+
 # Optional Redis import for real-time context injection
 try:
     from redis import Redis
@@ -1467,136 +1478,10 @@ class PerformanceTracker:
 
 
 # =============================================================================
-# Agent Config Discovery
-# =============================================================================
-
-def _get_agents_dir() -> str:
-    """Get default agents directory, cross-platform."""
-    _home = os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude")
-    return str(Path(_home) / "agents")
-
-
-def discover_agent_configs(agents_dir: str | None = None) -> dict[str, str]:
-    """
-    Discover ALL agent config files (not just reviewers).
-
-    Returns:
-        Dict mapping config name to file path.
-        e.g. {"security-reviewer": "/usr/share/claude/agents/security-reviewer.md"}
-    """
-    if agents_dir is None:
-        agents_dir = _get_agents_dir()
-
-    agents_path = Path(agents_dir)
-    if not agents_path.exists():
-        return {}
-
-    configs = {}
-    for agent_file in sorted(agents_path.glob("*.md")):
-        configs[agent_file.stem] = str(agent_file)
-
-    return configs
-
-
-def load_agent_config(config_path: str) -> str:
-    """Load an agent config file content."""
-    try:
-        return Path(config_path).read_text(encoding="utf-8")
-    except OSError:
-        return ""
-
-
-# =============================================================================
-# Agent Specialties + Auto-Assignment
-# =============================================================================
-
-AGENT_SPECIALTIES: dict[str, list[str]] = {
-    "security-reviewer": ["security", "auth", "owasp", "xss", "csrf", "injection", "vulnerability", "encryption", "token", "password"],
-    "performance-reviewer": ["performance", "speed", "latency", "cache", "optimize", "memory", "profil", "bottleneck", "slow"],
-    "api-reviewer": ["api", "rest", "graphql", "endpoint", "route", "http", "request", "response", "cors", "middleware"],
-    "architecture-reviewer": ["architecture", "pattern", "design", "structure", "module", "dependency", "coupling", "solid"],
-    "a11y-reviewer": ["accessibility", "a11y", "aria", "wcag", "screen reader", "keyboard", "contrast", "focus"],
-    "database-reviewer": ["database", "sql", "query", "migration", "schema", "index", "orm", "prisma", "drizzle"],
-    "commit-reviewer": ["commit", "git", "merge", "branch", "changelog", "version", "release"],
-    "performance-profiler": ["profile", "benchmark", "flame", "trace", "cpu", "heap", "allocation"],
-    "doc-accuracy-checker": ["documentation", "readme", "jsdoc", "docstring", "comment", "api doc"],
-    "build-error-resolver": ["build", "compile", "error", "typescript", "lint", "biome", "webpack", "vite", "bundle"],
-    "refactor-cleaner": ["refactor", "clean", "dead code", "unused", "duplicate", "simplify", "extract"],
-    "e2e-runner": ["test", "e2e", "playwright", "cypress", "selenium", "integration test", "coverage"],
-    "review-coordinator": ["review", "coordinate", "summary", "aggregate", "findings", "report"],
-    "nextjs-specialist": ["nextjs", "next", "react", "ssr", "server component", "app router", "page", "layout"],
-    "python-specialist": ["python", "fastapi", "django", "flask", "pip", "uv", "pytest", "pydantic"],
-    "go-specialist": ["go", "golang", "goroutine", "channel", "gin", "fiber"],
-    "devops-automator": ["devops", "ci", "cd", "docker", "kubernetes", "deploy", "pipeline", "github actions"],
-    "scraper-agent": ["scrape", "crawl", "extract", "parse", "html", "browser", "puppeteer"],
-    "pr-body-generator": ["pr", "pull request", "description", "summary", "changelog"],
-}
-
-
-def generate_agent_name(phase: str, specialty: str, index: int) -> str:
-    """
-    Generate a structured agent name.
-
-    Format: ralph-{phase}-{specialty}-{index}
-    Example: ralph-impl-security-0, ralph-review-api-3, ralph-vf-build-1
-
-    Args:
-        phase: Lifecycle phase (impl, vf, review).
-        specialty: Agent specialty (security, api, etc.).
-        index: Agent index number.
-
-    Returns:
-        Structured agent name string.
-    """
-    # Abbreviate phase names for conciseness
-    phase_abbrev = {
-        "implementation": "impl",
-        "verify_fix": "vf",
-        "review": "review",
-        "plan": "plan",
-        "complete": "done",
-    }.get(phase, phase[:4])
-
-    # Sanitize specialty (remove -reviewer, -specialist suffixes)
-    spec = specialty.replace("-reviewer", "").replace("-specialist", "").replace("-", "")[:8]
-
-    return f"ralph-{phase_abbrev}-{spec}-{index}"
-
-
-def match_agent_to_task(task: str, agents_dir: str | None = None) -> str:
-    """
-    Match a task description to the best-fit agent config via keyword overlap scoring.
-
-    Args:
-        task: The task description to match against.
-        agents_dir: Path to agents directory.
-
-    Returns:
-        Config name of the best-matching agent (e.g., "security-reviewer").
-    """
-    if not task:
-        return "general"
-
-    task_lower = task.lower()
-    best_match = "general"
-    best_score = 0
-
-    # Check available agents on disk
-    available = discover_agent_configs(agents_dir)
-
-    for agent_name, keywords in AGENT_SPECIALTIES.items():
-        if agent_name not in available:
-            continue
-        score = sum(1 for kw in keywords if kw in task_lower)
-        if score > best_score:
-            best_score = score
-            best_match = agent_name
-
-    return best_match if best_score > 0 else "general"
-
-
-# =============================================================================
 # Review Agent Discovery
+# =============================================================================
+# NOTE: Agent config functions moved to ralph_lib.py for reusability
+# Import them via: from ralph_lib import discover_agent_configs, load_agent_config, etc.
 # =============================================================================
 
 def discover_review_agents(agents_dir: str | None = None) -> list[str]:
@@ -2936,10 +2821,10 @@ This will properly close the Ralph session."""
 
     def handle_hook_subagent_stop(self, stdin_content: Optional[str] = None) -> dict:
         """
-        Handle SubagentStop hook — track agent completion, enforce iteration limits.
+        Handle SubagentStop hook — track agent completion, enforce iteration limits, manage retries.
 
-        Records completion, updates metrics, and can force additional iterations
-        if the agent hasn't met minimum quality thresholds.
+        Records completion, updates metrics, detects failures, and queues failed agents
+        for retry (max 3 retries per agent).
         """
         if not self.state_exists():
             return {}
@@ -2956,9 +2841,15 @@ This will properly close the Ralph session."""
         agent_id = data.get("agent_id", data.get("subagent_id", "unknown"))
         cost_usd = data.get("total_cost_usd", 0)
         num_turns = data.get("num_turns", 0)
+        exit_status = data.get("exit_status", 0)
+        duration_ms = data.get("duration_ms", 0)
 
+        # Detect failure: non-zero exit status
+        failed = exit_status != 0
+
+        status_label = "FAILED" if failed else "SUCCESS"
         self.log_activity(
-            f"SubagentStop: {agent_id} (${cost_usd:.4f}, {num_turns} turns)"
+            f"SubagentStop: {agent_id} ({status_label}) ${cost_usd:.4f}, {num_turns} turns, {duration_ms}ms"
         )
 
         # Update heartbeat and track cost
@@ -2972,12 +2863,114 @@ This will properly close the Ralph session."""
             except Exception:
                 pass
 
+        # Update progress.json with aggregated cost
+        self._update_progress_with_agent_cost(cost_usd)
+
+        # Handle retry logic for failed agents
+        retry_queued = False
+        if failed:
+            retry_queued = self._queue_failed_agent_for_retry(agent_id, {
+                "cost_usd": cost_usd,
+                "num_turns": num_turns,
+                "exit_status": exit_status,
+                "duration_ms": duration_ms,
+            })
+
         return {
             "tracked": True,
             "agent_id": agent_id,
             "cost_usd": cost_usd,
             "num_turns": num_turns,
+            "failed": failed,
+            "retry_queued": retry_queued,
         }
+
+    def _update_progress_with_agent_cost(self, cost_usd: float) -> None:
+        """Update progress.json with aggregated agent cost."""
+        try:
+            progress_path = self.base_dir / self.PROGRESS_FILE
+            if progress_path.exists():
+                with open(progress_path, 'r') as f:
+                    progress = json.load(f)
+            else:
+                progress = {
+                    "total": 0,
+                    "completed": 0,
+                    "failed": 0,
+                    "done": 0,
+                    "cost_usd": 0,
+                }
+
+            progress["cost_usd"] = round(progress.get("cost_usd", 0) + cost_usd, 4)
+            progress["updated_at"] = datetime.now().isoformat()
+
+            progress_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(progress_path, 'w') as f:
+                json.dump(progress, f, indent=2)
+        except (IOError, json.JSONDecodeError):
+            pass
+
+    def _queue_failed_agent_for_retry(self, agent_id: str, failure_info: dict) -> bool:
+        """
+        Queue a failed agent for retry if under retry limit.
+
+        Args:
+            agent_id: Agent identifier
+            failure_info: Failure metadata (cost, turns, exit status, duration)
+
+        Returns:
+            True if queued for retry, False if retry limit exceeded
+        """
+        MAX_RETRIES = 3
+        retry_queue_path = self.base_dir / ".claude" / "ralph" / "retry-queue.json"
+
+        try:
+            # Load existing retry queue
+            if retry_queue_path.exists():
+                with open(retry_queue_path, 'r') as f:
+                    retry_queue = json.load(f)
+            else:
+                retry_queue = {}
+
+            # Check retry count for this agent
+            agent_entry = retry_queue.get(agent_id, {
+                "retry_count": 0,
+                "failures": [],
+            })
+
+            current_retry_count = agent_entry.get("retry_count", 0)
+
+            if current_retry_count >= MAX_RETRIES:
+                self.log_activity(
+                    f"Agent {agent_id} exceeded max retries ({MAX_RETRIES}), not queueing",
+                    level="WARN"
+                )
+                return False
+
+            # Queue for retry
+            agent_entry["retry_count"] = current_retry_count + 1
+            agent_entry["failures"].append({
+                **failure_info,
+                "timestamp": datetime.now().isoformat(),
+            })
+            agent_entry["status"] = "pending_retry"
+            agent_entry["last_failure"] = datetime.now().isoformat()
+
+            retry_queue[agent_id] = agent_entry
+
+            # Write updated retry queue
+            retry_queue_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(retry_queue_path, 'w') as f:
+                json.dump(retry_queue, f, indent=2)
+
+            self.log_activity(
+                f"Agent {agent_id} queued for retry (attempt {current_retry_count + 1}/{MAX_RETRIES})"
+            )
+            return True
+
+        except (IOError, json.JSONDecodeError) as e:
+            self.log_activity(f"Failed to queue agent for retry: {e}", level="ERROR")
+            return False
 
     def _generate_serena_context(self) -> str:
         """
@@ -3246,6 +3239,99 @@ Serena provides LSP-powered semantic code analysis. To enable:
             except Exception as e:
                 self._failed_count += 1
                 self.log_activity(f"Review agent {agent_state.agent_id} error: {e}", level="ERROR")
+                return False
+
+        finally:
+            if semaphore:
+                semaphore.release()
+
+    async def _spawn_verify_fix_agent(
+        self,
+        agent_state: AgentState,
+        task: Optional[str] = None,
+        semaphore: Optional[asyncio.Semaphore] = None
+    ) -> bool:
+        """
+        Spawn a verify-fix agent that checks build integrity and auto-fixes issues.
+
+        Verify-fix agents:
+        - Run build checks (pnpm build, type checks, linting)
+        - Use Serena to verify symbol integrity
+        - Auto-fix simple issues (imports, types, formatting)
+        - Escalate complex issues via AskUserQuestion
+        - Do NOT leave TODO comments
+
+        Args:
+            agent_state: State object for this verify-fix agent.
+            task: Original task description for context.
+            semaphore: Optional semaphore for concurrency limiting.
+
+        Returns:
+            True if verification completed successfully, False otherwise.
+        """
+        if semaphore:
+            await semaphore.acquire()
+
+        try:
+            agent_state.status = AgentStatus.RUNNING.value
+            agent_state.started_at = datetime.now().isoformat()
+
+            # Track performance
+            self._perf_tracker.start_agent(agent_state.agent_id, f"verify-fix-{agent_state.agent_id}")
+
+            # Print start message
+            self._print_progress("STARTED", agent_state.agent_id, "Verify+Fix")
+
+            # Build verify-fix-specific prompt
+            prompt = self._build_verify_fix_prompt(agent_state, task)
+
+            # Spawn subprocess (same mechanism as implementation agents)
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["claude", "--print", prompt],
+                        cwd=str(self.base_dir),
+                        capture_output=True,
+                        text=True,
+                        timeout=600,  # 10 min timeout for verify-fix
+                        env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
+                    )
+                )
+
+                success = result.returncode == 0
+                cost = self._extract_cost_from_output(result.stdout + result.stderr)
+                turns = self._extract_turns_from_output(result.stdout + result.stderr)
+
+                self._perf_tracker.complete_agent(
+                    agent_state.agent_id,
+                    cost_usd=cost,
+                    num_turns=turns,
+                    success=success
+                )
+
+                # Update counters
+                if success:
+                    self._completed_count += 1
+                    self._total_cost += cost
+                    self._print_progress(
+                        "DONE", agent_state.agent_id,
+                        f"Verify+Fix  ${cost:.2f}, {turns} turns"
+                    )
+                else:
+                    self._failed_count += 1
+                    self._print_progress("FAILED", agent_state.agent_id, "Verify+Fix")
+
+                return success
+
+            except subprocess.TimeoutExpired:
+                self._failed_count += 1
+                self._print_progress("TIMEOUT", agent_state.agent_id, "Verify+Fix")
+                return False
+            except Exception as e:
+                self._failed_count += 1
+                self.log_activity(f"Verify-fix agent {agent_state.agent_id} error: {e}", level="ERROR")
                 return False
 
         finally:
@@ -3813,6 +3899,88 @@ SPECIALTY FOCUS ({specialty}):
 
         # Print implementation summary
         self._print_summary(successful, failed, exceptions)
+
+        # =====================================================================
+        # VERIFY+FIX PHASE - Run build checks and auto-fix issues
+        # =====================================================================
+        verify_fix_successful = 0
+        verify_fix_failed = 0
+        verify_fix_exceptions: list[Exception] = []
+
+        # Static config: 3 agents, 2 iterations
+        VERIFY_FIX_AGENTS = 3
+        VERIFY_FIX_ITERATIONS = 2
+
+        if successful > 0:
+            print(flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(
+                f"  {self._C_BOLD}Verify+Fix Phase{self._C_RESET}  "
+                f"{VERIFY_FIX_AGENTS} agents x {VERIFY_FIX_ITERATIONS} iterations",
+                flush=True
+            )
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(flush=True)
+
+            # Reset counters for verify-fix phase
+            self._loop_start_time = datetime.now()
+            self._completed_count = 0
+            self._failed_count = 0
+            self._total_agents_in_loop = VERIFY_FIX_AGENTS
+
+            # Create verify-fix agent states
+            verify_fix_agent_states = [
+                AgentState(
+                    agent_id=i,
+                    max_iterations=VERIFY_FIX_ITERATIONS,
+                    status=AgentStatus.PENDING.value
+                )
+                for i in range(VERIFY_FIX_AGENTS)
+            ]
+
+            # Spawn verify-fix agents
+            verify_fix_semaphore = asyncio.Semaphore(min(self.MAX_CONCURRENT_AGENTS, VERIFY_FIX_AGENTS))
+            verify_fix_tasks = [
+                self._spawn_verify_fix_agent(agent, task, verify_fix_semaphore)
+                for agent in verify_fix_agent_states
+            ]
+            verify_fix_results = await asyncio.gather(*verify_fix_tasks, return_exceptions=True)
+
+            # Count verify-fix results
+            verify_fix_successful = sum(1 for r in verify_fix_results if r is True)
+            verify_fix_failed = sum(1 for r in verify_fix_results if r is False or isinstance(r, Exception))
+            verify_fix_exceptions = [r for r in verify_fix_results if isinstance(r, Exception)]
+
+            self.log_activity(
+                f"Verify+Fix phase completed: {verify_fix_successful}/{VERIFY_FIX_AGENTS} successful"
+            )
+
+            # Print verify-fix summary
+            print(flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(f"{self._C_BOLD}  Verify+Fix Phase Complete{self._C_RESET}", flush=True)
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
+            print(
+                f"  Verify+Fix Agents: {self._C_GREEN}{verify_fix_successful}{self._C_RESET} succeeded, "
+                f"{self._C_DIM}{verify_fix_failed}{self._C_RESET} failed",
+                flush=True
+            )
+            print(
+                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
+                flush=True
+            )
 
         # =====================================================================
         # REVIEW PHASE - Spawn review agents after implementation
@@ -4452,60 +4620,23 @@ Begin verification now.
 
     def _build_agent_prompt(self, agent: AgentState, task: Optional[str]) -> str:
         """Build the initial prompt for an agent with agent config loading (Step 3)."""
-        # Discover and assign agent config via round-robin
-        all_configs = discover_agent_configs()
-        config_names = list(all_configs.keys())
-        agent_config_content = ""
-        assigned_role = "general"
-
-        if config_names:
-            # Round-robin assignment
-            config_name = config_names[agent.agent_id % len(config_names)]
-            config_path = all_configs[config_name]
-            agent_config_content = load_agent_config(config_path)
-            assigned_role = config_name
-
-        # Read team state for inbox info
+        # Read team state for session info
         state = self.read_state()
         session_id = state.session_id if state else "unknown"
         total = state.total_agents if state else 1
 
-        # Build enhanced prompt
-        role_section = ""
-        if agent_config_content:
-            role_section = f"""
-ROLE CONFIG ({assigned_role}):
-{agent_config_content[:2000]}
-"""
-
-        inbox_section = f"""
-COORDINATION:
-- Check inbox: .claude/ralph/team-{session_id}/inbox/agent-{agent.agent_id}.json
-- Report completion: write task_completed message to relay
-- If idle: write idle_notification message
-- Heartbeat: write to .claude/ralph/team-{session_id}/heartbeat/agent-{agent.agent_id}.json
-"""
-
-        return f"""You are Ralph Agent {agent.agent_id}/{total} working on: {task or 'Complete the assigned development work'}
-
-ASSIGNMENT: {assigned_role}
-ITERATION: {agent.current_iteration + 1} of {agent.max_iterations}
-{role_section}
-WORK PROTOCOL:
-1. Call TaskList to see available tasks
-2. Claim next available task (status=pending, no blockers)
-3. Work autonomously — no confirmation needed
-4. Push ALL commits before signaling completion
-5. Mark task completed, claim next
-6. Before completion, call mcp__serena__think_about_whether_you_are_done
-7. When all your work is done, output EXACTLY:
-   {self.RALPH_COMPLETE_SIGNAL}
-   {self.EXIT_SIGNAL}
-{inbox_section}
-TOOLS: All standard tools + Serena MCP + Context7 MCP
-
-Begin working now.
-"""
+        # Use ralph_lib.build_agent_prompt for consistent prompt generation
+        return build_agent_prompt(
+            agent_id=agent.agent_id,
+            total_agents=total,
+            current_iteration=agent.current_iteration,
+            max_iterations=agent.max_iterations,
+            task=task,
+            session_id=session_id,
+            complete_signal=self.RALPH_COMPLETE_SIGNAL,
+            exit_signal=self.EXIT_SIGNAL,
+            assigned_config=None,  # Use round-robin assignment
+        )
 
 
 def _debug_exit(reason: str, code: int = 0) -> None:

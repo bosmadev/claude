@@ -1,0 +1,12 @@
+{
+  "agent_id": "agent-1",
+  "plan_id": "test-plan",
+  "task_id": "t1",
+  "status": "initializing",
+  "last_checkpoint": "2026-02-05T13:36:16.882261+00:00",
+  "context": {
+    "files_modified": [],
+    "commits_made": [],
+    "notes": ""
+  }
+}
