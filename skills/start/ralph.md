@@ -161,12 +161,14 @@ cat > .claude/ralph/state.json <<'STATE_EOF'
 STATE_EOF
 ```
 
-### Step 4: Invoke Ralph Orchestrator
+### Step 4: Create Native Team and Spawn Agents
 
-**CRITICAL:** Do NOT spawn agents manually. Use the ralph.py orchestrator:
+**CRITICAL:** Use native Agent Teams (TeamCreate + Task with team_name) for agent spawning. Do NOT use ralph.py subprocess spawning.
+
+#### 4a. Initialize Ralph State (utility only)
 
 ```bash
-python C:/Users/Dennis/.claude/scripts/ralph.py loop [AGENTS] [ITERATIONS] \
+python C:/Users/Dennis/.claude/scripts/ralph.py setup [AGENTS] [ITERATIONS] \
     --review-agents [REVIEW_AGENTS] \
     --review-iterations [REVIEW_ITERATIONS] \
     [--skip-review] \
@@ -174,15 +176,82 @@ python C:/Users/Dennis/.claude/scripts/ralph.py loop [AGENTS] [ITERATIONS] \
     "[TASK_DESCRIPTION]"
 ```
 
-The orchestrator handles:
-- Parallel agent spawning via Task tool
-- Iteration tracking and stuck detection
-- Post-review phase (unless `--skip-review`)
-- Completion signal validation (`RALPH_COMPLETE` + `EXIT_SIGNAL`)
+This creates state files only (`.claude/ralph/state.json`, `.claude/ralph/loop.local.md`). It does NOT spawn agents.
 
-**Agent Environment:** Each spawned agent inherits `CLAUDE_CODE_TASK_LIST_ID` from the orchestrator, ensuring all agents see and update the same shared task list.
+#### 4b. Create Native Team
 
-Each agent works independently on the task. Results are synthesized after all complete.
+```python
+TeamCreate(
+    team_name="ralph-impl",
+    description="Ralph implementation team for: [TASK_DESCRIPTION]"
+)
+```
+
+#### 4c. Create Tasks for Work Items
+
+Use TaskCreate for each work unit (IMPL tasks, VERIFY tasks, FINAL task — as defined in Step 1).
+
+#### 4d. Spawn Agents as Teammates
+
+Spawn ALL agents in PARALLEL in a SINGLE message with multiple Task() calls. Each agent MUST include `team_name`:
+
+```python
+Task(
+    subagent_type="general-purpose",
+    model="opus",  # or "sonnet" based on modelMode
+    team_name="ralph-impl",  # REQUIRED: joins the native team
+    name="agent-1",  # Unique teammate name
+    prompt="""RALPH Agent 1/[N] - Phase 2.1: Implementation
+
+**Plan file:** [PLAN_FILE_PATH]
+
+**Your task:** [SPECIFIC_TASK]
+
+**Ralph protocol:**
+- Read plan file for context
+- Check TaskList for available work
+- Claim tasks with TaskUpdate(owner="agent-1")
+- Use SendMessage to report progress to team lead
+- Mark tasks completed when done
+
+**Success criteria:**
+[WHAT_DEFINES_COMPLETION]
+
+When complete, output: ULTRATHINK_COMPLETE
+"""
+)
+```
+
+#### 4e. Orchestration via SendMessage
+
+As team lead, monitor agent progress:
+- Agents send status updates via `SendMessage(type="message", recipient="team-lead")`
+- Use `TaskList` to track overall progress
+- Use `SendMessage(type="message", recipient="agent-X")` to redirect stuck agents
+- When all IMPL tasks complete, spawn VERIFY+FIX agents
+- When all VERIFY tasks complete, spawn review agents (if enabled)
+- Send `SendMessage(type="shutdown_request")` to each agent when done
+
+#### 4f. Teardown
+
+After all agents complete:
+
+```bash
+python C:/Users/Dennis/.claude/scripts/ralph.py teardown
+```
+
+Then clean up the team:
+
+```python
+TeamDelete()
+```
+
+**Agent coordination features (native teams provide):**
+- Shared TaskList visible to all teammates
+- Direct messaging between agents via SendMessage
+- Automatic idle notifications when agents stop
+- Team agent visibility in statusline
+- Native team context in agent prompts
 
 ## Completion Criteria (ALL must be TRUE)
 
@@ -232,7 +301,7 @@ Each iteration using TaskList/TaskUpdate:
 
 ## Stuck Detection
 
-The orchestrator detects these patterns and pauses for user input:
+The team lead (you) detects these patterns and pauses for user input:
 
 | Pattern | Threshold | Action |
 |---------|-----------|--------|

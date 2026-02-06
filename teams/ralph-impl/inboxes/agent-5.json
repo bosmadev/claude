@@ -1,0 +1,9 @@
+[
+  {
+    "from": "agent-5",
+    "text": "{\"type\":\"task_assignment\",\"taskId\":\"5\",\"subject\":\"IMPL-5: Build intelligence statusline\",\"description\":\"Add BUILD_ color constants and read_build_intelligence() to scripts/statusline.py. Show struggle indicators when agents are having issues. Graceful fallback when no data.\",\"assignedBy\":\"agent-5\",\"timestamp\":\"2026-02-06T10:32:54.751Z\"}",
+    "timestamp": "2026-02-06T10:32:54.751Z",
+    "color": "orange",
+    "read": true
+  }
+]

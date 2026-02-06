@@ -110,6 +110,43 @@ def _read_ralph_progress(cwd: str) -> dict | None:
     except (OSError, json.JSONDecodeError, KeyError):
         return None
 
+def _read_team_config(session_id: str) -> dict | None:
+    """Read active team config from ~/.claude/teams/*/config.json.
+
+    Returns team data with member count if:
+    - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 env var is set
+    - A team config exists where leadSessionId matches current session_id
+
+    Returns None if no active team or Agent Teams not enabled.
+    """
+    # Check if Agent Teams feature is enabled
+    if os.environ.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") != "1":
+        return None
+
+    try:
+        teams_dir = CACHE_DIR / "teams"
+        if not teams_dir.exists():
+            return None
+
+        # Search all team configs for matching leadSessionId
+        for team_config_path in teams_dir.glob("*/config.json"):
+            try:
+                config = json.loads(team_config_path.read_text(encoding="utf-8"))
+                if config.get("leadSessionId") == session_id:
+                    # Found matching team
+                    members = config.get("members", [])
+                    return {
+                        "team_name": config.get("name", ""),
+                        "member_count": len(members),
+                        "members": members
+                    }
+            except (OSError, json.JSONDecodeError, KeyError):
+                continue
+
+        return None
+    except (OSError, PermissionError):
+        return None
+
 def read_build_intelligence(cwd: str) -> str:
     """
     Read build intelligence data and return formatted statusline segment.
@@ -408,6 +445,7 @@ MOCK_SCENARIOS = {
         "name": "Team Agents (Active /start flow)",
         "stdin": {
             "cwd": ".",
+            "session_id": "5b47e9a3-ba2a-4a3a-b91c-49aa1768909d",  # Match current Ralph session
             "model": {"id": "claude-opus-4-6", "display_name": "Opus 4.6"},
             "effort": "high",
             "context_window": {"used_percentage": 35.5, "context_window_size": 200000},
@@ -700,11 +738,21 @@ def main() -> None:
     # ------------------------------------------------------------------
     ralph_section = ""
     ralph_progress = _read_ralph_progress(cwd)
-    
+
+    # Team agents display (native Agent Teams)
+    session_id = inp.get("session_id", "")
+    team_data = _read_team_config(session_id) if session_id else None
+    team_indicator = ""
+
+    if team_data and team_data.get("member_count", 0) > 0:
+        count = team_data["member_count"]
+        # Show team member count: 👥4 for 4 agents
+        team_indicator = f" {CYAN}👥{count}{RESET}"
+
     if ralph_progress and ralph_progress.get("total", 0) > 0:
         impl = ralph_progress.get("impl", {})
         review = ralph_progress.get("review", {})
-        
+
         # Build phase display (Element 1)
         parts = []
         if impl.get("total", 0) > 0:
@@ -713,28 +761,31 @@ def main() -> None:
         if review.get("total", 0) > 0:
             completed = review.get("completed", 0) + review.get("failed", 0)
             parts.append(f"{BRIGHT_WHITE}{completed}{RESET}{CYAN}/{review['total']}{RESET}")
-        
+
         agent_block = f"{CYAN}{'·'.join(parts)}{RESET}"
-        
+
         # Model mix suffix (Element 3)
         mix = ralph_progress.get("model_mix", {})
         opus_count = mix.get("opus", 0)
         sonnet_count = mix.get("sonnet", 0)
-        
+
         if opus_count > 0 and sonnet_count > 0:  # Mixed models
             model_mix = f"{CYAN}:{opus_count}O{sonnet_count}S{RESET}"
         else:
             model_mix = ""  # All same model - hide
-        
+
         # Struggle alert (Element 2)
         struggle = ralph_progress.get("struggling", 0)
         struggle_indicator = f"{YELLOW}⚠️{RESET}" if struggle > 0 else ""
-        
+
         # Build intelligence indicator (read from build-intelligence.json)
         build_intel = read_build_intelligence(cwd)
-        
+
         # Combine Ralph section (with leading separator only; trailing separator added conditionally)
-        ralph_section = f" {DARK_GREY}|{RESET} {agent_block}{model_mix}{struggle_indicator}{build_intel}"
+        ralph_section = f" {DARK_GREY}|{RESET} {agent_block}{model_mix}{struggle_indicator}{build_intel}{team_indicator}"
+    elif team_indicator:
+        # Show team indicator even without Ralph progress
+        ralph_section = f" {DARK_GREY}|{RESET}{team_indicator}"
 
     # ------------------------------------------------------------------
     # Output

@@ -97,6 +97,92 @@ VERIFY_FIX_EFFORT: dict[str, str] = {
 }
 
 
+# =============================================================================
+# Receipt Audit Trail System
+# =============================================================================
+
+RECEIPTS_DIR = Path.home() / ".claude" / ".claude" / "ralph" / "receipts"
+
+
+def write_receipt(
+    agent_id: str,
+    action: str,
+    details: dict[str, Any],
+    session_id: str | None = None
+) -> bool:
+    """
+    Write an audit receipt for an agent action.
+
+    Receipts track all agent activities: starts, completions, errors, file edits,
+    task state changes. Used for debugging, compliance, and build intelligence.
+
+    Args:
+        agent_id: Agent identifier (e.g., "agent-1", "review-2")
+        action: Action type - "agent_start", "agent_complete", "agent_error",
+                "file_edit", "task_complete", "command_run"
+        details: Action-specific metadata (file paths, error messages, etc.)
+        session_id: Ralph session ID (auto-detected if None)
+
+    Returns:
+        True if receipt written successfully, False otherwise.
+
+    Receipt Format:
+        {
+            "id": "uuid",
+            "timestamp": "ISO8601",
+            "agent_id": "agent-1",
+            "action": "file_edit",
+            "details": {"file": "src/app.py", "change": "add function"},
+            "session_id": "abc123"
+        }
+
+    Example:
+        >>> write_receipt("agent-3", "file_edit", {"file": "app.py", "lines": "10-20"})
+        >>> write_receipt("agent-1", "agent_error", {"error": "timeout", "retry": 2})
+    """
+    try:
+        # Ensure receipts directory exists
+        RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Auto-detect session_id from checkpoint if not provided
+        if session_id is None:
+            checkpoint = Path.home() / ".claude" / ".claude" / "ralph" / "checkpoint.json"
+            if checkpoint.exists():
+                try:
+                    state = json.loads(checkpoint.read_text(encoding="utf-8"))
+                    session_id = state.get("session_id", "unknown")
+                except (json.JSONDecodeError, OSError):
+                    session_id = "unknown"
+            else:
+                session_id = "unknown"
+
+        # Generate receipt
+        timestamp = datetime.now(timezone.utc).isoformat()
+        receipt = {
+            "id": str(uuid.uuid4()),
+            "timestamp": timestamp,
+            "agent_id": agent_id,
+            "action": action,
+            "details": details,
+            "session_id": session_id,
+        }
+
+        # Write to timestamped JSON file
+        # Format: 20260206_120000_agent-1_file-edit.json
+        time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Sanitize action for filename (replace underscores with hyphens)
+        action_safe = action.replace("_", "-")
+        filename = f"{time_str}_{agent_id}_{action_safe}.json"
+        receipt_path = RECEIPTS_DIR / filename
+
+        receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+        return True
+
+    except (OSError, TypeError, ValueError):
+        # Fail silently - receipts are best-effort audit logs
+        return False
+
+
 def inject_context(context: str, agent_id: str | None = None) -> bool:
     """
     Inject context to running agents via Redis pub/sub with file fallback.
@@ -364,6 +450,170 @@ class AgentState:
     changed_files: list = field(default_factory=list)  # Files changed by this agent
     verify_fix_passed: Optional[bool] = None  # Result of per-task verify+fix
     verify_fix_agent_id: Optional[int] = None  # ID of scoped verify+fix agent
+
+
+@dataclass
+class StruggleMetrics:
+    """Metrics tracking for an individual agent's struggle state."""
+    error_count: int = 0
+    retry_count: int = 0
+    elapsed_time: float = 0.0
+    last_error: str = ""
+    struggling: bool = False
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "errors": self.error_count,
+            "retries": self.retry_count,
+            "elapsed_time": round(self.elapsed_time, 2),
+            "last_error": self.last_error[:200] if self.last_error else "",
+            "struggling": self.struggling
+        }
+
+
+class StruggleDetector:
+    """
+    Detect when agents are struggling with repeated failures.
+    
+    Tracks error counts, retry attempts, and elapsed time per agent.
+    Writes build intelligence data to .claude/ralph/build-intelligence.json.
+    
+    Struggle thresholds:
+    - Error count > 3
+    - Retry count > 5
+    - Slow progress (implementation-specific)
+    """
+    
+    OUTPUT_FILE = ".claude/ralph/build-intelligence.json"
+    ERROR_THRESHOLD = 3
+    RETRY_THRESHOLD = 5
+    
+    def __init__(self, base_dir: Path):
+        """
+        Initialize StruggleDetector.
+        
+        Args:
+            base_dir: Base directory for output files
+        """
+        self.base_dir = base_dir
+        self.output_path = base_dir / self.OUTPUT_FILE
+        self._metrics: dict[str, StruggleMetrics] = {}
+        self._start_times: dict[str, datetime] = {}
+    
+    def record_error(self, agent_id: str, error_msg: str = "") -> None:
+        """
+        Record an error for an agent.
+        
+        Args:
+            agent_id: Agent identifier (e.g., "agent-1")
+            error_msg: Error message text
+        """
+        if agent_id not in self._metrics:
+            self._metrics[agent_id] = StruggleMetrics()
+        
+        metrics = self._metrics[agent_id]
+        metrics.error_count += 1
+        if error_msg:
+            metrics.last_error = error_msg
+        
+        # Update struggle state
+        self._update_struggle_state(agent_id)
+    
+    def record_retry(self, agent_id: str) -> None:
+        """
+        Record a retry attempt for an agent.
+        
+        Args:
+            agent_id: Agent identifier
+        """
+        if agent_id not in self._metrics:
+            self._metrics[agent_id] = StruggleMetrics()
+        
+        self._metrics[agent_id].retry_count += 1
+        self._update_struggle_state(agent_id)
+    
+    def start_tracking(self, agent_id: str) -> None:
+        """
+        Start time tracking for an agent.
+        
+        Args:
+            agent_id: Agent identifier
+        """
+        self._start_times[agent_id] = datetime.now()
+    
+    def stop_tracking(self, agent_id: str) -> None:
+        """
+        Stop time tracking and update elapsed time.
+        
+        Args:
+            agent_id: Agent identifier
+        """
+        if agent_id in self._start_times:
+            elapsed = (datetime.now() - self._start_times[agent_id]).total_seconds()
+            if agent_id not in self._metrics:
+                self._metrics[agent_id] = StruggleMetrics()
+            self._metrics[agent_id].elapsed_time = elapsed
+            del self._start_times[agent_id]
+    
+    def is_struggling(self, agent_id: str) -> bool:
+        """
+        Check if an agent is currently struggling.
+        
+        Args:
+            agent_id: Agent identifier
+            
+        Returns:
+            True if agent is struggling
+        """
+        if agent_id not in self._metrics:
+            return False
+        return self._metrics[agent_id].struggling
+    
+    def get_struggle_summary(self) -> dict:
+        """
+        Get summary of struggling agents.
+        
+        Returns:
+            Dictionary with total_struggling and total_agents counts
+        """
+        struggling = sum(1 for m in self._metrics.values() if m.struggling)
+        return {
+            "total_struggling": struggling,
+            "total_agents": len(self._metrics)
+        }
+    
+    def write_intelligence(self) -> None:
+        """Write build intelligence data to JSON file."""
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        data = {
+            "timestamp": datetime.now().isoformat(),
+            "agents": {
+                agent_id: metrics.to_dict()
+                for agent_id, metrics in self._metrics.items()
+            },
+            "summary": self.get_struggle_summary()
+        }
+        
+        try:
+            self.output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except (OSError, TypeError) as e:
+            # Log but don't fail - intelligence is nice-to-have
+            print(f"Warning: Failed to write build intelligence: {e}", file=sys.stderr)
+    
+    def _update_struggle_state(self, agent_id: str) -> None:
+        """
+        Update struggling flag based on thresholds.
+        
+        Args:
+            agent_id: Agent identifier
+        """
+        metrics = self._metrics[agent_id]
+        metrics.struggling = (
+            metrics.error_count > self.ERROR_THRESHOLD or
+            metrics.retry_count > self.RETRY_THRESHOLD
+        )
 
 
 @dataclass
@@ -647,6 +897,139 @@ class TaskQueue:
             created_at=created_at,
             tasks=tasks
         )
+
+
+class TaskQueueParser:
+    """
+    Parser for markdown task lists with priority-based format.
+    
+    Supports formats:
+    - [ ] P1: Description — blocked by: task-name
+    - [x] P2: Description — completed
+    - [ ] P3: Description — depends on: task-name
+    
+    Features:
+    - Priority extraction (P1/P2/P3)
+    - Status parsing (pending/in_progress/completed)
+    - Dependency detection (blocked by/depends on)
+    - Plan file parsing
+    - Round-trip conversion (markdown ↔ QueueTask)
+    """
+    
+    @staticmethod
+    def parse_markdown(content: str) -> list[QueueTask]:
+        """
+        Parse markdown content into list of QueueTask objects.
+        
+        Recognizes:
+        - [ ] = pending
+        - [/] = in_progress
+        - [x] = completed
+        - P1/P2/P3 = priority (stored in description)
+        - "blocked by:" or "depends on:" = dependencies
+        
+        Args:
+            content: Markdown text with task list items
+            
+        Returns:
+            List of QueueTask objects
+        """
+        import re
+        
+        tasks = []
+        lines = content.split("\n")
+        
+        # Pattern: - [checkbox] P1: Description — blocked by: task-name
+        # More flexible: supports various dependency keywords
+        task_pattern = re.compile(
+            r"^-\s+\[([ x/])\]\s+(?:P[123]:\s+)?(.+?)(?:\s+[—–-]\s+(?:blocked by|depends on):\s+([^—–-]+))?$",
+            re.IGNORECASE
+        )
+        
+        for line in lines:
+            stripped = line.strip()
+            match = task_pattern.match(stripped)
+            if not match:
+                continue
+            
+            checkbox, description, dependencies = match.groups()
+            
+            # Determine status from checkbox
+            if checkbox == "x":
+                status = "completed"
+            elif checkbox == "/":
+                status = "in_progress"
+            else:
+                status = "pending"
+            
+            # Parse blocked_by list
+            blocked_list = []
+            if dependencies:
+                blocked_list = [d.strip() for d in dependencies.split(",")]
+            
+            tasks.append(QueueTask(
+                description=description.strip(),
+                status=status,
+                blocked_by=blocked_list
+            ))
+        
+        return tasks
+    
+    @staticmethod
+    def parse_plan_file(path: Path) -> list[QueueTask]:
+        """
+        Parse a plan markdown file and extract action items.
+        
+        Looks for task list items anywhere in the document.
+        Useful for extracting work items from plan files.
+        
+        Args:
+            path: Path to plan .md file
+            
+        Returns:
+            List of QueueTask objects
+        """
+        if not path.exists():
+            raise FileNotFoundError(f"Plan file not found: {path}")
+        
+        content = path.read_text(encoding="utf-8")
+        return TaskQueueParser.parse_markdown(content)
+    
+    @staticmethod
+    def to_markdown(tasks: list[QueueTask]) -> str:
+        """
+        Convert list of QueueTask objects to markdown format.
+        
+        Round-trip compatible with parse_markdown.
+        
+        Args:
+            tasks: List of QueueTask objects
+            
+        Returns:
+            Markdown-formatted task list
+        """
+        lines = []
+        
+        for task in tasks:
+            # Determine checkbox
+            if task.status == "completed":
+                checkbox = "[x]"
+            elif task.status == "in_progress":
+                checkbox = "[/]"
+            else:
+                checkbox = "[ ]"
+            
+            # Build line
+            line = f"- {checkbox} {task.description}"
+            
+            # Add dependencies if present
+            if task.blocked_by:
+                deps = ", ".join(task.blocked_by)
+                line += f" — blocked by: {deps}"
+            
+            lines.append(line)
+        
+        return "\n".join(lines)
 
 
 class WorkStealingQueue:
@@ -1943,9 +2326,22 @@ class RalphProtocol:
         self._failed_count = 0
         self._total_cost = 0.0
         self._total_agents_in_loop = 0
+        
+        # Phase tracking for progress.json
+        self._current_phase = "implementation"
+        self._impl_total = 0
+        self._impl_completed = 0
+        self._impl_failed = 0
+        self._review_total = 0
+        self._review_completed = 0
+        self._review_failed = 0
+        self._model_mode = ModelMode.OPUS.value  # Default, updated in run_loop
 
         # Migrate legacy files on initialization
         self._migrate_legacy_files()
+        
+        # Initialize struggle detection
+        self._struggle_detector = StruggleDetector(self.base_dir)
 
     def _migrate_legacy_files(self) -> None:
         """Migrate legacy flat structure to nested .claude/ralph/."""
@@ -2305,6 +2701,48 @@ class RalphProtocol:
         self._print_progress("AGENT_PAUSED", agent_id, reason)
         self.log_activity(f"Agent {agent_id} paused: {reason}", level="INFO")
 
+    def _get_struggling_count(self) -> int:
+        """Count agents currently showing struggle indicators."""
+        if not hasattr(self, '_perf_tracker') or not self._perf_tracker:
+            return 0
+        count = 0
+        for agent_id in self._perf_tracker.struggle_indicators:
+            struggles = self._perf_tracker.detect_struggle(agent_id)
+            if struggles:
+                count += 1
+        return count
+    
+    def _get_model_mix(self) -> dict:
+        """Get count of Opus vs Sonnet agents based on current mode."""
+        # Model mix depends on phase and model_mode setting
+        # Implementation agents use model_mode (default OPUS)
+        # Review agents always use SONNET
+        model_mix = {"opus": 0, "sonnet": 0}
+        
+        if self._current_phase == "implementation":
+            if self._model_mode == ModelMode.SONNET_ALL.value:
+                model_mix["sonnet"] = self._total_agents_in_loop
+            else:
+                # OPUS or default SONNET mode (impl=opus, review=sonnet)
+                model_mix["opus"] = self._total_agents_in_loop
+        elif self._current_phase == "review":
+            # Review agents are always Sonnet
+            model_mix["sonnet"] = self._review_total
+            # Add implementation agents to opus count
+            if self._model_mode != ModelMode.SONNET_ALL.value:
+                model_mix["opus"] = self._impl_total
+            else:
+                model_mix["sonnet"] += self._impl_total
+        elif self._current_phase == "complete":
+            # Both phases complete - show final counts
+            if self._model_mode == ModelMode.SONNET_ALL.value:
+                model_mix["sonnet"] = self._impl_total + self._review_total
+            else:
+                model_mix["opus"] = self._impl_total
+                model_mix["sonnet"] = self._review_total
+        
+        return model_mix
+
     def _write_progress_file(self) -> None:
         """Write current progress to a JSON file for external tools."""
         try:
@@ -2318,6 +2756,22 @@ class RalphProtocol:
                 "elapsed_str": self._elapsed_str(),
                 "started_at": self._loop_start_time.isoformat() if self._loop_start_time else None,
                 "updated_at": datetime.now().isoformat(),
+                # NEW: Phase-level tracking
+                "phase": self._current_phase,
+                "impl": {
+                    "total": self._impl_total,
+                    # During impl phase, use current counters; after transition use snapshot
+                    "completed": self._completed_count if self._current_phase == "implementation" else self._impl_completed,
+                    "failed": self._failed_count if self._current_phase == "implementation" else self._impl_failed,
+                },
+                "review": {
+                    "total": self._review_total,
+                    # During review phase, use current counters; after completion use snapshot
+                    "completed": self._completed_count if self._current_phase == "review" else self._review_completed,
+                    "failed": self._failed_count if self._current_phase == "review" else self._review_failed,
+                },
+                "model_mix": self._get_model_mix(),
+                "struggling": self._get_struggling_count(),
             }
             # Include performance tracker summary if available
             if hasattr(self, '_perf_tracker') and self._perf_tracker:
@@ -2357,10 +2811,22 @@ class RalphProtocol:
         print(flush=True)
 
     def _cleanup_progress_file(self) -> None:
-        """Remove progress file after loop completes."""
+        """Write progress file with total: 0 to signal completion (auto-hide in statusline)."""
         try:
-            if self.progress_path.exists():
-                self.progress_path.unlink()
+            # Write minimal progress.json with total: 0 to signal statusline to hide Ralph section
+            total_completed = self._impl_completed + self._review_completed
+            total_failed = self._impl_failed + self._review_failed
+            cleanup_data = {
+                "total": 0,
+                "completed": total_completed,
+                "failed": total_failed,
+                "done": total_completed + total_failed,
+                "cost_usd": round(self._total_cost, 4),
+                "phase": "complete",
+                "updated_at": datetime.now().isoformat(),
+            }
+            with open(self.progress_path, 'w') as f:
+                json.dump(cleanup_data, f)
         except IOError:
             pass
 
@@ -4081,6 +4547,11 @@ SPECIALTY FOCUS ({specialty}):
         """
         agent_state.status = AgentStatus.RUNNING.value
         agent_state.started_at = datetime.now().isoformat()
+        
+        # Start struggle tracking
+        agent_id_str = f"agent-{agent_state.agent_id}"
+        if hasattr(self, '_struggle_detector') and self._struggle_detector:
+            self._struggle_detector.start_tracking(agent_id_str)
 
         # Update main state (with lock to prevent race conditions)
         async with self._state_lock:
@@ -4098,6 +4569,22 @@ SPECIALTY FOCUS ({specialty}):
 
     async def _spawn_agent_subprocess(self, agent_state: AgentState, task: Optional[str] = None) -> bool:
         """Spawn agent as an independent subprocess with its own context window."""
+        agent_id_str = f"agent-{agent_state.agent_id}"
+        
+        # Write agent start receipt
+        state = self.read_state()
+        session_id = state.session_id if state else "unknown"
+        write_receipt(
+            agent_id_str,
+            "agent_start",
+            {
+                "task": task or "general",
+                "started_at": agent_state.started_at,
+                "max_iterations": agent_state.max_iterations
+            },
+            session_id
+        )
+        
         self.log_activity(f"Agent {agent_state.agent_id} started")
         self._print_progress("STARTED", agent_state.agent_id)
         # Track performance start
@@ -4253,6 +4740,26 @@ SPECIALTY FOCUS ({specialty}):
                 agent_state.status = AgentStatus.COMPLETED.value
                 agent_state.ralph_complete = True
                 agent_state.exit_signal = True
+                agent_state.completed_at = datetime.now().isoformat()
+                
+                # Stop tracking on success
+                agent_id_str = f"agent-{agent_state.agent_id}"
+                if hasattr(self, '_struggle_detector') and self._struggle_detector:
+                    self._struggle_detector.stop_tracking(agent_id_str)
+                
+                # Write agent complete receipt
+                state = self.read_state()
+                session_id = state.session_id if state else "unknown"
+                write_receipt(
+                    agent_id_str,
+                    "agent_complete",
+                    {
+                        "completed_at": agent_state.completed_at,
+                        "iterations": agent_state.current_iteration,
+                        "ralph_complete": True
+                    },
+                    session_id
+                )
 
                 # Extract cost from JSON result
                 cost_usd = 0
@@ -4317,6 +4824,12 @@ SPECIALTY FOCUS ({specialty}):
             else:
                 agent_state.status = AgentStatus.FAILED.value
                 error_msg = stderr_text[:200] if stderr_text else stdout_text[:200]
+                
+                # Record struggle on failure
+                agent_id_str = f"agent-{agent_state.agent_id}"
+                if hasattr(self, '_struggle_detector') and self._struggle_detector:
+                    self._struggle_detector.record_error(agent_id_str, error_msg)
+                
                 self.log_activity(
                     f"Agent {agent_state.agent_id} failed (exit {proc.returncode}): {error_msg}",
                     level="ERROR"
@@ -4336,6 +4849,22 @@ SPECIALTY FOCUS ({specialty}):
             agent_state.status = AgentStatus.FAILED.value
             self._failed_count += 1
             self.log_activity(f"Agent {agent_state.agent_id} error: {e}", level="ERROR")
+            
+            # Write agent error receipt
+            agent_id_str = f"agent-{agent_state.agent_id}"
+            state = self.read_state()
+            session_id = state.session_id if state else "unknown"
+            write_receipt(
+                agent_id_str,
+                "agent_error",
+                {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "iteration": agent_state.current_iteration,
+                    "failed_at": datetime.now().isoformat()
+                },
+                session_id
+            )
 
         agent_state.completed_at = datetime.now().isoformat()
         await self._update_final_state(agent_state, spawned_pid)
@@ -4355,6 +4884,10 @@ SPECIALTY FOCUS ({specialty}):
                     state.process_pids.remove(spawned_pid)
                 state.last_heartbeat = datetime.now().isoformat()
                 self.write_state(state)
+        
+        # Write build intelligence after each agent finishes
+        if hasattr(self, '_struggle_detector') and self._struggle_detector:
+            self._struggle_detector.write_intelligence()
 
         return agent_state.status == AgentStatus.COMPLETED.value
 
@@ -4398,6 +4931,16 @@ SPECIALTY FOCUS ({specialty}):
         self._failed_count = 0
         self._total_cost = 0.0
         self._total_agents_in_loop = num_agents
+        
+        # Phase tracking for statusline
+        self._current_phase = "implementation"
+        self._impl_total = num_agents
+        self._impl_completed = 0
+        self._impl_failed = 0
+        self._review_total = 0
+        self._review_completed = 0
+        self._review_failed = 0
+        self._model_mode = model_mode
 
         # Initialize performance tracking and adaptive scheduling
         self._perf_tracker = PerformanceTracker()
@@ -4736,11 +5279,20 @@ SPECIALTY FOCUS ({specialty}):
             )
             print(flush=True)
 
+            # Snapshot implementation results before resetting counters
+            self._impl_completed = self._completed_count
+            self._impl_failed = self._failed_count
+
+            # Transition to review phase
+            self._current_phase = "review"
+            self._write_progress_file()  # Persist impl snapshot before counter reset
+
             # Reset counters for review phase
             self._loop_start_time = datetime.now()
             self._completed_count = 0
             self._failed_count = 0
             self._total_agents_in_loop = review_agents
+            self._review_total = review_agents
 
             # Create review agent states
             review_agent_states = [
@@ -4793,9 +5345,27 @@ SPECIALTY FOCUS ({specialty}):
             # Generate review summary
             self._generate_review_summary()
 
+            # Snapshot review results before transitioning to complete
+            self._review_completed = self._completed_count
+            self._review_failed = self._failed_count
+
         elif skip_review:
             self.log_activity("Review phase skipped (--skip-review)")
+            # If review skipped, snapshot impl results now
+            self._impl_completed = self._completed_count
+            self._impl_failed = self._failed_count
+            # Review counters remain 0 since review was skipped
 
+        else:
+            # Review not run (no successful impl agents) - snapshot impl results
+            self._impl_completed = self._completed_count
+            self._impl_failed = self._failed_count
+            # Review counters remain 0 since review wasn't attempted
+
+        # Mark completion phase
+        self._current_phase = "complete"
+        self._write_progress_file()  # Persist phase snapshot before cleanup
+        
         # Clean up progress file (loop is done)
         self._cleanup_progress_file()
 
