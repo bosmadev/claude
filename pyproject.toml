@@ -1,0 +1,12 @@
+[tool.pytest.ini_options]
+testpaths = ["scripts"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --strict-markers --tb=short"
+cache_dir = ".cache/pytest"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Tests that take significant time",
+]

@@ -302,6 +302,35 @@ When creating or updating a plan file, ALWAYS include:
 1. **Ralph Configuration block** immediately after the status line
 2. **Decision Matrix tables** for all decision points
 3. **Emoji-prefixed section headers** for visual scanning
+4. **Session name** from `~/.claude/.session-info` (read JSON → `session_name` field; fallback to plan slug)
+
+### Session Name Retrieval
+
+When creating plan files, populate the `**Session:**` field as follows:
+
+1. **Read** `~/.claude/.session-info` JSON file
+2. **Extract** the `session_name` field from the JSON
+3. **Fallback** to the plan slug (plan file name without extension) if:
+   - `.session-info` file is missing
+   - File is empty or malformed JSON
+   - `session_name` field is null, empty string `""`, or missing
+
+**Note:** The `.session-info` file is overwritten on every session start. Do NOT validate the `session_id` field - trust the `session_name` value directly. If the session hasn't been renamed yet, `session_name` may be an empty string.
+
+**Security:** `session_name` is unsanitized user input from the `/rename` command. Safe for markdown context, but NEVER use in shell commands or file paths without validation (risks: newlines, backticks, special chars).
+
+**Example:**
+```json
+// ~/.claude/.session-info
+{
+  "session_id": "abc-123",
+  "session_name": "CLAUDE 1",
+  "timestamp": "2026-02-06T14:30:00.000Z"
+}
+```
+→ Use `"CLAUDE 1"` in plan frontmatter
+
+**Template:**
 
 ```markdown
 # [Plan Title]
@@ -620,6 +649,7 @@ All work MUST follow these four phases:
 - Review output for any invented content
 - Confirm all references exist in codebase
 - Verify no hallucinated function names, paths, or behaviors
+- **Auto-cleanup stale review report**: Grep source files for `TODO-P[123]:` (exclude `skills/`, `agents/`). If zero remain, delete `.claude/review-agents.md` — the report is stale since all findings are resolved
 
 ## MCP Availability for Agents
 
@@ -1023,16 +1053,27 @@ fi
 
 ### Post-Review Phase (If Enabled)
 
-If `postReviewEnabled = true` (default), after implementation completes:
+After implementation completes, run PLAN VERIFICATION then optionally REVIEW:
 
-1. Output: "Implementation complete! Starting post-implementation review..."
-2. Send `shutdown_request` to all implementation agents
-3. Spawn review agents using same Task() pattern with `team_name="ralph-impl"`
-4. Set agent prompts to review mode (see skills/review/SKILL.md)
-5. Review agents use `disallowedTools: [Write, Edit, MultiEdit]`
-6. Review agents leave TODO-P1/P2/P3 comments
-7. Review agents report findings to `.claude/review-agents.md`
-8. After review complete: Send `shutdown_request` to review agents, then `TeamDelete()`
+**Phase 2.5: Plan Verification (always runs)**
+1. Output: "Implementation complete! Running plan verification..."
+2. `ralph.py` spawns plan-verifier agent (uses `agents/plan-verifier.md` protocol)
+3. Verifier reads plan file AND referenced artifacts (HTML mockups, design specs)
+4. Cross-references plan tasks against actual code changes via git diff + Serena
+5. If gaps found: writes gap-fill prompts to `.claude/ralph/gap-fill-prompts.json`
+6. Team lead reads gap-fill prompts and spawns targeted IMPL agents for missing tasks
+7. Re-verifies after gap-fill (up to 3 iterations)
+8. Proceeds to review only when plan verification PASSES
+
+**Phase 3: Review (if `postReviewEnabled = true`, default)**
+1. Send `shutdown_request` to all implementation agents
+2. Spawn review agents using same Task() pattern with `team_name="ralph-impl"`
+3. Set agent prompts to review mode (see skills/review/SKILL.md)
+4. Review agents use `disallowedTools: [Write, Edit, MultiEdit]`
+5. Review agents leave TODO-P1/P2/P3 comments
+6. Review agents report findings to `.claude/review-agents.md`
+7. After review complete: Send `shutdown_request` to review agents, then `TeamDelete()`
+8. **Auto-cleanup**: After TeamDelete, grep source files for remaining `TODO-P[123]:`. If **zero** remain, delete `.claude/review-agents.md` (stale report — all findings resolved). If TODOs remain, keep the report as reference.
 
 **Review agent counts:**
 - Default: 5 review agents, 2 iterations

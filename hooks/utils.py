@@ -12,11 +12,14 @@ Usage:
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -104,6 +107,8 @@ def _has_command(name: str) -> bool:
 
 def _linux_focus_wmctrl(pattern: str) -> bool:
     """Try to focus a window via wmctrl."""
+    if not pattern or not pattern.strip():
+        return False
     if not _has_command("wmctrl"):
         return False
     try:
@@ -120,11 +125,15 @@ def _linux_focus_wmctrl(pattern: str) -> bool:
 
 def _linux_focus_xdotool(pattern: str) -> bool:
     """Try to focus a window via xdotool."""
+    if not pattern or not pattern.strip():
+        return False
     if not _has_command("xdotool"):
         return False
     try:
+        # Use shlex.quote() to prevent command injection
+        safe_pattern = shlex.quote(pattern)
         out = subprocess.check_output(
-            ["xdotool", "search", "--name", pattern],
+            ["xdotool", "search", "--name", safe_pattern],
             text=True,
             stderr=subprocess.DEVNULL,
         )
@@ -290,7 +299,8 @@ def _win_play_sound() -> None:
 
 def _win_show_notification(title: str, message: str) -> None:
     """Show a toast / balloon notification on Windows via PowerShell."""
-    # Comprehensive escaping for PowerShell: single quotes, backticks, newlines, variables
+    import base64
+
     def escape_powershell(text: str) -> str:
         """Escape text for safe PowerShell string inclusion."""
         # Replace single quotes (PowerShell string delimiter)
@@ -301,6 +311,8 @@ def _win_show_notification(title: str, message: str) -> None:
         text = text.replace("\n", " ").replace("\r", "")
         # Remove dollar signs (variable expansion)
         text = text.replace("$", "")
+        # Remove braces to prevent .format() injection
+        text = text.replace("{", "").replace("}", "")
         # Truncate to prevent command length issues
         return text[:200]
 
@@ -308,19 +320,19 @@ def _win_show_notification(title: str, message: str) -> None:
     safe_message = escape_powershell(message)
 
     # Use -EncodedCommand to prevent injection via title/message
-    import base64
+    # Build script with f-string to avoid .format() brace injection
     ps_script = (
-        "[void][System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms');"
-        "$n = New-Object System.Windows.Forms.NotifyIcon;"
-        "$n.Icon = [System.Drawing.SystemIcons]::Information;"
-        "$n.BalloonTipTitle = '{title}';"
-        "$n.BalloonTipText = '{msg}';"
-        "$n.BalloonTipIcon = 'Info';"
-        "$n.Visible = $true;"
-        "$n.ShowBalloonTip(5000);"
-        "Start-Sleep -Milliseconds 5100;"
-        "$n.Dispose()"
-    ).format(title=safe_title, msg=safe_message)
+        f"[void][System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms');"
+        f"$n = New-Object System.Windows.Forms.NotifyIcon;"
+        f"$n.Icon = [System.Drawing.SystemIcons]::Information;"
+        f"$n.BalloonTipTitle = '{safe_title}';"
+        f"$n.BalloonTipText = '{safe_message}';"
+        f"$n.BalloonTipIcon = 'Info';"
+        f"$n.Visible = $true;"
+        f"$n.ShowBalloonTip(5000);"
+        f"Start-Sleep -Milliseconds 5100;"
+        f"$n.Dispose()"
+    )
 
     # Encode to Base64 for -EncodedCommand (UTF-16LE required)
     encoded_cmd = base64.b64encode(ps_script.encode("utf-16-le")).decode("ascii")
@@ -354,6 +366,20 @@ def _linux_show_notification(title: str, message: str, icon: str, urgency: str) 
     """Show a desktop notification on Linux via notify-send."""
     if not _has_command("notify-send"):
         return
+
+    # Sanitize inputs to prevent malformed input issues
+    def sanitize_notification_text(text: str) -> str:
+        """Remove problematic characters from notification text."""
+        # Remove newlines and control characters
+        text = text.replace("\n", " ").replace("\r", "")
+        # Remove null bytes that could truncate strings
+        text = text.replace("\x00", "")
+        # Truncate to reasonable length
+        return text[:200]
+
+    safe_title = sanitize_notification_text(title)
+    safe_message = sanitize_notification_text(message)
+
     try:
         subprocess.Popen(
             [
@@ -361,8 +387,8 @@ def _linux_show_notification(title: str, message: str, icon: str, urgency: str) 
                 f"--urgency={urgency}",
                 f"--icon={icon}",
                 "--app-name=Claude Code",
-                title,
-                message,
+                safe_title,
+                safe_message,
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -382,8 +408,19 @@ def do_notify() -> None:
     notification_type = data.get("notification_type", "unknown")
     message = data.get("message", "Claude needs your attention")
     cwd = data.get("cwd", os.environ.get("HOME") or os.environ.get("USERPROFILE") or ".")
-    # session_id available but not currently used
-    # session_id = data.get("session_id", "")
+    session_id = data.get("session_id", "")
+
+    # Log notification attempts for security monitoring
+    log_file = Path.home() / ".claude" / "notifications.log"
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        log_entry = f"{timestamp} | {notification_type} | {session_id[:8] if session_id else 'none'}\n"
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except (OSError, PermissionError):
+        # Logging is best-effort, don't fail notification on log errors
+        pass
 
     title, icon, urgency = _notification_params(notification_type)
 
@@ -501,14 +538,61 @@ def parse_model_id(model_id: str) -> dict:
     return result
 
 
+def _atomic_write_json(path: Path, data: dict) -> None:
+    """Write JSON data atomically using temp file + rename pattern.
+
+    Prevents file corruption if process crashes mid-write.
+    Uses os.replace() which is atomic on both Windows and Unix.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Create temp file in same directory to ensure same filesystem
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            dir=path.parent,
+            delete=False,
+            suffix='.tmp'
+        ) as tmp:
+            tmp.write(json.dumps(data, indent=2))
+            tmp_path = tmp.name
+        # Atomic rename on same filesystem
+        os.replace(tmp_path, path)
+    except OSError:
+        # Clean up temp file on failure
+        try:
+            os.unlink(tmp_path)
+        except (OSError, NameError):
+            pass
+
+
 def get_session_name(session_id: str) -> str:
     """Look up the display name for a session from sessions-index.json.
 
     Searches all project session indices for the given session ID.
     Returns customTitle (from /rename) if present, else summary, else empty string.
+    Return value is sanitized to prevent shell injection if used in commands.
+
+    Security notes:
+    - session_id is only used for string comparison (==), never as a path component
+    - No path traversal risk: glob pattern is hardcoded as "*/sessions-index.json"
+    - sessions-index.json race condition (P3): Corrupted JSON handled by try/except
+    - Performance (P2): glob() scans all projects - acceptable for SessionStart frequency
     """
     if not session_id:
         return ""
+
+    def _sanitize_session_name(name: str) -> str:
+        """Remove shell metacharacters to prevent injection if used in commands."""
+        if not name:
+            return ""
+        # Remove characters that could be dangerous in shell contexts
+        dangerous = ['$', '`', '\\', ';', '|', '&', '<', '>', '\n', '\r']
+        sanitized = name
+        for char in dangerous:
+            sanitized = sanitized.replace(char, '')
+        return sanitized.strip()
+
     try:
         claude_dir = Path.home() / ".claude" / "projects"
         for idx_path in claude_dir.glob("*/sessions-index.json"):
@@ -516,7 +600,8 @@ def get_session_name(session_id: str) -> str:
                 data = json.loads(idx_path.read_text(encoding="utf-8"))
                 for entry in data.get("entries", []):
                     if entry.get("sessionId") == session_id:
-                        return entry.get("customTitle") or entry.get("summary") or ""
+                        raw_name = entry.get("customTitle") or entry.get("summary") or ""
+                        return _sanitize_session_name(raw_name)
             except (json.JSONDecodeError, OSError):
                 continue
     except Exception:
@@ -525,27 +610,47 @@ def get_session_name(session_id: str) -> str:
 
 
 def do_model_capture() -> None:
-    """Capture model ID from SessionStart hook input, write to ~/.claude/.model-info."""
+    """Capture model ID and session name from SessionStart hook input, write to ~/.claude/.model-info and .session-info."""
     raw = _read_stdin_with_timeout(5)
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         data = {}
 
-    model_id = data.get("model", "")
+    model_raw = data.get("model", "")
+    # Handle dict model: {"id": "claude-opus-4-6", "display_name": "Opus 4.6"}
+    if isinstance(model_raw, dict):
+        model_id = model_raw.get("id", "") or model_raw.get("name", "")
+    else:
+        model_id = str(model_raw) if model_raw else ""
     if not model_id:
         # Try nested structure
         model_id = data.get("session", {}).get("model", "") if isinstance(data.get("session"), dict) else ""
 
     parsed = parse_model_id(model_id)
 
-    # Write to ~/.claude/.model-info
+    # Write to ~/.claude/.model-info using atomic write
     model_info_path = Path.home() / ".claude" / ".model-info"
-    try:
-        model_info_path.parent.mkdir(parents=True, exist_ok=True)
-        model_info_path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
-    except OSError:
-        pass
+    _atomic_write_json(model_info_path, parsed)
+
+    # Extract session_id and write to ~/.claude/.session-info
+    session_id = data.get("session_id", "")
+    if session_id:
+        session_name = get_session_name(session_id)
+        session_info = {
+            "session_id": session_id,
+            "session_name": session_name,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        # Write using atomic write and set restrictive permissions
+        session_info_path = Path.home() / ".claude" / ".session-info"
+        _atomic_write_json(session_info_path, session_info)
+        # Set permissions to 600 (owner read/write only) on Unix systems
+        if not IS_WIN:
+            try:
+                os.chmod(session_info_path, 0o600)
+            except OSError:
+                pass
 
     # Return success (SessionStart hooks use simple schema)
     sys.stdout.write('{"continue":true,"suppressOutput":true}')

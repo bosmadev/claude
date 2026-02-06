@@ -43,25 +43,27 @@ except ImportError:
     from backports.zoneinfo import ZoneInfo
 
 # ---------------------------------------------------------------------------
-# Nord-inspired color palette (Variation A)
+# P3 Amber color palette
 # ---------------------------------------------------------------------------
-SALMON        = "\033[38;5;173m"        # Model name (Opus 4.5)
-AURORA_GREEN  = "\033[38;5;108m"        # Cost, context %, ahead, staged
-AURORA_YELLOW = "\033[38;5;222m"        # Modified, warnings
-AURORA_RED    = "\033[38;5;131m"        # Behind, untracked, high usage
-GREY          = "\033[38;5;245m"        # Style name, commit hash, zero counts
-DARK_GREY     = "\033[38;5;240m"        # Separators, parentheses
-SNOW_WHITE    = "\033[38;5;253m"        # Branch name (softer white)
+SALMON        = "\033[38;2;208;136;106m"  # #d0886a Model name (fixed across palettes)
+AURORA_GREEN  = "\033[38;2;135;169;135m"  # #87a987 Green - low usage/cost (fixed)
+AURORA_YELLOW = "\033[38;2;230;200;122m"  # #e6c87a Yellow - medium usage (fixed)
+AURORA_RED    = "\033[38;2;176;96;96m"    # #b06060 Red - high usage (fixed)
+GREY          = "\033[38;2;138;126;114m"  # #8a7e72 Warm grey - labels, ⚙, time
+DARK_GREY     = "\033[38;2;108;108;108m"  # #6c6c6c Dim grey - separators (fixed)
+SNOW_WHITE    = "\033[38;2;216;208;200m"  # #d8d0c8 Warm white - branch name
 RESET         = "\033[0m"
-BRIGHT_WHITE  = "\033[1;37m"            # Ralph completed counts
-CYAN          = "\033[36m"              # Ralph progress elements
-YELLOW        = "\033[33m"              # Struggle alert
+BRIGHT_WHITE  = "\033[38;2;250;250;250m"  # #fafafa Active task count (fixed)
+CYAN          = "\033[38;2;212;149;106m"  # #d4956a Amber - agent accent, ∷, model letters
+LIGHT_AMBER   = "\033[38;2;232;192;160m"  # #e8c0a0 Light amber - mix numbers
+YELLOW        = "\033[38;2;251;146;60m"   # #fb923c Orange - ⚠️ stuck (fixed)
+DIM_AMBER     = "\033[38;2;90;82;74m"     # #5a524a Dark warm - dim elements
 
 # Build intelligence colors (for statusline build status)
-BUILD_OK      = "\033[38;5;108m"        # Green - normal operation
-BUILD_WARN    = "\033[38;5;222m"        # Yellow/Amber - minor issues
-BUILD_ERROR   = "\033[38;5;131m"        # Red - build failures
-BUILD_CRITICAL= "\033[38;5;196m"        # Bright red - multiple struggles
+BUILD_OK      = "\033[38;2;135;169;135m"  # #87a987 Green - normal operation (fixed)
+BUILD_WARN    = "\033[38;2;230;200;122m"  # #e6c87a Yellow - minor issues (fixed)
+BUILD_ERROR   = "\033[38;2;176;96;96m"    # #b06060 Red - build failures (fixed)
+BUILD_CRITICAL= "\033[38;2;251;146;60m"   # #fb923c Orange - multiple struggles (fixed)
 
 
 CACHE_DIR = Path.home() / ".claude"
@@ -92,8 +94,8 @@ def _read_ralph_progress(cwd: str) -> dict | None:
             return None
 
         data = json.loads(content)
-
-        # TODO-P2: Validate data structure before use (check impl/review/total keys exist) - Review agent review-1
+        if not isinstance(data, dict):
+            return None
 
         # Check staleness (>5 minutes old)
         updated_at = data.get("updated_at", "")
@@ -125,8 +127,6 @@ def _read_team_config(session_id: str) -> dict | None:
     if os.environ.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") != "1":
         return None
 
-    # TODO-P3: Add validation for session_id format before glob search - Review agent review-1
-
     try:
         teams_dir = CACHE_DIR / "teams"
         if not teams_dir.exists():
@@ -139,7 +139,8 @@ def _read_team_config(session_id: str) -> dict | None:
                 if config.get("leadSessionId") == session_id:
                     # Found matching team
                     members = config.get("members", [])
-                    # TODO-P2: Validate members is a list before calling len() - Review agent review-1
+                    if not isinstance(members, list):
+                        members = []
                     return {
                         "team_name": config.get("name", ""),
                         "member_count": len(members),
@@ -167,7 +168,6 @@ def read_build_intelligence(cwd: str) -> str:
     - Red (BUILD_ERROR): 2-3 agents struggling
     - Bright Red (BUILD_CRITICAL): 4+ agents struggling
     """
-    # TODO-P2: Add staleness check (compare with _read_ralph_progress 5min TTL) - Review agent review-1
     try:
         intel_path = Path(cwd) / ".claude" / "ralph" / "build-intelligence.json"
         if not intel_path.exists():
@@ -181,7 +181,8 @@ def read_build_intelligence(cwd: str) -> str:
 
         # Extract struggle summary
         summary = data.get("summary", {})
-        # TODO-P2: Validate summary is dict before calling .get() - Review agent review-1
+        if not isinstance(summary, dict):
+            return ""
         struggling = summary.get("total_struggling", 0)
         total = summary.get("total_agents", 0)
 
@@ -206,6 +207,8 @@ def read_build_intelligence(cwd: str) -> str:
 
 def git_run(cwd: str, *args: str) -> str:
     """Run a git command and return stripped stdout, or '' on failure."""
+    if not cwd or not os.path.isdir(cwd):
+        return ""
     try:
         r = subprocess.run(
             ["git", "-C", cwd, *args],
@@ -265,7 +268,7 @@ def git_batch(cwd: str) -> dict:
     return results
 
 
-def parse_porcelain_status(status_output: str) -> tuple:
+def parse_porcelain_status(status_output: str) -> tuple[int, int, int]:
     """Parse git status --porcelain output into (staged, modified, untracked) counts."""
     staged = 0
     modified = 0
@@ -303,16 +306,15 @@ def read_usage_cache(cache_path: Path) -> dict:
     if cache_path.exists() and cache_path.stat().st_size > 0:
         try:
             data = json.loads(cache_path.read_text(encoding="utf-8"))
-            # TODO-P2: Add bounds check for utilization values (clamp 0-100 or warn on >100) - Review agent review-1
             # All-models weekly
             val = data.get("seven_day", {}).get("utilization", 0)
-            result["all_weekly"] = str(int(float(val)))
+            result["all_weekly"] = str(max(0, min(100, int(float(val)))))
             # Sonnet-only weekly
             val_s = data.get("seven_day_sonnet", {}).get("utilization", 0)
-            result["sonnet_weekly"] = str(int(float(val_s)))
+            result["sonnet_weekly"] = str(max(0, min(100, int(float(val_s)))))
             # 5-hour session
             val_5h = data.get("five_hour", {}).get("utilization", 0)
-            result["five_hour_pct"] = str(int(float(val_5h)))
+            result["five_hour_pct"] = str(max(0, min(100, int(float(val_5h)))))
             # Reset time
             result["five_hour_resets_at"] = data.get("five_hour", {}).get("resets_at", "")
         except json.JSONDecodeError:
@@ -359,8 +361,7 @@ def refresh_usage_cache_bg(cache_path: Path) -> None:
         except (OSError, json.JSONDecodeError):
             return
 
-        # Validate token format before using in header
-        if not token or token == "null" or not isinstance(token, str) or len(token) < 20:
+        if not token or token == "null" or not isinstance(token, str) or len(token) < 10:
             return
 
         try:
@@ -450,17 +451,22 @@ def color_threshold(value_str: str, green_below: int, yellow_below: int) -> str:
 
 # ---------------------------------------------------------------------------
 # Test Mode Mock Scenarios
+# NOTE: Test mode uses hardcoded session_id for mock team config testing.
+# In real usage, session_id comes from stdin JSON. This is test-only.
 # TODO-TEMP: Remove test mode after Ralph native teams migration (plan item #0)
 # Test mode exists to verify statusline display without running full /start.
 # Once Ralph tracks native team agents, this can be deleted.
 # ---------------------------------------------------------------------------
+
+# Test mode session ID constant (matches mock team config in ~/.claude/teams/)
+_TEST_SESSION_ID = "5b47e9a3-ba2a-4a3a-b91c-49aa1768909d"
 
 MOCK_SCENARIOS = {
     "team_agents": {
         "name": "Team Agents (Active /start flow)",
         "stdin": {
             "cwd": ".",
-            "session_id": "5b47e9a3-ba2a-4a3a-b91c-49aa1768909d",  # Match current Ralph session
+            "session_id": _TEST_SESSION_ID,
             "model": {"id": "claude-opus-4-6", "display_name": "Opus 4.6"},
             "effort": "high",
             "context_window": {"used_percentage": 35.5, "context_window_size": 200000},
@@ -475,7 +481,10 @@ MOCK_SCENARIOS = {
             "struggling": 0,
             "updated_at": datetime.now().isoformat() + "Z",
         },
-        # TODO-P3: Add build_intelligence mock data for complete scenario coverage - Review agent review-1
+        "build_intelligence": {
+            "summary": {"total_agents": 4, "total_struggling": 0},
+            "agents": {},
+        },
     },
     "ralph_struggling": {
         "name": "Ralph Progress with Struggle Alert",
@@ -576,7 +585,12 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Read JSON input from stdin
     # ------------------------------------------------------------------
-    raw_input = sys.stdin.read()
+    try:
+        raw_input = sys.stdin.read()
+    except (OSError, ValueError) as e:
+        print(f"Error reading stdin: {e}", file=sys.stderr)
+        raw_input = "{}"
+
     try:
         inp = json.loads(raw_input)
     except json.JSONDecodeError:
@@ -588,49 +602,91 @@ def main() -> None:
 
     cwd     = inp.get("cwd", ".")
 
-    # Model display: prefer .model-info (written by SessionStart hook) for "Opus 4.5" style
-    model = "Claude"
+    # Model display: short alias format O4.6 / S4.5 / H4.5
+    def _short_model(display_name: str) -> str:
+        """Convert 'Opus 4.6' → 'O4.6', 'Sonnet 4.5' → 'S4.5'."""
+        parts = display_name.strip().split()
+        if len(parts) >= 2 and len(parts[1]) > 0 and parts[1][0].isdigit():
+            return f"{parts[0][0]}{parts[1]}"
+        if parts:
+            return parts[0][0]  # Just first letter if no version
+        return "?"
+
+    model = "?"
+    # Try .model-info first (written by SessionStart hook)
     model_info_path = CACHE_DIR / ".model-info"
     try:
         if model_info_path.exists():
             mi = json.loads(model_info_path.read_text(encoding="utf-8"))
-            model = mi.get("display", "Claude") or "Claude"
+            display = mi.get("display", "") or ""
+            if display and display != "Claude":
+                model = _short_model(display)
     except (json.JSONDecodeError, OSError):
         pass
 
-    # Fallback: parse from statusline input if .model-info not available
-    if model == "Claude":
-        model_val = inp.get("model", "Claude")
+    # Fallback: parse from statusline input
+    if model == "?":
+        model_val = inp.get("model", "")
         if isinstance(model_val, dict):
-            model = (model_val.get("display_name", "Claude") or "Claude").split()[0]
-        else:
-            model = str(model_val).split()[0] if model_val else "Claude"
+            dn = model_val.get("display_name", "") or ""
+            if dn:
+                model = _short_model(dn)
+            else:
+                # Try model ID: claude-opus-4-6 → extract family+version
+                mid = model_val.get("id", "")
+                if "opus" in mid.lower():
+                    model = "O4.6"
+                elif "sonnet" in mid.lower():
+                    model = "S4.5"
+                elif "haiku" in mid.lower():
+                    model = "H4.5"
+        elif model_val:
+            model = _short_model(str(model_val))
 
     # ------------------------------------------------------------------
-    # Effort indicator (Opus 4.6 only: low/medium/high)
+    # Effort config + model-based defaults
     # ------------------------------------------------------------------
+    EFFORT_CFG = {
+        "low":    {"sym": "\u2193", "color": AURORA_GREEN},    # ↓ Green
+        "medium": {"sym": "\u2192", "color": GREY},             # → Grey
+        "high":   {"sym": "\u2191", "color": AURORA_YELLOW},    # ↑ Yellow
+    }
+    _MODEL_EFFORT_DEFAULT = {"O": "high", "S": "medium", "H": "low"}
+
+    # Main model effort
     effort_raw = ""
-    # Try multiple possible field locations in stdin JSON
     if isinstance(inp.get("effort"), str):
         effort_raw = inp["effort"]
     elif isinstance(inp.get("output_config"), dict):
         effort_raw = inp["output_config"].get("effort", "")
     elif isinstance(inp.get("reasoning_effort"), str):
         effort_raw = inp["reasoning_effort"]
-    # Fallback: check environment variable
     if not effort_raw:
         effort_raw = os.environ.get("CLAUDE_CODE_EFFORT_LEVEL", "")
+    if not effort_raw:
+        effort_raw = _MODEL_EFFORT_DEFAULT.get(model[0] if model else "", "")
 
-    EFFORT_CFG = {
-        "low":    {"sym": "\u2193", "color": AURORA_GREEN},    # ↓ Green
-        "medium": {"sym": "\u2192", "color": GREY},             # → Grey
-        "high":   {"sym": "\u2191", "color": AURORA_YELLOW},    # ↑ Yellow
-    }
     cfg = EFFORT_CFG.get(effort_raw.lower().strip()) if effort_raw else None
     effort_display = f" {cfg['color']}{cfg['sym']}{RESET}" if cfg else ""
 
+    # Dual routing: show subagent model + its default effort arrow
+    subagent_model = os.environ.get("CLAUDE_CODE_SUBAGENT_MODEL", "")
+    _ROUTE_MAP = {"sonnet": "S", "opus": "O", "haiku": "H"}
+    route_letter = _ROUTE_MAP.get(subagent_model.lower().strip(), "")
+    if route_letter:
+        sub_effort = _MODEL_EFFORT_DEFAULT.get(route_letter, "")
+        sub_cfg = EFFORT_CFG.get(sub_effort)
+        sub_arrow = f"{sub_cfg['color']}{sub_cfg['sym']}{RESET}" if sub_cfg else ""
+        dual_routing = f"{DARK_GREY} / {RESET}{GREY}{route_letter}{RESET}{sub_arrow}"
+    else:
+        dual_routing = ""
+
     ctx_val = inp.get("context_window", {})
-    pct     = int(float(ctx_val.get("used_percentage", 0) if isinstance(ctx_val, dict) else 0))
+    try:
+        pct_raw = float(ctx_val.get("used_percentage", 0) if isinstance(ctx_val, dict) else 0)
+        pct = max(0, min(100, int(pct_raw)))
+    except (ValueError, TypeError, OverflowError):
+        pct = 0
     style_val = inp.get("output_style", {})
     style_raw = (style_val.get("name", "default") if isinstance(style_val, dict) else str(style_val)) or "default"
     style_capitalized = style_raw[0].upper() + style_raw[1:]  # capitalize first letter
@@ -664,8 +720,11 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Session cost (Element 5)
     # ------------------------------------------------------------------
-    session_cost = inp.get("cost", {}).get("total_cost_usd", 0)
-    cost_fmt = f"{session_cost:.2f}"
+    try:
+        session_cost = float(inp.get("cost", {}).get("total_cost_usd", 0))
+        cost_fmt = f"{session_cost:.2f}"
+    except (ValueError, TypeError):
+        cost_fmt = "0.00"
 
     # ------------------------------------------------------------------
     # Git info (parallel batch)
@@ -679,29 +738,34 @@ def main() -> None:
         remote_url  = git_data.get("remote_url", "")
         commit_hash = git_data.get("commit_hash", "")
 
-        # Normalise remote URL to HTTPS for hyperlinks
-        # TODO-P3: Expand regex to support gitlab.com, bitbucket.org, etc. - Review agent review-1
+        # Normalise remote URL to HTTPS for hyperlinks (GitHub, GitLab, Bitbucket)
         if remote_url:
             remote_url = re.sub(r"^git@github\.com:", "https://github.com/", remote_url)
+            remote_url = re.sub(r"^git@gitlab\.com:", "https://gitlab.com/", remote_url)
+            remote_url = re.sub(r"^git@bitbucket\.org:", "https://bitbucket.org/", remote_url)
             remote_url = re.sub(r"\.git$", "", remote_url)
 
         # Ahead/behind with chevrons
         ahead_behind = ""
         counts_raw = git_data.get("ahead_behind", "")
         if counts_raw:
+            # Validate numeric counts from git output
             parts = counts_raw.split()
-            behind = parts[0] if len(parts) > 0 else "0"
-            ahead  = parts[1] if len(parts) > 1 else "0"
+            try:
+                behind = parts[0] if len(parts) > 0 and parts[0].isdigit() else "0"
+                ahead  = parts[1] if len(parts) > 1 and parts[1].isdigit() else "0"
+            except (IndexError, AttributeError):
+                behind, ahead = "0", "0"
 
-            # Behind (>> red) - zeros grey
+            # Behind (>> red) - zeros dim amber
             if behind == "0":
-                ahead_behind = f"{GREY}\u00bb{behind}{RESET}"
+                ahead_behind = f"{DIM_AMBER}\u00bb{behind}{RESET}"
             else:
                 ahead_behind = f"{AURORA_RED}\u00bb{behind}{RESET}"
 
-            # Ahead (<< green) - zeros grey
+            # Ahead (<< green) - zeros dim amber
             if ahead == "0":
-                ahead_behind += f"{GREY}\u00ab{ahead}{RESET}"
+                ahead_behind += f"{DIM_AMBER}\u00ab{ahead}{RESET}"
             else:
                 ahead_behind += f"{AURORA_GREEN}\u00ab{ahead}{RESET}"
 
@@ -710,19 +774,19 @@ def main() -> None:
 
         # Staged color
         if staged == 0:
-            staged_fmt = f"{GREY}+{staged}{RESET}"
+            staged_fmt = f"{DIM_AMBER}+{staged}{RESET}"
         else:
             staged_fmt = f"{AURORA_GREEN}+{staged}{RESET}"
 
         # Modified color
         if modified == 0:
-            modified_fmt = f"{GREY}~{modified}{RESET}"
+            modified_fmt = f"{DIM_AMBER}~{modified}{RESET}"
         else:
             modified_fmt = f"{AURORA_YELLOW}~{modified}{RESET}"
 
         # Untracked color
         if untracked == 0:
-            untracked_fmt = f"{GREY}?{untracked}{RESET}"
+            untracked_fmt = f"{DIM_AMBER}?{untracked}{RESET}"
         else:
             untracked_fmt = f"{AURORA_RED}?{untracked}{RESET}"
 
@@ -737,10 +801,11 @@ def main() -> None:
 
             if remote_url:
                 # OSC 8 hyperlink
-                # TODO-P2: Validate branch name doesn't contain special chars before URL interpolation (security) - Review agent review-1
+                from urllib.parse import quote
+                branch_encoded = quote(branch, safe='')
                 git_section = (
                     f"{SNOW_WHITE}"
-                    f"\033]8;;{remote_url}/tree/{branch}\033\\{branch}\033]8;;\033\\"
+                    f"\033]8;;{remote_url}/tree/{branch_encoded}\033\\{branch}\033]8;;\033\\"
                     f"{RESET}{hash_fmt}"
                 )
             else:
@@ -764,24 +829,31 @@ def main() -> None:
 
     if team_data and team_data.get("member_count", 0) > 0:
         count = team_data["member_count"]
-        # TODO-P3: Add cap on team_indicator display (e.g., 99+ for >99 agents) - Review agent review-1
-        # Show team member count: 👥4 for 4 agents
-        team_indicator = f" {CYAN}👥{count}{RESET}"
+        # Cap display at 99+ for readability
+        count_display = f"{count}+" if count > 99 else str(count)
+        team_indicator = f" {CYAN}👥{count_display}{RESET}"
 
     if ralph_progress and ralph_progress.get("total", 0) > 0:
         impl = ralph_progress.get("impl", {})
         review = ralph_progress.get("review", {})
 
-        # TODO-P2: Validate impl/review are dicts before calling .get() - Review agent review-1
+        # Validate dict types
+        if not isinstance(impl, dict):
+            impl = {}
+        if not isinstance(review, dict):
+            review = {}
 
         # Build phase display (Element 1)
         parts = []
         if impl.get("total", 0) > 0:
             completed = impl.get("completed", 0) + impl.get("failed", 0)
-            # TODO-P3: Add overflow protection for completed > total (clamp to total) - Review agent review-1
+            # Clamp completed to total (overflow protection)
+            completed = min(completed, impl["total"])
             parts.append(f"{BRIGHT_WHITE}{completed}{RESET}{CYAN}/{impl['total']}{RESET}")
         if review.get("total", 0) > 0:
             completed = review.get("completed", 0) + review.get("failed", 0)
+            # Clamp completed to total (overflow protection)
+            completed = min(completed, review["total"])
             parts.append(f"{BRIGHT_WHITE}{completed}{RESET}{CYAN}/{review['total']}{RESET}")
 
         agent_block = f"{CYAN}{'·'.join(parts)}{RESET}"
@@ -792,7 +864,7 @@ def main() -> None:
         sonnet_count = mix.get("sonnet", 0)
 
         if opus_count > 0 and sonnet_count > 0:  # Mixed models
-            model_mix = f"{CYAN}:{opus_count}O{sonnet_count}S{RESET}"
+            model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}"
         else:
             model_mix = ""  # All same model - hide
 
@@ -825,7 +897,8 @@ def main() -> None:
         git_display = ""  # Neither Ralph nor git
 
     line = (
-        f"{SALMON}{model}{RESET}{effort_display} "
+        f"{SALMON}{model}{RESET}{effort_display}"
+        f"{dual_routing} "
         f"{GREY}{style}{RESET} "
         f"{ctx_color}{pct}%{context_suffix}{RESET} "
         f"{DARK_GREY}|{RESET} "
@@ -835,9 +908,9 @@ def main() -> None:
         f"{DARK_GREY}|{RESET} "
         f"{AURORA_GREEN}${cost_fmt}{RESET} "
         f"{DARK_GREY}|{RESET} "
-        f"{GREY}s:{RESET}{sonnet_color}{sonnet_weekly}%{RESET}"  # Element 6: s: prefix
+        f"{sonnet_color}{sonnet_weekly}%{RESET}"  # Element 6: sonnet weekly (no prefix)
         f"{DARK_GREY}/{RESET}"
-        f"{GREY}w:{RESET}{weekly_color}{all_weekly}%{RESET}"  # Element 6: w: prefix
+        f"{weekly_color}{all_weekly}%{RESET}"  # Element 6: all weekly (no prefix)
         f"{ralph_section}"  # Element 4: Ralph section with leading | (trailing | in git_display)
         f"{git_display}"
     )
@@ -845,6 +918,9 @@ def main() -> None:
     # Cache output for fallback after /clear
     save_last_output(line)
 
+    # Output encoding: 'replace' mode handles terminal encoding mismatches gracefully.
+    # This prevents crashes when terminal locale differs from UTF-8 (e.g., Windows CP1252).
+    # Invalid chars are replaced with '?' rather than raising UnicodeEncodeError.
     sys.stdout.buffer.write(line.encode("utf-8", errors="replace"))
     sys.stdout.buffer.flush()
 

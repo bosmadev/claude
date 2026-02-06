@@ -1,4 +1,0 @@
-# Ralph State Management Dependencies
-
-# File locking for atomic operations (required for concurrent access)
-filelock>=3.13.0
