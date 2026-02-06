@@ -11,6 +11,7 @@ Optimized for speed:
 - Last-output cache fallback for post-/clear persistence
 """
 
+import argparse
 import json
 import os
 import re
@@ -52,13 +53,112 @@ GREY          = "\033[38;5;245m"        # Style name, commit hash, zero counts
 DARK_GREY     = "\033[38;5;240m"        # Separators, parentheses
 SNOW_WHITE    = "\033[38;5;253m"        # Branch name (softer white)
 RESET         = "\033[0m"
+BRIGHT_WHITE  = "\033[1;37m"            # Ralph completed counts
+CYAN          = "\033[36m"              # Ralph progress elements
+YELLOW        = "\033[33m"              # Struggle alert
+
+# Build intelligence colors (for statusline build status)
+BUILD_OK      = "\033[38;5;108m"        # Green - normal operation
+BUILD_WARN    = "\033[38;5;222m"        # Yellow/Amber - minor issues
+BUILD_ERROR   = "\033[38;5;131m"        # Red - build failures
+BUILD_CRITICAL= "\033[38;5;196m"        # Bright red - multiple struggles
+
 
 CACHE_DIR = Path.home() / ".claude"
+
+# Style display mapping (Element 7)
+STYLE_DISPLAY = {"Engineer": "⚙", "Default": "·"}
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _read_ralph_progress(cwd: str) -> dict | None:
+    """Read Ralph progress.json, return dict or None if missing/stale/invalid.
+    
+    Returns None if:
+    - File doesn't exist
+    - File is empty or has parse error
+    - updated_at is older than 5 minutes
+    """
+    try:
+        progress_path = Path(cwd) / ".claude" / "ralph" / "progress.json"
+        if not progress_path.exists():
+            return None
+        
+        content = progress_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        
+        data = json.loads(content)
+        
+        # Check staleness (>5 minutes old)
+        updated_at = data.get("updated_at", "")
+        if updated_at:
+            try:
+                updated_dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                now = datetime.now(updated_dt.tzinfo if updated_dt.tzinfo else None)
+                age_seconds = (now - updated_dt).total_seconds()
+                if age_seconds > 300:  # 5 minutes
+                    return None
+            except (ValueError, TypeError):
+                # Invalid timestamp format - treat as stale
+                return None
+        
+        return data
+    except (OSError, json.JSONDecodeError, KeyError):
+        return None
+
+def read_build_intelligence(cwd: str) -> str:
+    """
+    Read build intelligence data and return formatted statusline segment.
+    
+    Returns empty string if:
+    - File doesn't exist
+    - File is empty or has parse error
+    - No struggling agents detected
+    
+    Returns color-coded status:
+    - Green (BUILD_OK): All agents healthy
+    - Yellow (BUILD_WARN): 1 agent struggling
+    - Red (BUILD_ERROR): 2-3 agents struggling
+    - Bright Red (BUILD_CRITICAL): 4+ agents struggling
+    """
+    try:
+        intel_path = Path(cwd) / ".claude" / "ralph" / "build-intelligence.json"
+        if not intel_path.exists():
+            return ""
+        
+        content = intel_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return ""
+        
+        data = json.loads(content)
+        
+        # Extract struggle summary
+        summary = data.get("summary", {})
+        struggling = summary.get("total_struggling", 0)
+        total = summary.get("total_agents", 0)
+        
+        # No agents or no struggling - show nothing
+        if total == 0 or struggling == 0:
+            return ""
+        
+        # Choose color based on struggle count
+        if struggling == 1:
+            color = BUILD_WARN
+        elif struggling <= 3:
+            color = BUILD_ERROR
+        else:
+            color = BUILD_CRITICAL
+        
+        # Format: "🔥2" for 2 struggling agents
+        return f" {color}🔥{struggling}{RESET}"
+    
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        # Gracefully handle any read/parse errors
+        return ""
 
 def git_run(cwd: str, *args: str) -> str:
     """Run a git command and return stripped stdout, or '' on failure."""
@@ -297,6 +397,124 @@ def color_threshold(value_str: str, green_below: int, yellow_below: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Test Mode Mock Scenarios
+# TODO-TEMP: Remove test mode after Ralph native teams migration (plan item #0)
+# Test mode exists to verify statusline display without running full /start.
+# Once Ralph tracks native team agents, this can be deleted.
+# ---------------------------------------------------------------------------
+
+MOCK_SCENARIOS = {
+    "team_agents": {
+        "name": "Team Agents (Active /start flow)",
+        "stdin": {
+            "cwd": ".",
+            "model": {"id": "claude-opus-4-6", "display_name": "Opus 4.6"},
+            "effort": "high",
+            "context_window": {"used_percentage": 35.5, "context_window_size": 200000},
+            "output_style": {"name": "Engineer"},
+            "cost": {"total_cost_usd": 1.23},
+        },
+        "ralph_progress": {
+            "total": 10,
+            "impl": {"total": 10, "completed": 3, "failed": 0},
+            "review": {"total": 5, "completed": 1, "failed": 0},
+            "model_mix": {"opus": 2, "sonnet": 2},
+            "struggling": 0,
+            "updated_at": datetime.now().isoformat() + "Z",
+        },
+    },
+    "ralph_struggling": {
+        "name": "Ralph Progress with Struggle Alert",
+        "stdin": {
+            "cwd": ".",
+            "model": {"id": "claude-sonnet-4-5", "display_name": "Sonnet 4.5"},
+            "effort": "medium",
+            "context_window": {"used_percentage": 62.0, "context_window_size": 200000},
+            "output_style": {"name": "Engineer"},
+            "cost": {"total_cost_usd": 0.45},
+        },
+        "ralph_progress": {
+            "total": 8,
+            "impl": {"total": 8, "completed": 5, "failed": 1},
+            "review": {"total": 0, "completed": 0, "failed": 0},
+            "model_mix": {"opus": 0, "sonnet": 6},
+            "struggling": 1,
+            "updated_at": datetime.now().isoformat() + "Z",
+        },
+    },
+    "context_window_high": {
+        "name": "High Context Window Usage (1M context)",
+        "stdin": {
+            "cwd": ".",
+            "model": {"id": "claude-sonnet-4-5-1m", "display_name": "Sonnet[1M]"},
+            "effort": "low",
+            "context_window": {"used_percentage": 85.0, "context_window_size": 1000000},
+            "output_style": {"name": "Default"},
+            "cost": {"total_cost_usd": 0.89},
+        },
+        "ralph_progress": None,
+    },
+    "no_ralph": {
+        "name": "No Ralph (Standard Session)",
+        "stdin": {
+            "cwd": ".",
+            "model": {"id": "claude-opus-4-6", "display_name": "Opus 4.6"},
+            "effort": "medium",
+            "context_window": {"used_percentage": 15.0, "context_window_size": 200000},
+            "output_style": {"name": "Engineer"},
+            "cost": {"total_cost_usd": 0.12},
+        },
+        "ralph_progress": None,
+    },
+}
+
+
+def run_test_mode() -> None:
+    """Run statusline in test mode, cycling through mock scenarios."""
+    print("\n=== Statusline Test Mode ===\n", file=sys.stderr)
+
+    for scenario_key, scenario in MOCK_SCENARIOS.items():
+        print(f"\n--- Scenario: {scenario['name']} ---", file=sys.stderr)
+
+        # Prepare mock ralph progress file if needed
+        # NOTE: Write to cwd-based path, not CACHE_DIR (matches _read_ralph_progress logic)
+        cwd_for_test = scenario["stdin"].get("cwd", ".")
+        if scenario.get("ralph_progress"):
+            progress_path = Path(cwd_for_test) / ".claude" / "ralph" / "progress.json"
+            progress_path.parent.mkdir(parents=True, exist_ok=True)
+            progress_path.write_text(json.dumps(scenario["ralph_progress"], indent=2), encoding="utf-8")
+        else:
+            # Clear ralph progress
+            progress_path = Path(cwd_for_test) / ".claude" / "ralph" / "progress.json"
+            if progress_path.exists():
+                progress_path.unlink()
+
+        # Mock stdin by writing to temp file and reading it
+        mock_stdin = json.dumps(scenario["stdin"])
+
+        # Save original stdin
+        original_stdin = sys.stdin
+
+        try:
+            # Replace stdin with mock data
+            from io import StringIO
+            sys.stdin = StringIO(mock_stdin)
+
+            # Run main logic
+            main()
+
+            print("", file=sys.stderr)  # Newline after output
+
+        finally:
+            # Restore original stdin
+            sys.stdin = original_stdin
+
+        time.sleep(0.5)  # Brief pause between scenarios
+
+    print("\n=== Test Mode Complete ===\n", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -333,14 +551,45 @@ def main() -> None:
             model = (model_val.get("display_name", "Claude") or "Claude").split()[0]
         else:
             model = str(model_val).split()[0] if model_val else "Claude"
+
+    # ------------------------------------------------------------------
+    # Effort indicator (Opus 4.6 only: low/medium/high)
+    # ------------------------------------------------------------------
+    effort_raw = ""
+    # Try multiple possible field locations in stdin JSON
+    if isinstance(inp.get("effort"), str):
+        effort_raw = inp["effort"]
+    elif isinstance(inp.get("output_config"), dict):
+        effort_raw = inp["output_config"].get("effort", "")
+    elif isinstance(inp.get("reasoning_effort"), str):
+        effort_raw = inp["reasoning_effort"]
+    # Fallback: check environment variable
+    if not effort_raw:
+        effort_raw = os.environ.get("CLAUDE_CODE_EFFORT_LEVEL", "")
+
+    EFFORT_CFG = {
+        "low":    {"sym": "\u2193", "color": AURORA_GREEN},    # ↓ Green
+        "medium": {"sym": "\u2192", "color": GREY},             # → Grey
+        "high":   {"sym": "\u2191", "color": AURORA_YELLOW},    # ↑ Yellow
+    }
+    cfg = EFFORT_CFG.get(effort_raw.lower().strip()) if effort_raw else None
+    effort_display = f" {cfg['color']}{cfg['sym']}{RESET}" if cfg else ""
+
     ctx_val = inp.get("context_window", {})
     pct     = int(float(ctx_val.get("used_percentage", 0) if isinstance(ctx_val, dict) else 0))
     style_val = inp.get("output_style", {})
     style_raw = (style_val.get("name", "default") if isinstance(style_val, dict) else str(style_val)) or "default"
-    style   = style_raw[0].upper() + style_raw[1:]  # capitalize first letter
+    style_capitalized = style_raw[0].upper() + style_raw[1:]  # capitalize first letter
+    style = STYLE_DISPLAY.get(style_capitalized, style_capitalized[0:3])  # Element 7: gear icon
 
     # Context % color
     ctx_color = color_threshold(str(pct), 50, 80)
+
+    # Context window suffix: show /1M when sonnet[1m] is active
+    model_raw_str = inp.get("model", "")
+    if isinstance(model_raw_str, dict):
+        model_raw_str = model_raw_str.get("name", "") or model_raw_str.get("id", "")
+    context_suffix = "/1M" if "[1m]" in str(model_raw_str).lower() else ""
 
     # ------------------------------------------------------------------
     # Usage data (stale-while-revalidate, never blocks)
@@ -359,33 +608,10 @@ def main() -> None:
     five_hour_color = color_threshold(five_hour, 70, 90)
 
     # ------------------------------------------------------------------
-    # Daily cost (CET timezone, valid 24h across sessions)
+    # Session cost (Element 5)
     # ------------------------------------------------------------------
-    try:
-        cost_date = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d")
-    except Exception:
-        cost_date = datetime.now().strftime("%Y-%m-%d")
-    cost_dir = CACHE_DIR / "daily-cost"
-    cost_dir.mkdir(parents=True, exist_ok=True)
-
-    session_id   = inp.get("session_id", "")
     session_cost = inp.get("cost", {}).get("total_cost_usd", 0)
-
-    if session_id and session_cost and session_cost != "null":
-        try:
-            cost_file = cost_dir / f"{cost_date}-{session_id}.cost"
-            cost_file.write_text(str(session_cost), encoding="utf-8")
-        except OSError:
-            pass
-
-    # Sum all session costs for today
-    daily_cost = 0.0
-    for p in cost_dir.glob(f"{cost_date}-*.cost"):
-        try:
-            daily_cost += float(p.read_text(encoding="utf-8").strip())
-        except (OSError, ValueError):
-            pass
-    cost_fmt = f"{daily_cost:.2f}"
+    cost_fmt = f"{session_cost:.2f}"
 
     # ------------------------------------------------------------------
     # Git info (parallel batch)
@@ -470,12 +696,65 @@ def main() -> None:
             git_section += f" {git_status}"
 
     # ------------------------------------------------------------------
+    # Ralph progress section (Elements 1-4)
+    # ------------------------------------------------------------------
+    ralph_section = ""
+    ralph_progress = _read_ralph_progress(cwd)
+    
+    if ralph_progress and ralph_progress.get("total", 0) > 0:
+        impl = ralph_progress.get("impl", {})
+        review = ralph_progress.get("review", {})
+        
+        # Build phase display (Element 1)
+        parts = []
+        if impl.get("total", 0) > 0:
+            completed = impl.get("completed", 0) + impl.get("failed", 0)
+            parts.append(f"{BRIGHT_WHITE}{completed}{RESET}{CYAN}/{impl['total']}{RESET}")
+        if review.get("total", 0) > 0:
+            completed = review.get("completed", 0) + review.get("failed", 0)
+            parts.append(f"{BRIGHT_WHITE}{completed}{RESET}{CYAN}/{review['total']}{RESET}")
+        
+        agent_block = f"{CYAN}{'·'.join(parts)}{RESET}"
+        
+        # Model mix suffix (Element 3)
+        mix = ralph_progress.get("model_mix", {})
+        opus_count = mix.get("opus", 0)
+        sonnet_count = mix.get("sonnet", 0)
+        
+        if opus_count > 0 and sonnet_count > 0:  # Mixed models
+            model_mix = f"{CYAN}:{opus_count}O{sonnet_count}S{RESET}"
+        else:
+            model_mix = ""  # All same model - hide
+        
+        # Struggle alert (Element 2)
+        struggle = ralph_progress.get("struggling", 0)
+        struggle_indicator = f"{YELLOW}⚠️{RESET}" if struggle > 0 else ""
+        
+        # Build intelligence indicator (read from build-intelligence.json)
+        build_intel = read_build_intelligence(cwd)
+        
+        # Combine Ralph section (with leading separator only; trailing separator added conditionally)
+        ralph_section = f" {DARK_GREY}|{RESET} {agent_block}{model_mix}{struggle_indicator}{build_intel}"
+
+    # ------------------------------------------------------------------
     # Output
     # ------------------------------------------------------------------
+    # Separator logic:
+    # - Ralph includes leading |, needs trailing | only if git follows
+    # - No Ralph: needs | before git
+    if ralph_section and git_section:
+        git_display = f" {DARK_GREY}|{RESET} {git_section}"
+    elif ralph_section:
+        git_display = ""  # Ralph visible but no git - no trailing separator
+    elif git_section:
+        git_display = f" {DARK_GREY}|{RESET} {git_section}"  # No Ralph - add separator before git
+    else:
+        git_display = ""  # Neither Ralph nor git
+
     line = (
-        f"{SALMON}{model}{RESET} "
+        f"{SALMON}{model}{RESET}{effort_display} "
         f"{GREY}{style}{RESET} "
-        f"{ctx_color}{pct}%{RESET} "
+        f"{ctx_color}{pct}%{context_suffix}{RESET} "
         f"{DARK_GREY}|{RESET} "
         f"{five_hour_color}{five_hour}%{RESET}"
         f"{DARK_GREY}/{RESET}"
@@ -483,11 +762,11 @@ def main() -> None:
         f"{DARK_GREY}|{RESET} "
         f"{AURORA_GREEN}${cost_fmt}{RESET} "
         f"{DARK_GREY}|{RESET} "
-        f"{sonnet_color}{sonnet_weekly}%{RESET}"
+        f"{GREY}s:{RESET}{sonnet_color}{sonnet_weekly}%{RESET}"  # Element 6: s: prefix
         f"{DARK_GREY}/{RESET}"
-        f"{weekly_color}{all_weekly}%{RESET} "
-        f"{DARK_GREY}|{RESET} "
-        f"{git_section}"
+        f"{GREY}w:{RESET}{weekly_color}{all_weekly}%{RESET}"  # Element 6: w: prefix
+        f"{ralph_section}"  # Element 4: Ralph section with leading | (trailing | in git_display)
+        f"{git_display}"
     )
 
     # Cache output for fallback after /clear
@@ -498,4 +777,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Claude Code Statusline")
+    parser.add_argument("--test", action="store_true", help="Run test mode with mock scenarios")
+    args = parser.parse_args()
+
+    if args.test:
+        run_test_mode()
+    else:
+        main()
