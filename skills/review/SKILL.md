@@ -154,6 +154,53 @@ Security (OWASP Top 10) and Design (WCAG AAA) are now **always included** in def
 // TODO-P2: Color contrast 3.2:1 below 4.5:1 minimum (WCAG AA requires 4.5:1 for normal text, 3:1 for large text) - Review agent [ID]
 ```
 
+## VERIFY+FIX Checklist Integration
+
+Review agents include verification checks from `agents/verify-fix.md`, but in read-only/TODO-leaving mode (NOT auto-fixing). These checks ensure comprehensive review coverage beyond code logic.
+
+### Additional Review Checks (TODO-Leaving Mode)
+
+Review agents check these items and leave TODO comments where issues are found:
+
+1. **Build Compatibility**
+   - Verify changes don't introduce build errors
+   - Check for breaking changes in imports/exports
+   - TODO-P1 if build would fail
+
+2. **Type Safety**
+   - Missing type annotations
+   - Unsafe type assertions (`any`, `as any`)
+   - TODO-P2 for missing types, TODO-P1 for unsafe casts
+
+3. **Lint & Code Style**
+   - Violations of project lint rules (Biome/ESLint)
+   - Inconsistent formatting patterns
+   - TODO-P3 for style issues
+
+4. **Dead Code Detection**
+   - Unused imports in reviewed files
+   - Unreferenced private functions
+   - TODO-P3 for dead code cleanup
+
+5. **CLAUDE.md Adherence**
+   - Check if changes follow patterns documented in CLAUDE.md
+   - Verify hook registrations match settings.json (if modified)
+   - TODO-P2 if deviating from documented patterns
+
+6. **Symbol Integrity (Serena)**
+   - Use `mcp__serena__find_referencing_symbols` to check for broken references
+   - Verify changed symbols don't break downstream code
+   - TODO-P1 if symbol changes break references
+
+**Key Difference from verify-fix agent:**
+- verify-fix: Auto-fixes simple issues immediately
+- review agents: Leave TODO-P1/P2/P3 comments for ALL findings
+- review agents: Do NOT modify code directly
+
+**Reference:** See `agents/verify-fix.md` for full verification criteria. Review agents apply the same checklist but in read-only reporting mode.
+
+**PR Review Integration:** See `agents/pr-review-base.md` for shared design review criteria used by both verify-fix and review agents.
+
 ## Workflow
 
 ### Step 0: Emit Start Signal

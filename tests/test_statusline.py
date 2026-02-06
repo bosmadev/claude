@@ -70,7 +70,9 @@ def test_minutes_until_reset_near():
     resets_at = future.isoformat()
 
     result = minutes_until_reset(resets_at)
-    assert "30m" in result or "29m" in result  # Allow for processing time
+    # Returns just the number as string, e.g. "30" or "29"
+    mins = int(result)
+    assert 29 <= mins <= 31  # Allow for processing time
 
 
 def test_minutes_until_reset_far():
@@ -82,34 +84,36 @@ def test_minutes_until_reset_far():
     resets_at = future.isoformat()
 
     result = minutes_until_reset(resets_at)
-    assert "3h" in result or "2h59" in result  # Allow for processing time
+    # Returns minutes as string, e.g. "179" or "180"
+    mins = int(result)
+    assert 178 <= mins <= 181  # Allow for processing time
 
 
 def test_color_threshold_green():
     """Test color threshold green zone."""
     from scripts.statusline import color_threshold
 
+    # Returns only the color code, not the value
     result = color_threshold("15", green_below=20, yellow_below=40)
-    assert "\033[38;5;108m" in result  # AURORA_GREEN
-    assert "15" in result
+    assert result == "\033[38;5;108m"  # AURORA_GREEN
 
 
 def test_color_threshold_yellow():
     """Test color threshold yellow zone."""
     from scripts.statusline import color_threshold
 
+    # Returns only the color code, not the value
     result = color_threshold("30", green_below=20, yellow_below=40)
-    assert "\033[38;5;222m" in result  # AURORA_YELLOW
-    assert "30" in result
+    assert result == "\033[38;5;222m"  # AURORA_YELLOW
 
 
 def test_color_threshold_red():
     """Test color threshold red zone."""
     from scripts.statusline import color_threshold
 
+    # Returns only the color code, not the value
     result = color_threshold("50", green_below=20, yellow_below=40)
-    assert "\033[38;5;131m" in result  # AURORA_RED
-    assert "50" in result
+    assert result == "\033[38;5;131m"  # AURORA_RED
 
 
 def test_read_usage_cache_missing(tmp_path: Path):
@@ -119,9 +123,11 @@ def test_read_usage_cache_missing(tmp_path: Path):
     cache_file = tmp_path / "nonexistent.json"
     result = read_usage_cache(cache_file)
 
-    assert result["cost"] == "$0.00"
-    assert result["usage_pct"] == "0"
-    assert result["minutes"] == "0m"
+    # Check actual fields returned by read_usage_cache
+    assert result["all_weekly"] == "?"
+    assert result["sonnet_weekly"] == "?"
+    assert result["five_hour_pct"] == "?"
+    assert result["five_hour_resets_at"] == ""
 
 
 def test_read_usage_cache_valid(tmp_path: Path):
@@ -130,17 +136,21 @@ def test_read_usage_cache_valid(tmp_path: Path):
 
     cache_file = tmp_path / "usage-cache.json"
     cache_data = {
-        "cost_usd": 1.50,
-        "usage_pct": 25,
-        "resets_at": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(),
+        "seven_day": {"utilization": 25.5},
+        "seven_day_sonnet": {"utilization": 15.2},
+        "five_hour": {
+            "utilization": 10.0,
+            "resets_at": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(),
+        },
     }
     cache_file.write_text(json.dumps(cache_data))
 
     result = read_usage_cache(cache_file)
 
-    assert result["cost"] == "$1.50"
-    assert result["usage_pct"] == "25"
-    assert "h" in result["minutes"] or "m" in result["minutes"]
+    assert result["all_weekly"] == "25"
+    assert result["sonnet_weekly"] == "15"
+    assert result["five_hour_pct"] == "10"
+    assert result["five_hour_resets_at"] != ""
 
 
 @pytest.mark.integration
@@ -162,11 +172,10 @@ def test_git_batch(tmp_path: Path):
     cwd = str(Path.cwd())
     result = git_batch(cwd)
 
-    # Should return dict with keys
+    # Should return dict with keys (using actual field names)
     assert "branch" in result
-    assert "hash" in result
-    assert "ahead" in result
-    assert "behind" in result
+    assert "commit_hash" in result  # Not "hash"
+    assert "ahead_behind" in result  # Single field, not separate
     assert "status" in result
 
     # Branch should not be empty
