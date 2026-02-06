@@ -768,8 +768,7 @@ In-process mode only. Split-pane mode requires tmux (not available natively on W
 Manual cleanup required after team sessions:
 
 1. Shut down each teammate: "Ask the {name} teammate to shut down"
-2. Lead runs: "Clean up the team"
-3. Removes `~/.claude/teams/{name}/` and `~/.claude/tasks/{name}/`
+2. Lead calls `TeamDelete()` to remove `~/.claude/teams/{name}/` and `~/.claude/tasks/{name}/`
 
 ### When to Use
 
@@ -810,6 +809,8 @@ subprocess spawning). Native Agent Teams integration is planned in 3 phases:
 file relay, or TaskList performance for 50+ agents.
 
 ### Idle Notification Handling
+
+**Note:** Message types (`idle_notification`, `task_completed`) are auto-delivered by the system. They are NOT hookable events — do not add them to settings.json hooks.
 
 Agent Teams teammates send `idle_notification` JSON on every turn end.
 For high-agent-count scenarios (Ralph), filter with:

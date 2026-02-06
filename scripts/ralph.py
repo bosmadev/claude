@@ -46,6 +46,7 @@ if sys.platform != "win32":
     import pty
 import shutil
 import subprocess
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,8 +87,8 @@ CONTEXT_FILE_PATH = Path.home() / ".claude" / ".claude" / "ralph" / "pending-con
 # Model Configuration for VERIFY+FIX Phases
 # =============================================================================
 
-# Model to use for all VERIFY+FIX operations
-VERIFY_FIX_MODEL = "claude-opus-4-6"  # Current Opus, date-less alias
+# Model to use for all VERIFY+FIX operations (configurable via CLAUDE_CODE_VERIFY_FIX_MODEL)
+VERIFY_FIX_MODEL = os.environ.get("CLAUDE_CODE_VERIFY_FIX_MODEL", "claude-opus-4-6")
 
 # Effort levels for different VERIFY+FIX modes
 VERIFY_FIX_EFFORT: dict[str, str] = {
@@ -473,8 +474,6 @@ class StruggleMetrics:
 
 
 # TODO-P1: StruggleDetector thread safety — metrics dict accessed without locks, concurrent agents could corrupt data
-# TODO-P2: StruggleDetector._update_struggle_state uses > not >= for thresholds (inconsistent with docstring "Error count > 3")
-# TODO-P3: StruggleDetector.write_intelligence catches TypeError but json.dumps unlikely to raise it with dict input
 class StruggleDetector:
     """
     Detect when agents are struggling with repeated failures.
@@ -495,7 +494,7 @@ class StruggleDetector:
     def __init__(self, base_dir: Path):
         """
         Initialize StruggleDetector.
-        
+
         Args:
             base_dir: Base directory for output files
         """
@@ -503,119 +502,130 @@ class StruggleDetector:
         self.output_path = base_dir / self.OUTPUT_FILE
         self._metrics: dict[str, StruggleMetrics] = {}
         self._start_times: dict[str, datetime] = {}
+        self._lock = threading.Lock()
     
     def record_error(self, agent_id: str, error_msg: str = "") -> None:
         """
         Record an error for an agent.
-        
+
         Args:
             agent_id: Agent identifier (e.g., "agent-1")
             error_msg: Error message text
         """
-        if agent_id not in self._metrics:
-            self._metrics[agent_id] = StruggleMetrics()
-        
-        metrics = self._metrics[agent_id]
-        metrics.error_count += 1
-        if error_msg:
-            metrics.last_error = error_msg
-        
-        # Update struggle state
-        self._update_struggle_state(agent_id)
+        with self._lock:
+            if agent_id not in self._metrics:
+                self._metrics[agent_id] = StruggleMetrics()
+
+            metrics = self._metrics[agent_id]
+            metrics.error_count += 1
+            if error_msg:
+                metrics.last_error = error_msg
+
+            # Update struggle state
+            self._update_struggle_state(agent_id)
     
     def record_retry(self, agent_id: str) -> None:
         """
         Record a retry attempt for an agent.
-        
+
         Args:
             agent_id: Agent identifier
         """
-        if agent_id not in self._metrics:
-            self._metrics[agent_id] = StruggleMetrics()
-        
-        self._metrics[agent_id].retry_count += 1
-        self._update_struggle_state(agent_id)
+        with self._lock:
+            if agent_id not in self._metrics:
+                self._metrics[agent_id] = StruggleMetrics()
+
+            self._metrics[agent_id].retry_count += 1
+            self._update_struggle_state(agent_id)
     
     def start_tracking(self, agent_id: str) -> None:
         """
         Start time tracking for an agent.
-        
+
         Args:
             agent_id: Agent identifier
         """
-        self._start_times[agent_id] = datetime.now()
+        with self._lock:
+            self._start_times[agent_id] = datetime.now()
     
     def stop_tracking(self, agent_id: str) -> None:
         """
         Stop time tracking and update elapsed time.
-        
+
         Args:
             agent_id: Agent identifier
         """
-        if agent_id in self._start_times:
-            elapsed = (datetime.now() - self._start_times[agent_id]).total_seconds()
-            if agent_id not in self._metrics:
-                self._metrics[agent_id] = StruggleMetrics()
-            self._metrics[agent_id].elapsed_time = elapsed
-            del self._start_times[agent_id]
+        with self._lock:
+            if agent_id in self._start_times:
+                elapsed = (datetime.now() - self._start_times[agent_id]).total_seconds()
+                if agent_id not in self._metrics:
+                    self._metrics[agent_id] = StruggleMetrics()
+                self._metrics[agent_id].elapsed_time = elapsed
+                del self._start_times[agent_id]
     
     def is_struggling(self, agent_id: str) -> bool:
         """
         Check if an agent is currently struggling.
-        
+
         Args:
             agent_id: Agent identifier
-            
+
         Returns:
             True if agent is struggling
         """
-        if agent_id not in self._metrics:
-            return False
-        return self._metrics[agent_id].struggling
+        with self._lock:
+            if agent_id not in self._metrics:
+                return False
+            return self._metrics[agent_id].struggling
     
     def get_struggle_summary(self) -> dict:
         """
         Get summary of struggling agents.
-        
+
         Returns:
             Dictionary with total_struggling and total_agents counts
         """
-        struggling = sum(1 for m in self._metrics.values() if m.struggling)
-        return {
-            "total_struggling": struggling,
-            "total_agents": len(self._metrics)
-        }
+        with self._lock:
+            struggling = sum(1 for m in self._metrics.values() if m.struggling)
+            return {
+                "total_struggling": struggling,
+                "total_agents": len(self._metrics)
+            }
     
     def write_intelligence(self) -> None:
         """Write build intelligence data to JSON file."""
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        data = {
-            "timestamp": datetime.now().isoformat(),
-            "agents": {
-                agent_id: metrics.to_dict()
-                for agent_id, metrics in self._metrics.items()
-            },
-            "summary": self.get_struggle_summary()
-        }
-        
+
+        with self._lock:
+            data = {
+                "timestamp": datetime.now().isoformat(),
+                "agents": {
+                    agent_id: metrics.to_dict()
+                    for agent_id, metrics in self._metrics.items()
+                },
+                "summary": self.get_struggle_summary()
+            }
+
         try:
             self.output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        except (OSError, TypeError) as e:
+        except OSError as e:
             # Log but don't fail - intelligence is nice-to-have
             print(f"Warning: Failed to write build intelligence: {e}", file=sys.stderr)
     
     def _update_struggle_state(self, agent_id: str) -> None:
         """
         Update struggling flag based on thresholds.
-        
+
         Args:
             agent_id: Agent identifier
+
+        Note:
+            Called from within locked sections - does not acquire lock.
         """
         metrics = self._metrics[agent_id]
         metrics.struggling = (
-            metrics.error_count > self.ERROR_THRESHOLD or
-            metrics.retry_count > self.RETRY_THRESHOLD
+            metrics.error_count >= self.ERROR_THRESHOLD or
+            metrics.retry_count >= self.RETRY_THRESHOLD
         )
 
 

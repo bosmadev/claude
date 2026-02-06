@@ -1,6 +1,6 @@
 # Claude Code Configuration
 
-#### Based on claude-code: 2.1.32
+#### Based on claude-code: 2.1.34
 
 **Stack:** Next.js 16.1+, React 19+, Node.js 25+, Python 3.14+, FastAPI, TypeScript 5.9.3+, Tailwind CSS v4+, Shadcn UI, Radix, Playwright, Vitest, Biome 2.3.10+, Knip 5.77.1+, uv 0.9.18+, pnpm 10.26.2+.
 

@@ -367,6 +367,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\sandbox-boundary.py pretool",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "python C:\\Users\\Dennis\\.claude\\hooks\\security-gate.py pre-bash",
             "timeout": 5
           },
