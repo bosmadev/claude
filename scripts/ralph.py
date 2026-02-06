@@ -3524,7 +3524,7 @@ This will properly close the Ralph session."""
                 pass
 
         # Update progress.json with aggregated cost
-        self._update_progress_with_agent_cost(cost_usd)
+        self._update_progress_with_agent_cost(cost_usd, exit_status=exit_status)
 
         # Handle retry logic for failed agents
         retry_queued = False
@@ -3545,8 +3545,8 @@ This will properly close the Ralph session."""
             "retry_queued": retry_queued,
         }
 
-    def _update_progress_with_agent_cost(self, cost_usd: float) -> None:
-        """Update progress.json with aggregated agent cost."""
+    def _update_progress_with_agent_cost(self, cost_usd: float, exit_status: int = 0) -> None:
+        """Update progress.json with aggregated agent cost and completion status."""
         try:
             progress_path = self.base_dir / self.PROGRESS_FILE
             if progress_path.exists():
@@ -3562,6 +3562,14 @@ This will properly close the Ralph session."""
                 }
 
             progress["cost_usd"] = round(progress.get("cost_usd", 0) + cost_usd, 4)
+            
+            # Update completion counters based on exit status
+            if exit_status == 0:
+                progress["completed"] = progress.get("completed", 0) + 1
+            else:
+                progress["failed"] = progress.get("failed", 0) + 1
+            progress["done"] = progress.get("completed", 0) + progress.get("failed", 0)
+            
             progress["updated_at"] = datetime.now().isoformat()
 
             progress_path.parent.mkdir(parents=True, exist_ok=True)
