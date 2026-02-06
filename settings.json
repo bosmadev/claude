@@ -4,7 +4,8 @@
     "FORCE_COLOR": "1",
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_TMPDIR": "C:\\Users\\Dennis\\AppData\\Local\\Temp\\claude-tmp"
+    "CLAUDE_CODE_TMPDIR": "C:\\Users\\Dennis\\AppData\\Local\\Temp\\claude-tmp",
+    "PYTHONPYCACHEPREFIX": "C:\\Users\\Dennis\\.claude\\.cache\\pycache"
   },
   "attribution": {
     "commit": "",
@@ -205,7 +206,16 @@
       "Bash(netstat:*)",
       "Bash(findstr:*)",
       "Bash(reg query:*)",
-      "Bash(cmd.exe /c *:*)"
+      "Bash(cmd.exe /c *:*)",
+      "Bash(dir:*)",
+      "Bash(wmic:*)",
+      "Bash(Get-Process:*)",
+      "Bash(Select-Object:*)",
+      "Bash(Format-Table:*)",
+      "Bash(Format-List:*)",
+      "Bash(Sort-Object:*)",
+      "Bash(Where-Object:*)",
+      "Bash(Measure-Object:*)"
     ],
     "deny": [],
     "ask": [
@@ -336,6 +346,15 @@
             "type": "command",
             "command": "python C:\\Users\\Dennis\\.claude\\hooks\\ralph.py session-start",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\scripts\\repair-sessions-index.py --hook",
+            "timeout": 15
           }
         ]
       }

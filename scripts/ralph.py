@@ -99,6 +99,24 @@ VERIFY_FIX_EFFORT: dict[str, str] = {
 
 
 # =============================================================================
+# Atomic Write Helper
+# =============================================================================
+
+def _atomic_write_json(path: str, data: dict) -> None:
+    """Atomically write JSON data to file using temp + rename."""
+    import tempfile
+    dir_name = os.path.dirname(os.path.abspath(path))
+    with tempfile.NamedTemporaryFile(
+        mode='w', suffix='.tmp', dir=dir_name, delete=False
+    ) as tmp:
+        json.dump(data, tmp, indent=2)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp_path = tmp.name
+    os.replace(tmp_path, path)
+
+
+# =============================================================================
 # Receipt Audit Trail System
 # =============================================================================
 
@@ -473,7 +491,6 @@ class StruggleMetrics:
         }
 
 
-# TODO-P1: StruggleDetector thread safety — metrics dict accessed without locks, concurrent agents could corrupt data
 class StruggleDetector:
     """
     Detect when agents are struggling with repeated failures.
@@ -826,9 +843,6 @@ class TaskQueue:
             lines.append("")
 
 
-# TODO-P1: TaskQueueParser DUPLICATE CLASS DEFINITION — lines 816 and 951, second definition shadows first, potential merge conflict artifact
-# TODO-P2: TaskQueueParser regex pattern on line 861 — greedy .+? before optional dependency group could fail if description contains em-dash/en-dash
-# TODO-P3: TaskQueueParser.parse_markdown returns list[QueueTask] but QueueTask.id field never populated (always None)
 class TaskQueueParser:
     """
     Parser for markdown task lists with priority-based format.
@@ -845,123 +859,6 @@ class TaskQueueParser:
     - Plan file parsing
     - Round-trip conversion (markdown <-> QueueTask)
     """
-    
-    @staticmethod
-    def parse_markdown(content: str) -> list[QueueTask]:
-        """
-        Parse markdown content into list of QueueTask objects.
-        
-        Recognizes:
-        - [ ] = pending
-        - [/] = in_progress
-        - [x] = completed
-        - P1/P2/P3 = priority (stored in description)
-        - "blocked by:" or "depends on:" = dependencies
-        
-        Format: - [x] P1: Description - blocked by: task-name
-        
-        Args:
-            content: Markdown text with task list items
-            
-        Returns:
-            List of QueueTask objects
-        """
-        import re
-        
-        tasks = []
-        lines = content.split("\n")
-        
-        # Pattern: - [checkbox] P1: Description - blocked by: task-name
-        # Supports em-dash (\u2014), en-dash (\u2013), and hyphen as separators
-        task_pattern = re.compile(
-            r"^-\s+\[([ x/])\]\s+(?:P[123]:\s+)?(.+?)(?:\s+[\u2014\u2013-]\s+(?:blocked by|depends on):\s+(.+))?$",
-            re.IGNORECASE
-        )
-        
-        for line in lines:
-            stripped = line.strip()
-            match = task_pattern.match(stripped)
-            if not match:
-                continue
-            
-            checkbox, description, dependencies = match.groups()
-            
-            # Determine status from checkbox
-            if checkbox == "x":
-                status = "completed"
-            elif checkbox == "/":
-                status = "in_progress"
-            else:
-                status = "pending"
-            
-            # Parse blocked_by list
-            blocked_list = []
-            if dependencies:
-                blocked_list = [d.strip() for d in dependencies.split(",")]
-            
-            tasks.append(QueueTask(
-                description=description.strip(),
-                status=status,
-                blocked_by=blocked_list
-            ))
-        
-        return tasks
-    
-    @staticmethod
-    def parse_plan_file(path: Path) -> list[QueueTask]:
-        """
-        Parse a plan markdown file and extract action items.
-        
-        Looks for task list items anywhere in the document.
-        Useful for extracting work items from plan files.
-        
-        Args:
-            path: Path to plan .md file
-            
-        Returns:
-            List of QueueTask objects
-        """
-        if not path.exists():
-            raise FileNotFoundError(f"Plan file not found: {path}")
-        
-        content = path.read_text(encoding="utf-8")
-        return TaskQueueParser.parse_markdown(content)
-    
-    @staticmethod
-    def to_markdown(tasks: list[QueueTask]) -> str:
-        """
-        Convert list of QueueTask objects to markdown format.
-        
-        Round-trip compatible with parse_markdown.
-        
-        Args:
-            tasks: List of QueueTask objects
-            
-        Returns:
-            Markdown-formatted task list
-        """
-        lines = []
-        
-        for task in tasks:
-            # Determine checkbox
-            if task.status == "completed":
-                checkbox = "[x]"
-            elif task.status == "in_progress":
-                checkbox = "[/]"
-            else:
-                checkbox = "[ ]"
-            
-            # Build line
-            line = f"- {checkbox} {task.description}"
-            
-            # Add dependencies if present (use hyphen for compatibility)
-            if task.blocked_by:
-                deps = ", ".join(task.blocked_by)
-                line += f" - blocked by: {deps}"
-            
-            lines.append(line)
-        
-        return "\n".join(lines)
     
     @staticmethod
     def parse_markdown(content: str) -> list[QueueTask]:
@@ -1100,8 +997,7 @@ class WorkStealingQueue:
             content = queue.to_markdown()
             self.queue_path.write_text(content, encoding="utf-8")
         else:
-            with open(self.queue_path, "w") as f:
-                json.dump(queue.to_dict(), f, indent=2)
+            _atomic_write_json(str(self.queue_path), queue.to_dict())
 
     def claim_next_task(self, agent_id: str) -> Optional[QueueTask]:
         """
@@ -2407,8 +2303,7 @@ class RalphProtocol:
             # Backup before overwrite (keep last 3)
             self._backup_config()
 
-            with open(self.state_path, 'w') as f:
-                json.dump(state.to_dict(), f, indent=2)
+            _atomic_write_json(str(self.state_path), state.to_dict())
             self.log_activity(f"State written: {state.session_id}")
             return True
         except IOError as e:
@@ -2763,8 +2658,7 @@ class RalphProtocol:
             if hasattr(self, '_perf_tracker') and self._perf_tracker:
                 progress_data["performance"] = self._perf_tracker.summary()
             self.progress_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.progress_path, 'w') as f:
-                json.dump(progress_data, f)
+            _atomic_write_json(str(self.progress_path), progress_data)
         except IOError:
             pass
 
@@ -3671,8 +3565,7 @@ This will properly close the Ralph session."""
             progress["updated_at"] = datetime.now().isoformat()
 
             progress_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(progress_path, 'w') as f:
-                json.dump(progress, f, indent=2)
+            _atomic_write_json(str(progress_path), progress)
         except (IOError, json.JSONDecodeError):
             pass
 
@@ -3726,8 +3619,7 @@ This will properly close the Ralph session."""
 
             # Write updated retry queue
             retry_queue_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(retry_queue_path, 'w') as f:
-                json.dump(retry_queue, f, indent=2)
+            _atomic_write_json(str(retry_queue_path), retry_queue)
 
             self.log_activity(
                 f"Agent {agent_id} queued for retry (attempt {current_retry_count + 1}/{MAX_RETRIES})"
@@ -4280,21 +4172,32 @@ Begin scoped verification of {len(changed_files)} files now.
         plan_file = plan_files[0]
         self.log_activity(f"Verifying plan: {plan_file.name}")
         
-        # Build verification prompt
-        prompt = f"""You are a PLAN VERIFICATION agent. Your job is to verify that ALL tasks in the plan have been implemented.
+        # Build verification prompt with artifact checking
+        prompt = f"""You are a PLAN VERIFICATION agent. Your job is to verify that ALL tasks in the plan have been implemented, including checking referenced artifacts.
 
 ## Instructions:
 
 1. Read the plan file: {plan_file}
-2. For each task/requirement in the plan:
+2. Scan for referenced artifacts (file:/// URLs, absolute paths, scratchpad references)
+3. Read each referenced artifact (HTML mockups, design specs, config files)
+4. For each task/requirement in the plan:
    - Use Serena find_symbol to verify implementation exists
    - Check for actual code, not TODOs or placeholders
-   - Mark as ✅ DONE or ❌ MISSING
-3. Output a structured verification report
+   - Cross-reference artifact values (colors, layout, config) against code
+   - Mark as ✅ DONE, ⚠️ PARTIAL, or ❌ MISSING
+5. Output a structured verification report
+
+## Artifact Verification:
+
+- **HTML mockups**: Extract CSS color hex values and compare against code constants (exact match)
+- **Design specs**: Check typography, spacing, layout rules are applied
+- **Config files**: Verify env vars, hook registrations, schema fields match
+- Read the plan-verifier agent config at ~/.claude/agents/plan-verifier.md for full protocol
 
 ## Verification Rules:
 
-- A task is DONE if: code exists, tests pass, no TODOs remain for that feature
+- A task is DONE if: code exists, matches plan AND artifacts, no TODOs remain
+- A task is PARTIAL if: implementation exists but doesn't match artifact values
 - A task is MISSING if: no implementation found, only TODOs, or incomplete
 - Use Serena find_referencing_symbols to verify integration
 - Check multiple files if a feature spans components
@@ -4306,9 +4209,12 @@ When complete, output exactly:
 PLAN_VERIFICATION_COMPLETE: [PASS|FAIL]
 VERIFIED_TASKS: [count]
 MISSING_TASKS: [count]
+PARTIAL_TASKS: [count]
+ARTIFACTS_CHECKED: [count]
 
-Then for each MISSING task, output:
+Then for each MISSING or PARTIAL task, output:
 MISSING: [Brief task description]
+GAP_FILL: [Specific action needed to complete]
 
 Then if verification passes:
 {self.RALPH_COMPLETE_SIGNAL}
@@ -4452,10 +4358,10 @@ CHANGED FILES:
 {quality_context}
 REVIEW PROTOCOL:
 1. Focus on {specialty} issues in the changed files
-2. For each issue found, leave a TODO comment in the code:
-   - TODO-P1: Critical issues (security, crashes)
-   - TODO-P2: Important issues (bugs, performance)
-   - TODO-P3: Improvements (refactoring, docs)
+2. For each issue found, leave a TODO comment in the code with appropriate priority:
+   - P1: Critical issues (security, crashes)
+   - P2: Important issues (bugs, performance)
+   - P3: Improvements (refactoring, docs)
 
 3. Report findings to .claude/review-agents.md in this format:
    | Severity | Category | File | Issue | Suggestion |
@@ -5219,16 +5125,41 @@ SPECIALTY FOCUS ({specialty}):
                     state.plan_verification_retries += 1
                     self.write_state(state)
 
-                    # Note: Missing tasks are logged but not re-queued to implementation phase.
-                    # Automatic looping back would require significant restructuring of run_loop
-                    # to handle phase transitions and prevent infinite loops. Instead, missing
-                    # tasks are surfaced in the verification report for manual follow-up or
-                    # can be addressed via a new /start invocation targeting the specific tasks.
+                    # Generate gap-fill prompts for the /start skill to spawn
+                    gap_fill_prompts = []
+                    for i, missing_task in enumerate(missing_tasks[:5], 1):
+                        gap_prompt = (
+                            f"RALPH GAP-FILL Agent {i}/{min(len(missing_tasks), 5)}: "
+                            f"Complete this missing plan task:\n\n"
+                            f"**Missing task:** {missing_task}\n\n"
+                            f"**Plan file:** {plan_file}\n\n"
+                            f"Read the plan for full context. Implement ONLY this specific "
+                            f"missing task. When complete, output: ULTRATHINK_COMPLETE"
+                        )
+                        gap_fill_prompts.append(gap_prompt)
+
+                    # Write gap-fill prompts for /start to pick up
+                    gap_fill_path = self.base_dir / ".claude" / "ralph" / "gap-fill-prompts.json"
+                    try:
+                        gap_fill_path.write_text(
+                            json.dumps(gap_fill_prompts, indent=2),
+                            encoding="utf-8"
+                        )
+                    except OSError:
+                        pass
+
                     self.log_activity(
-                        f"Plan incomplete - {len(missing_tasks)} tasks missing (retry {state.plan_verification_retries}/2)"
+                        f"Plan incomplete - {len(missing_tasks)} tasks missing "
+                        f"(retry {state.plan_verification_retries}/2, "
+                        f"{len(gap_fill_prompts)} gap-fill prompts generated)"
                     )
                     for i, missing_task in enumerate(missing_tasks[:5], 1):
                         self.log_activity(f"  Missing: {missing_task[:100]}")
+
+                    print(
+                        f"  {self._C_DIM}Gap-fill prompts written to .claude/ralph/gap-fill-prompts.json{self._C_RESET}",
+                        flush=True
+                    )
                 else:
                     max_retries_msg = " (max retries reached)" if state and state.plan_verification_retries >= 2 else ""
                     print(

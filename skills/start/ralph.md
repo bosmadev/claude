@@ -229,7 +229,9 @@ As team lead, monitor agent progress:
 - Use `TaskList` to track overall progress
 - Use `SendMessage(type="message", recipient="agent-X")` to redirect stuck agents
 - When all IMPL tasks complete, spawn VERIFY+FIX agents
-- When all VERIFY tasks complete, spawn review agents (if enabled)
+- When VERIFY+FIX completes, run PLAN VERIFICATION (checks plan + artifacts)
+- If plan verification finds gaps: read `.claude/ralph/gap-fill-prompts.json` and spawn gap-fill agents
+- When plan verification passes, spawn review agents (if enabled)
 - Send `SendMessage(type="shutdown_request")` to each agent when done
 
 #### 4f. Teardown

@@ -176,7 +176,6 @@ jobs:
           branch_prefix: ""
           branch_name_template: "{{entityType}}-{{entityNumber}}-{{description}}"
           allowed_bots: "dependabot[bot],renovate[bot]"
-          bot_rate_limit: 10  # Max 10 bot PRs per hour
           track_progress: true
           use_sticky_comment: true
           include_fix_links: true

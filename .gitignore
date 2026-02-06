@@ -13,6 +13,7 @@ plans/
 tasks/
 node_modules/
 daily-cost/
+.cache/
 __pycache__/
 .venv/
 venv/
@@ -28,6 +29,7 @@ statsig/
 tmp/
 security/
 teams/
+memory/
 
 # Files
 !.gitkeep
@@ -52,3 +54,4 @@ settings.json.*
 nul
 .statusline-last
 .model-info
+.session-info
