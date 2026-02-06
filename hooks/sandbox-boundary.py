@@ -5,7 +5,7 @@ Layered Defense - Layer 2: Sandbox Boundaries
 Enforces file system, network, and process restrictions to keep agents
 within safe operational boundaries.
 
-Integration: PostToolUse hook for Bash commands
+Integration: PreToolUse hook for Bash commands (blocks before execution)
 """
 
 import json
@@ -186,17 +186,16 @@ def check_executable(command: str) -> Dict[str, any]:
 # Hook Handler
 # =============================================================================
 
-def posttool_bash_sandbox(tool_input: Dict, tool_output: Dict, cwd: str) -> Optional[Dict]:
+def pretool_bash_sandbox(tool_input: Dict, cwd: str) -> Optional[Dict]:
     """
-    PostToolUse hook for Bash - check sandbox boundaries.
+    PreToolUse hook for Bash - block commands violating sandbox boundaries.
 
     Args:
         tool_input: Tool input containing command
-        tool_output: Tool output (not used for sandbox)
         cwd: Current working directory
 
     Returns:
-        Optional[Dict]: Injection dict if violation detected, None otherwise
+        Optional[Dict]: Error result if violation detected, None otherwise
     """
     command = tool_input.get("command", "")
 
@@ -204,17 +203,8 @@ def posttool_bash_sandbox(tool_input: Dict, tool_output: Dict, cwd: str) -> Opti
     exe_check = check_executable(command)
     if not exe_check["allowed"]:
         return {
-            "type": "system-reminder",
-            "content": f"""
-🚧 Sandbox Boundary Violation - Executable Not Allowed
-
-Command: {command}
-Reason: {exe_check["reason"]}
-
-Allowed executables: {', '.join(ALLOWED_EXECUTABLES)}
-
-If this executable is required, ask user for approval first.
-            """
+            "result": "error",
+            "error": f"🚧 Blocked by sandbox boundary: {exe_check['reason']}\n\nCommand: {command}\nAllowed executables: {', '.join(ALLOWED_EXECUTABLES)}\n\nIf this executable is required, ask user for approval first."
         }
 
     # Check for file operations outside project
@@ -231,17 +221,8 @@ If this executable is required, ask user for approval first.
                 file_check = check_file_access(word, cwd)
                 if not file_check["allowed"]:
                     return {
-                        "type": "system-reminder",
-                        "content": f"""
-🚧 Sandbox Boundary Violation - File Access Restricted
-
-Path: {word}
-Reason: {file_check["reason"]}
-
-Project root: {cwd}
-
-If this path access is required, ask user for approval first.
-                        """
+                        "result": "error",
+                        "error": f"🚧 Blocked by sandbox boundary: {file_check['reason']}\n\nPath: {word}\nProject root: {cwd}\n\nIf this path access is required, ask user for approval first."
                     }
 
     # Check for network operations
@@ -251,20 +232,11 @@ If this path access is required, ask user for approval first.
                 host_check = check_network_host(word)
                 if not host_check["allowed"]:
                     return {
-                        "type": "system-reminder",
-                        "content": f"""
-🚧 Sandbox Boundary Violation - Network Host Not Whitelisted
-
-Host: {word}
-Reason: {host_check["reason"]}
-
-Allowed hosts: {', '.join(ALLOWED_HOSTS)}
-
-If this host is safe, ask user for approval first.
-                        """
+                        "result": "error",
+                        "error": f"🚧 Blocked by sandbox boundary: {host_check['reason']}\n\nHost: {word}\nAllowed hosts: {', '.join(ALLOWED_HOSTS)}\n\nIf this host is safe, ask user for approval first."
                     }
 
-    return None  # All checks passed
+    return None  # All checks passed - allow command to proceed
 
 
 # =============================================================================
@@ -279,7 +251,7 @@ def main():
 
     hook_type = sys.argv[1]
 
-    if hook_type != "posttool":
+    if hook_type != "pretool":
         sys.exit(0)  # Not our hook
 
     # Read hook payload from stdin
@@ -291,10 +263,9 @@ def main():
             sys.exit(0)  # Not Bash tool
 
         tool_input = payload.get("tool_input", {})
-        tool_output = payload.get("tool_output", {})
         cwd = payload.get("cwd", ".")
 
-        result = posttool_bash_sandbox(tool_input, tool_output, cwd)
+        result = pretool_bash_sandbox(tool_input, cwd)
 
         if result:
             print(json.dumps(result))
