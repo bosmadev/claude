@@ -31,7 +31,7 @@ CI optimization involves caching, parallelization, and eliminating unnecessary s
 model: opus
 color: orange
 skills:
-  - quality
+  - review
 tools:
   - Read
   - Grep

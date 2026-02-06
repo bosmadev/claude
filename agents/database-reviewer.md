@@ -32,7 +32,7 @@ Complex features benefit from upfront review of data modeling and access pattern
 model: sonnet
 color: blue
 skills:
-  - quality
+  - review
 tools:
   - Read
   - Grep

@@ -43,7 +43,7 @@ JSDoc/TSDoc must match function signatures. Use the doc-accuracy-checker for par
 model: sonnet
 color: green
 skills:
-  - quality
+  - review
 tools:
   - Read
   - Grep
