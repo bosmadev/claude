@@ -725,10 +725,7 @@ def main() -> None:
     _ROUTE_MAP = {"sonnet": "S", "opus": "O", "haiku": "H"}
     route_letter = _ROUTE_MAP.get(subagent_model.lower().strip(), "")
     if route_letter:
-        sub_effort = _MODEL_EFFORT_DEFAULT.get(route_letter, "")
-        sub_cfg = EFFORT_CFG.get(sub_effort)
-        sub_arrow = f"{sub_cfg['color']}{sub_cfg['sym']}{RESET}" if sub_cfg else ""
-        dual_routing = f"{DARK_GREY} / {RESET}{GREY}{route_letter}{RESET}{sub_arrow}"
+        dual_routing = f"{DARK_GREY} / {RESET}{GREY}{route_letter}{RESET}"
     else:
         dual_routing = ""
 
@@ -882,7 +879,7 @@ def main() -> None:
         count = team_data["member_count"]
         # Cap display at 99+ for readability
         count_display = f"{count}+" if count > 99 else str(count)
-        team_indicator = f" {CYAN}👥{count_display}{RESET}"
+        team_indicator = f"{CYAN}∷{count_display}{RESET}"
 
     if ralph_progress and ralph_progress.get("total", 0) > 0:
         impl = ralph_progress.get("impl", {})
@@ -914,10 +911,15 @@ def main() -> None:
         opus_count = mix.get("opus", 0)
         sonnet_count = mix.get("sonnet", 0)
 
-        if opus_count > 0 and sonnet_count > 0:  # Mixed models
-            model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}"
+        if opus_count > 0 or sonnet_count > 0:
+            mix_parts = []
+            if opus_count > 0:
+                mix_parts.append(f"{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}")
+            if sonnet_count > 0:
+                mix_parts.append(f"{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}")
+            model_mix = f"{CYAN}:{RESET}{''.join(mix_parts)}"
         else:
-            model_mix = ""  # All same model - hide
+            model_mix = ""
 
         # Struggle alert (Element 2)
         struggle = ralph_progress.get("struggling", 0)
@@ -927,7 +929,7 @@ def main() -> None:
         build_intel = read_build_intelligence(cwd)
 
         # Combine Ralph section (with leading separator only; trailing separator added conditionally)
-        ralph_section = f" {DARK_GREY}|{RESET} {agent_block}{model_mix}{struggle_indicator}{build_intel}{team_indicator}"
+        ralph_section = f" {DARK_GREY}|{RESET} {team_indicator} {agent_block}{model_mix}{struggle_indicator}{build_intel}"
     elif team_data:
         # Fallback: Native Agent Teams active but no progress.json
         # Try to compute progress from task list
@@ -950,21 +952,29 @@ def main() -> None:
             opus_count = mix.get("opus", 0)
             sonnet_count = mix.get("sonnet", 0)
             
-            if opus_count > 0 and sonnet_count > 0:
-                model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}"
+            if opus_count > 0 or sonnet_count > 0:
+                mix_parts = []
+                if opus_count > 0:
+                    mix_parts.append(f"{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}")
+                if sonnet_count > 0:
+                    mix_parts.append(f"{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}")
+                model_mix = f"{CYAN}:{RESET}{''.join(mix_parts)}"
             else:
                 model_mix = ""
             
             # Build intelligence indicator
             build_intel = read_build_intelligence(cwd)
-            
-            ralph_section = f" {DARK_GREY}|{RESET} {agent_block}{model_mix}{build_intel}{team_indicator}"
+
+            # Struggle from build intelligence (fallback doesn't have ralph_progress)
+            struggle_indicator = ""
+
+            ralph_section = f" {DARK_GREY}|{RESET} {team_indicator} {agent_block}{model_mix}{struggle_indicator}{build_intel}"
         elif team_indicator:
             # Show team indicator only
-            ralph_section = f" {DARK_GREY}|{RESET}{team_indicator}"
+            ralph_section = f" {DARK_GREY}|{RESET} {team_indicator}"
     elif team_indicator:
         # Show team indicator even without Ralph progress
-        ralph_section = f" {DARK_GREY}|{RESET}{team_indicator}"
+        ralph_section = f" {DARK_GREY}|{RESET} {team_indicator}"
 
     # ------------------------------------------------------------------
     # Output
@@ -993,9 +1003,9 @@ def main() -> None:
         f"{DARK_GREY}|{RESET} "
         f"{AURORA_GREEN}${cost_fmt}{RESET} "
         f"{DARK_GREY}|{RESET} "
-        f"{sonnet_color}{sonnet_weekly}%{RESET}"  # Element 6: sonnet weekly (no prefix)
+        f"{GREY}s:{RESET}{sonnet_color}{sonnet_weekly}%{RESET}"
         f"{DARK_GREY}/{RESET}"
-        f"{weekly_color}{all_weekly}%{RESET}"  # Element 6: all weekly (no prefix)
+        f"{GREY}w:{RESET}{weekly_color}{all_weekly}%{RESET}"
         f"{ralph_section}"  # Element 4: Ralph section with leading | (trailing | in git_display)
         f"{git_display}"
     )
