@@ -42,7 +42,7 @@ Cascading type errors need root-cause analysis. Use the build-error-resolver to 
 model: opus
 color: blue
 skills:
-  - quality
+  - review
 tools:
   - Read
   - Grep

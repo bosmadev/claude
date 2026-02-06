@@ -36,7 +36,6 @@ model: opus
 color: cyan
 skills:
   - review
-  - quality
 ---
 
 You are a code review orchestrator responsible for coordinating comprehensive multi-agent reviews.
