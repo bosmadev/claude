@@ -39,7 +39,7 @@ assistant: "Let me use the performance-profiler agent to analyze your code for m
 Memory leaks require systematic analysis. Use the performance-profiler to identify common leak patterns.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: orange
 skills:
   - quality

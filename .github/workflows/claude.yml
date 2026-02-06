@@ -50,10 +50,20 @@ on:
         required: false
         type: choice
         options:
-          - claude-sonnet-4-5-20250929      # default — best speed/quality balance
-          - claude-opus-4-5-20251101        # complex reasoning, architecture
-          - claude-haiku-4-5-20251001       # budget fallback, simple tasks
+          - claude-sonnet-4-5-20250929
+          - claude-sonnet-4-5-20250929[1m]
+          - claude-opus-4-6
+          - claude-haiku-4-5-20251001
         default: claude-sonnet-4-5-20250929
+      effort:
+        description: 'Effort level (Opus only)'
+        required: false
+        type: choice
+        options:
+          - high
+          - medium
+          - low
+        default: high
       max_turns:
         description: 'Max conversation turns'
         required: false
@@ -155,6 +165,8 @@ jobs:
 
       - name: Claude Code Action
         uses: anthropics/claude-code-action@v1
+        env:
+          CLAUDE_CODE_EFFORT_LEVEL: ${{ inputs.effort || 'high' }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           trigger_phrase: "@claude review"

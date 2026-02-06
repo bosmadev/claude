@@ -82,6 +82,20 @@ REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 CONTEXT_FILE_PATH = Path.home() / ".claude" / ".claude" / "ralph" / "pending-context.md"
 
+# =============================================================================
+# Model Configuration for VERIFY+FIX Phases
+# =============================================================================
+
+# Model to use for all VERIFY+FIX operations
+VERIFY_FIX_MODEL = "claude-opus-4-6"  # Current Opus, date-less alias
+
+# Effort levels for different VERIFY+FIX modes
+VERIFY_FIX_EFFORT: dict[str, str] = {
+    "scoped": "medium",   # Per-task verification: fast, focused
+    "full": "high",       # Post-all-impl: thorough final gate
+    "plan": "medium",     # Plan verification: moderate depth
+}
+
 
 def inject_context(context: str, agent_id: str | None = None) -> bool:
     """
@@ -3591,12 +3605,12 @@ Serena provides LSP-powered semantic code analysis. To enable:
                 result = await loop.run_in_executor(
                     None,
                     lambda: subprocess.run(
-                        ["claude", "--print", "--model", "claude-opus-4-5-20251101", prompt],
+                        ["claude", "--print", "--model", VERIFY_FIX_MODEL, prompt],
                         cwd=str(self.base_dir),
                         capture_output=True,
                         text=True,
                         timeout=600,  # 10 min timeout for verify-fix
-                        env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
+                        env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli", "CLAUDE_CODE_EFFORT_LEVEL": VERIFY_FIX_EFFORT["full"]},
                     )
                 )
 
@@ -3733,12 +3747,12 @@ Begin scoped verification of {len(changed_files)} files now.
             result = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    ["claude", "--print", "--model", "claude-opus-4-5-20251101", prompt],
+                    ["claude", "--print", "--model", VERIFY_FIX_MODEL, prompt],
                     cwd=str(self.base_dir),
                     capture_output=True,
                     text=True,
                     timeout=600,  # 10 min timeout
-                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
+                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli", "CLAUDE_CODE_EFFORT_LEVEL": VERIFY_FIX_EFFORT["scoped"]},
                 )
             )
 
@@ -3860,12 +3874,12 @@ Begin plan verification now. Be thorough - this is the final gate before review.
             result = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    ["claude", "--print", "--model", "claude-opus-4-5-20251101", prompt],
+                    ["claude", "--print", "--model", VERIFY_FIX_MODEL, prompt],
                     cwd=str(self.base_dir),
                     capture_output=True,
                     text=True,
                     timeout=600,  # 10 min timeout
-                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
+                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli", "CLAUDE_CODE_EFFORT_LEVEL": VERIFY_FIX_EFFORT["plan"]},
                 )
             )
             

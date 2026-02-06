@@ -40,7 +40,7 @@ GraphQL schema review request triggers api-reviewer for graph design patterns.
 </commentary>
 </example>
 
-model: opus
+model: sonnet
 color: cyan
 skills:
   - quality

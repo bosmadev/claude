@@ -29,7 +29,7 @@ assistant: "I'll use the Task tool to launch the commit-reviewer agent to provid
 This agent can provide best practices and review specific commits for improvement.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: yellow
 skills:
   - commit

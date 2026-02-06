@@ -40,7 +40,7 @@ assistant: "I'll use the performance-reviewer agent to analyze the database quer
 Scalability issues require performance profiling. Use the performance-reviewer for query analysis and caching recommendations.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: blue
 skills:
   - review

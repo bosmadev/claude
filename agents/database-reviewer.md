@@ -29,7 +29,7 @@ assistant: "I'll use the Task tool to launch the database-reviewer agent to revi
 Complex features benefit from upfront review of data modeling and access patterns.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: blue
 skills:
   - quality

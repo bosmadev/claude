@@ -40,7 +40,7 @@ assistant: "I'll use the security-reviewer agent to perform a pre-deployment sec
 Pre-deployment is a critical checkpoint. Use the security-reviewer for comprehensive security validation.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: red
 skills:
   - review
