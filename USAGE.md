@@ -188,6 +188,47 @@
 
 ---
 
+## Model Routing Reference
+
+Complete routing matrix for all Claude Code components. See CLAUDE.md "3-Layer Model Routing" for architecture.
+
+| Component | Model | Effort | Context | Budget | Layer | Notes |
+|-----------|-------|--------|---------|--------|-------|-------|
+| `/start` main | Opus 4.6 | ↑ High | 200K | Opus | — | Complex orchestration |
+| `/start` impl agents | Opus 4.6 | ↑ High | 200K | Opus | L3 | Task(model="opus") override |
+| `/start` plan agents | Opus 4.6 | → Med | 200K | Opus | L3 | Planning phase |
+| `/start sonnet` plan | Sonnet 4.5 | N/A | 200K | Sonnet | L3 | Budget-mode planning |
+| `/review` main | Opus 4.6 | → Med | 200K | Opus | — | Orchestration only |
+| `/review` agents | Sonnet 4.5 | N/A | 1M | Sonnet | L3 | Read-only, [1m] context |
+| `/repotodo` | Opus 4.6 | ↑ High | 200K | Opus | — | Critical code changes |
+| `/reviewplan` | Opus 4.6 | → Med | 200K | Opus | — | Plan edits only |
+| `/commit` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, pattern matching |
+| `/openpr` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, read commits |
+| `/screen` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, screenshots |
+| `/youtube` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, transcription |
+| `/launch` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, browser |
+| `/token` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, token mgmt |
+| `/rule` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, settings |
+| `/init-repo` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, templates |
+| VERIFY+FIX scoped | Opus 4.6 | → Med | 200K | Opus | — | Per-task checks |
+| VERIFY+FIX full | Opus 4.6 | ↑ High | 200K | Opus | — | Final gate |
+| VERIFY+FIX plan | Opus 4.6 | → Med | 200K | Opus | — | Plan checks |
+| Post-review agents | Sonnet 4.5 | N/A | 1M | Sonnet | L3 | Read-only review |
+| GitHub Actions (default) | Sonnet 4.5 | N/A | 200K | Sonnet | — | Auto PR |
+| GitHub Actions (manual) | User picks | User picks | Varies | Varies | — | workflow_dispatch |
+| Impl agent .md (6) | opus | — | — | — | .md | Code changes |
+| Review agent .md (9) | sonnet | — | — | — | .md | Read-only analysis |
+| Coordination .md (2) | opus | — | — | — | .md | Orchestration |
+| Security .md (2) | mixed | — | — | — | .md | owasp:opus, sentinel:sonnet |
+
+**Legend:**
+- **Effort:** ↓ Low, → Med, ↑ High (Opus only)
+- **Layer:** L1 = Global default, L2 = Skill fork, L3 = Per-agent override, .md = Agent config
+- **Budget:** Separate token budgets for Sonnet vs Opus (Sonnet ~17%, Opus ~38%)
+- **[1m]:** Extended 1M context window for large file review
+
+---
+
 ## Infrastructure
 
 ### Token Refresh (4-Layer Defense)
@@ -476,9 +517,21 @@ Use the GitHub Actions tab to run these on-demand:
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
-| `model` | `claude-sonnet-4-5` | AI model (Sonnet/Opus/Haiku) |
+| `model` | `claude-sonnet-4-5-20250929` | AI model (see Model Options below) |
+| `effort` | `high` | Effort level for Opus models (high/medium/low) |
 | `max_turns` | 25 | Conversation length limit |
 | `timeout` | 30 minutes | Workflow timeout |
+
+#### Model Options
+
+| Model | Purpose | Use Case |
+|-------|---------|----------|
+| `claude-sonnet-4-5-20250929` | Default - best speed/quality balance | Most PRs, general review |
+| `claude-sonnet-4-5-20250929[1m]` | 1M context for large PRs | Multi-file refactors, large diffs |
+| `claude-opus-4-6` | Maximum reasoning and analysis | Complex architecture, critical security |
+| `claude-haiku-4-5-20251001` | Budget fallback, simple tasks | Dependency updates, style checks |
+
+**Note:** The `effort` parameter only affects Opus models. It controls the depth of reasoning: `high` for thorough analysis, `medium` for balanced review, `low` for quick checks.
 
 ### Required Secrets
 
@@ -592,9 +645,11 @@ gh run view <run-id> --log
 |----------|------------------|-----------|
 | Dependency PRs | Haiku | Simple diffs, pattern matching |
 | Documentation | Sonnet | Good balance |
-| Architecture review | Opus | Complex reasoning needed |
-| Security audit | Opus | Critical analysis |
+| Large refactors (100+ files) | Sonnet[1m] | 1M context handles huge diffs |
+| Architecture review | Opus (high effort) | Complex reasoning needed |
+| Security audit | Opus (high effort) | Critical analysis |
 | Style checks | Haiku | Fast, cheap, effective |
+| Quick security scan | Opus (low effort) | Faster than high, still thorough |
 
 ### Advanced Configuration
 
@@ -677,3 +732,88 @@ Use these checkpoints during complex tasks:
 | `mcp__serena__think_about_collected_information` | After gathering context     |
 | `mcp__serena__think_about_task_adherence`        | Before making changes       |
 | `mcp__serena__think_about_whether_you_are_done`  | Before reporting completion |
+
+---
+
+## Agent Teams (In-Process)
+
+Experimental feature enabling parallel Claude Code instances within a session.
+
+### Configuration
+
+Enabled via `settings.json`:
+- `"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"` in env block
+
+In-process mode only. Split-pane mode requires tmux (not available natively on Windows).
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+| -------- | ------ |
+| `Shift+Tab` | Delegate mode (lead coordinates, no code) |
+| `Shift+Up/Down` | Select teammate to message |
+| `Ctrl+T` | Toggle task list |
+
+### Cleanup Workflow
+
+Manual cleanup required after team sessions:
+
+1. Shut down each teammate: "Ask the {name} teammate to shut down"
+2. Lead runs: "Clean up the team"
+3. Removes `~/.claude/teams/{name}/` and `~/.claude/tasks/{name}/`
+
+### When to Use
+
+| Scenario | Tool |
+| -------- | ---- |
+| Parallel research, multi-perspective reviews | Agent Teams |
+| Implementation loops, VERIFY+FIX, push-gated | Ralph (`/start`) |
+| Competing hypotheses, architecture exploration | Agent Teams |
+| Sequential task execution with review | Ralph (`/start`) |
+
+### Ralph Compatibility
+
+- Teammates are full Claude Code instances (load CLAUDE.md, hooks, skills)
+- Ralph hooks fire per-teammate (ralph.py, guards.py all execute)
+- Task() subagents work inside teammates
+- "No nested teams" = teammates can't spawn their OWN teams
+- Token cost: each teammate = full instance — Ralph agents inside = expensive
+
+### Limitations
+
+- No session resumption after team ends
+- One team per session
+- No nested teams (teammates can't create sub-teams)
+- Lead agent is fixed (can't change lead)
+
+---
+
+## Auto Memory
+
+Claude Code automatically persists learnings across conversations.
+
+### How It Works
+
+- **Directory:** `~/.claude/projects/{project}/memory/MEMORY.md`
+- **System prompt injection:** First 200 lines of `MEMORY.md` are included in every system prompt
+- **Topic files:** Create separate files (e.g., `debugging.md`, `patterns.md`) and link from MEMORY.md
+- **Auto-updates:** Claude writes insights as it works — no manual config needed
+
+### Best Practices
+
+- Keep `MEMORY.md` concise (under 200 lines) — overflow goes to linked topic files
+- Organize by topic, not chronologically
+- Record: problem constraints, strategies that worked/failed, lessons learned
+- Update or remove memories that become wrong or outdated
+
+### vs Serena Memories
+
+| Feature | Auto Memory | Serena Memory |
+| ------- | ----------- | ------------- |
+| Storage | `~/.claude/projects/*/memory/` | Serena's internal memory store |
+| Scope | Per-project, auto-loaded | Per-project, manual read |
+| Access | System prompt (always visible) | `mcp__serena__read_memory` |
+| Write | `Edit`/`Write` tools | `mcp__serena__write_memory` |
+| Use case | Quick-reference patterns | Detailed architectural notes |
+
+Both systems are complementary — use Auto Memory for high-frequency patterns, Serena for deep architectural context.

@@ -40,7 +40,7 @@ assistant: "I'll use the architecture-reviewer agent to evaluate the inheritance
 Complex inheritance often indicates design issues. Use the architecture-reviewer for composition vs inheritance analysis.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: green
 skills:
   - review

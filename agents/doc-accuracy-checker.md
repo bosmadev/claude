@@ -40,7 +40,7 @@ assistant: "I'll use the doc-accuracy-checker agent to cross-reference your JSDo
 JSDoc/TSDoc must match function signatures. Use the doc-accuracy-checker for parameter and return type verification.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: green
 skills:
   - quality

@@ -40,7 +40,7 @@ assistant: "I'll use the a11y-reviewer agent to run a full WCAG AAA compliance s
 Pre-audit checks prevent surprises. Use the a11y-reviewer for thorough accessibility validation.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: purple
 skills:
   - review
