@@ -196,9 +196,9 @@ Group issues by severity (Critical -> High -> Medium -> Low).
 
 If no issues found, confirm with a brief summary of what was checked.
 
-## Integration with /quality
+## Integration with /review
 
-After database review, suggest running `/quality` if TypeScript issues are detected in the data layer, particularly:
+After database review, suggest running `/review` if TypeScript issues are detected in the data layer, particularly:
 
 - Missing type annotations on query results
 - Use of `any` for database responses

@@ -300,7 +300,7 @@ def read_usage_cache(cache_path: Path) -> dict:
         "five_hour_pct": "?",
         "five_hour_resets_at": "",
     }
-    if cache_path.exists():
+    if cache_path.exists() and cache_path.stat().st_size > 0:
         try:
             data = json.loads(cache_path.read_text(encoding="utf-8"))
             # TODO-P2: Add bounds check for utilization values (clamp 0-100 or warn on >100) - Review agent review-1
@@ -316,8 +316,11 @@ def read_usage_cache(cache_path: Path) -> dict:
             # Reset time
             result["five_hour_resets_at"] = data.get("five_hour", {}).get("resets_at", "")
         except json.JSONDecodeError:
-            # Cache file corrupted - will be refreshed on next cycle
-            pass
+            # Cache file corrupted - delete so next cycle triggers refresh
+            try:
+                cache_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         except (OSError, PermissionError) as exc:
             # I/O error reading cache - log to stderr
             import sys
@@ -368,12 +371,16 @@ def refresh_usage_cache_bg(cache_path: Path) -> None:
                     "anthropic-beta": "oauth-2025-04-20",
                 },
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=4) as resp:
                 body = resp.read().decode("utf-8")
+            # Atomic write: write to temp file then rename to prevent
+            # empty cache from timeout-kill interrupting mid-write
             cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(body, encoding="utf-8")
-        except Exception:
-            pass
+            tmp_path = cache_path.with_suffix(".tmp")
+            tmp_path.write_text(body, encoding="utf-8")
+            tmp_path.replace(cache_path)
+        except Exception as exc:
+            print(f"[!] Usage cache refresh failed: {exc}", file=sys.stderr)
 
     t = threading.Thread(target=_refresh, daemon=True)
     t.start()
@@ -390,7 +397,7 @@ def fetch_usage_data(cache_path: Path) -> dict:
 
     # Check if cache needs refresh (>5 min old or missing)
     needs_refresh = True
-    if cache_path.exists():
+    if cache_path.exists() and cache_path.stat().st_size > 0:
         try:
             mtime = int(os.path.getmtime(cache_path))
             needs_refresh = (now - mtime) > 300

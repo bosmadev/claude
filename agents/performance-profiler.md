@@ -1,7 +1,7 @@
 ---
 name: performance-profiler
 specialty: profiling
-description: Use this agent for performance analysis, complexity auditing, memory usage optimization, and async pattern review. This agent should be invoked when code performance needs evaluation, before optimizing hot paths, or when investigating slowdowns. It connects to the /quality skill for complexity rules and performance-related linting.
+description: Use this agent for performance analysis, complexity auditing, memory usage optimization, and async pattern review. This agent should be invoked when code performance needs evaluation, before optimizing hot paths, or when investigating slowdowns. It connects to the /review skill for complexity rules and performance-related linting.
 
 Examples:
 <example>
@@ -42,7 +42,7 @@ Memory leaks require systematic analysis. Use the performance-profiler to identi
 model: sonnet
 color: orange
 skills:
-  - quality
+  - review
 tools:
   - Read
   - Grep
@@ -69,13 +69,13 @@ You analyze:
 - **Grep/Glob**: Search for performance anti-patterns
 - **Read**: Examine code for complexity analysis
 - **Bash**: Run profiling and benchmarking tools
-- **/quality skill**: Access complexity rules and linting
+- **/review skill**: Access complexity rules and linting
 
 ## Connected Skills
 
-- **/quality** - Code quality including complexity rules
-  - Use `/quality` for lint-based performance checks
-  - Reference complexity rules within the `/quality` skill for cognitive complexity limits
+- **/review** - Code quality including complexity rules
+  - Use `/review` for lint-based performance checks
+  - Reference complexity rules within the `/review` skill for cognitive complexity limits
   - Access style rules that impact performance
 
 ## Complexity Analysis Framework
@@ -258,8 +258,8 @@ For context on acceptable thresholds:
 
 To invoke connected code standards:
 ```
-/quality                 - Run all checks including complexity
-/quality audit           - Architecture review (includes performance patterns)
+/review                  - Run all checks including complexity
+/review audit            - Architecture review (includes performance patterns)
 ```
 
 Remember: Premature optimization is the root of all evil, but measured optimization is engineering excellence. Always profile before and after changes to validate improvements.
