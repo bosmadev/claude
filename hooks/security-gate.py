@@ -794,6 +794,11 @@ def post_edit_check() -> None:
 
     This is a warning-only hook - it does NOT block edits, only audits them.
     """
+    # TODO-P1: CRITICAL - PostToolUse hook receives tool_result, NOT tool_input
+    # This hook reads tool_input which is ONLY available in PreToolUse hooks
+    # PostToolUse schema: {"tool_name": str, "tool_result": {...}, "tool_input_hash": str}
+    # To detect sensitive file edits AFTER execution, must parse tool_result or use PreToolUse
+    # Current implementation will NEVER detect sensitive files because tool_input is empty
     try:
         # Limit stdin read to prevent memory exhaustion
         raw_input = sys.stdin.read(MAX_STDIN_SIZE)
@@ -810,6 +815,8 @@ def post_edit_check() -> None:
     if tool_name not in ("Edit", "Write"):
         sys.exit(0)
 
+    # TODO-P1: WRONG FIELD - should be tool_result for PostToolUse, not tool_input
+    # This extracts file_path from the WRONG location, will always be empty string
     tool_input = hook_input.get("tool_input", {})
     file_path = tool_input.get("file_path", "")
 

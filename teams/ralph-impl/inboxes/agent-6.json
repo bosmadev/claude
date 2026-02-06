@@ -1,9 +1,0 @@
-[
-  {
-    "from": "agent-6",
-    "text": "{\"type\":\"task_assignment\",\"taskId\":\"6\",\"subject\":\"IMPL-6: Context injection hook\",\"description\":\"Create hooks/context-injection.py for mid-loop context injection. Read Ralph state, inject phase/progress/agent status context. Investigate overlap with team lead agent. Register in settings.json.\",\"assignedBy\":\"agent-6\",\"timestamp\":\"2026-02-06T10:33:08.037Z\"}",
-    "timestamp": "2026-02-06T10:33:08.037Z",
-    "color": "pink",
-    "read": true
-  }
-]

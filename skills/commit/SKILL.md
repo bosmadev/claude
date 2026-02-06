@@ -8,81 +8,43 @@ argument-hint: "[confirm|abort|show|clear|log|summary|help]"
 
 # Commit Workflow
 
-**When invoked, immediately output:** `**SKILL_STARTED:** commit`
+## EXECUTE IMMEDIATELY — DO NOT ANALYZE
 
-Create git commits with scope-prefix style and action verb bullet format.
+**CRITICAL: When `/commit` is invoked with NO arguments, you MUST execute the Phase 1 workflow below IMMEDIATELY. Do NOT research the codebase, do NOT analyze the skill architecture, do NOT write a report about the commit system. JUST DO THE STEPS.**
 
-## Usage
+**Output first:** `**SKILL_STARTED:** commit`
 
-```
-/commit                  - Auto-stage, generate message, move Pending→Ready, show preview
-/commit confirm          - Execute the pending commit
-/commit abort            - Cancel pending commit
-/commit help             - Show this help
-```
+**Then IMMEDIATELY execute these steps in order:**
 
-### Change Tracking Subcommands
+1. Run `git rev-parse --show-toplevel` to find repo root
+2. Run `git status --porcelain` to show what will be staged
+3. Run `git add -A` to stage everything
+4. Run `git diff --cached --stat` to show staged changes
+5. Read `.claude/commit.md` for tracked changes
+6. Analyze ALL staged changes (read diffs, understand what changed)
+7. Generate a scope-prefix subject line (feat/fix/refactor/cleanup/config/docs/test/perf)
+8. Generate categorized bullet points describing the changes
+9. Write the subject + bullets to the `## Ready` section of `.claude/commit.md`
+10. Clear the `## Pending` section
+11. Display the generated commit message as preview
+12. Tell user: "Run `/commit confirm` to execute"
 
-```
-/commit log <path> <action> <desc>  - Log a file change to .claude/commit.md
-/commit show                         - Display current commit.md contents
-/commit clear                        - Clear all pending changes
-/commit summary                      - Generate AI summary of pending changes
-```
+**STOP. Execute the steps above NOW. Do not read further until done.**
 
-| Subcommand | Arguments | Description |
-|------------|-----------|-------------|
-| `log` | `<path> <action> <desc>` | Log a file change (action: create/modify/delete) |
-| `show` | none | Display contents of .claude/commit.md |
-| `clear` | none | Clear all entries from .claude/commit.md |
-| `summary` | none | Generate an AI summary of all pending changes |
+---
 
-## Help Command
+## Subcommand Reference
 
-When arguments equal "help":
-
-```
-/commit - Create commits with scope-prefix style
-
-Usage:
-  /commit [command]
-
-Commands:
-  (no args)        Auto-stage, generate message, move Pending→Ready, show preview
-  confirm          Execute the pending commit
-  abort            Cancel pending commit
-  help             Show this help
-
-Change Tracking:
-  log <path> <action> <desc>   Log a file change to .claude/commit.md ## Pending
-  show                         Display current commit.md contents
-  clear                        Clear all pending changes
-  summary                      Generate AI summary of pending changes
-
-Action Verbs (used in commit.md):
-  Added      New files, features, or functionality
-  Updated    Modifications to existing files
-  Fixed      Bug fixes, error corrections
-  Removed    Deleted files or removed features
-  Improved   Enhancements, better UX, performance
-  Changed    Altered existing behavior
-
-Environment:
-  check-env            Check .env encryption status
-  encrypt              Run pnpm env:encrypt if dotenvx enabled
-
-Note: If dotenvx is configured (env:encrypt in package.json),
-.env files are automatically encrypted before commit generation.
-
-Examples:
-  /commit                    # Generate commit from ## Ready section
-  /commit confirm            # Execute the commit
-  /commit abort              # Cancel pending commit
-  /commit log src/app.ts modify "Added new feature"  # Log to ## Pending
-  /commit show               # View commit.md (both sections)
-  /commit clear              # Clear all sections
-  /commit summary            # Generate summary
-```
+| Command | Action |
+|---------|--------|
+| `/commit` (no args) | Execute Phase 1 above — stage, generate, preview |
+| `/commit confirm` | Execute the commit and push |
+| `/commit abort` | Cancel pending commit |
+| `/commit help` | Show help text |
+| `/commit log <path> <action> <desc>` | Log a file change |
+| `/commit show` | Display commit.md contents |
+| `/commit clear` | Clear all pending changes |
+| `/commit summary` | Generate AI summary |
 
 ## Naming Convention
 

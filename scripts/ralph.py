@@ -472,6 +472,9 @@ class StruggleMetrics:
         }
 
 
+# TODO-P1: StruggleDetector thread safety — metrics dict accessed without locks, concurrent agents could corrupt data
+# TODO-P2: StruggleDetector._update_struggle_state uses > not >= for thresholds (inconsistent with docstring "Error count > 3")
+# TODO-P3: StruggleDetector.write_intelligence catches TypeError but json.dumps unlikely to raise it with dict input
 class StruggleDetector:
     """
     Detect when agents are struggling with repeated failures.
@@ -811,109 +814,26 @@ class TaskQueue:
                 agent_info = f" ({task.claimed_by})" if task.claimed_by else ""
                 lines.append(f"- [/] Task {task.id}: {task.description}{agent_info}")
             lines.append("")
-        
-        if pending:
-            lines.append("## ⏳ Pending")
-            for task in pending:
-                blocked_info = f" (blocked by: {', '.join(task.blocked_by)})" if task.blocked_by else ""
-                lines.append(f"- [ ] Task {task.id}: {task.description}{blocked_info}")
-            lines.append("")
-        
-        return "\n".join(lines)
-    
-    @classmethod
-    def from_markdown(cls, content: str, plan_id: str = None, plan_file: str = None) -> "TaskQueue":
-        """
-        Parse markdown task queue into TaskQueue object.
-        
-        Recognizes:
-        - [ ] = pending
-        - [/] = in_progress
-        - [x] = completed
-        """
-        import re
-        
-        lines = content.split("\n")
-        
-        # Parse frontmatter
-        in_frontmatter = False
-        frontmatter = {}
-        tasks_section = []
-        
-        for line in lines:
-            if line.strip() == "---":
-                if not in_frontmatter:
-                    in_frontmatter = True
-                    continue
-                else:
-                    in_frontmatter = False
-                    continue
-            
-            if in_frontmatter:
-                if ":" in line:
-                    key, value = line.split(":", 1)
-                    frontmatter[key.strip()] = value.strip()
-            else:
-                tasks_section.append(line)
-        
-        # Extract task info from frontmatter or args
-        extracted_plan_id = plan_id or frontmatter.get("plan_id", "unknown")
-        extracted_plan_file = plan_file or frontmatter.get("plan_file", "")
-        created_at = frontmatter.get("created", datetime.now().isoformat())
-        
-        # Parse task list items
-        tasks = []
-        task_pattern = re.compile(r"^-\s+\[([ x/])\]\s+Task\s+(\d+):\s+(.+?)(?:\s+\(([^)]+)\))?(?:\s+\(blocked by:\s+([^)]+)\))?$")
-        
-        for line in tasks_section:
-            match = task_pattern.match(line.strip())
-            if match:
-                checkbox, task_id, description, claimed_by, blocked_by = match.groups()
-                
-                # Determine status from checkbox
-                if checkbox == "x":
-                    status = "completed"
-                elif checkbox == "/":
-                    status = "in_progress"
-                else:
-                    status = "pending"
-                
-                # Parse blocked_by list
-                blocked_list = []
-                if blocked_by:
-                    blocked_list = [b.strip() for b in blocked_by.split(",")]
-                
-                tasks.append(QueueTask(
-                    id=task_id,
-                    description=description.strip(),
-                    status=status,
-                    claimed_by=claimed_by,
-                    blocked_by=blocked_list
-                ))
-        
-        return cls(
-            plan_id=extracted_plan_id,
-            plan_file=extracted_plan_file,
-            created_at=created_at,
-            tasks=tasks
-        )
 
 
+# TODO-P1: TaskQueueParser DUPLICATE CLASS DEFINITION — lines 816 and 951, second definition shadows first, potential merge conflict artifact
+# TODO-P2: TaskQueueParser regex pattern on line 861 — greedy .+? before optional dependency group could fail if description contains em-dash/en-dash
+# TODO-P3: TaskQueueParser.parse_markdown returns list[QueueTask] but QueueTask.id field never populated (always None)
 class TaskQueueParser:
     """
     Parser for markdown task lists with priority-based format.
     
     Supports formats:
-    - [ ] P1: Description — blocked by: task-name
-    - [x] P2: Description — completed
-    - [ ] P3: Description — depends on: task-name
+    - [ ] P1: Description - blocked by: task-name
+    - [x] P2: Description - completed
+    - [ ] P3: Description - depends on: task-name
     
     Features:
     - Priority extraction (P1/P2/P3)
     - Status parsing (pending/in_progress/completed)
     - Dependency detection (blocked by/depends on)
     - Plan file parsing
-    - Round-trip conversion (markdown ↔ QueueTask)
+    - Round-trip conversion (markdown <-> QueueTask)
     """
     
     @staticmethod
@@ -928,6 +848,8 @@ class TaskQueueParser:
         - P1/P2/P3 = priority (stored in description)
         - "blocked by:" or "depends on:" = dependencies
         
+        Format: - [x] P1: Description - blocked by: task-name
+        
         Args:
             content: Markdown text with task list items
             
@@ -939,10 +861,10 @@ class TaskQueueParser:
         tasks = []
         lines = content.split("\n")
         
-        # Pattern: - [checkbox] P1: Description — blocked by: task-name
-        # More flexible: supports various dependency keywords
+        # Pattern: - [checkbox] P1: Description - blocked by: task-name
+        # Supports em-dash (\u2014), en-dash (\u2013), and hyphen as separators
         task_pattern = re.compile(
-            r"^-\s+\[([ x/])\]\s+(?:P[123]:\s+)?(.+?)(?:\s+[—–-]\s+(?:blocked by|depends on):\s+([^—–-]+))?$",
+            r"^-\s+\[([ x/])\]\s+(?:P[123]:\s+)?(.+?)(?:\s+[\u2014\u2013-]\s+(?:blocked by|depends on):\s+(.+))?$",
             re.IGNORECASE
         )
         
@@ -1022,14 +944,68 @@ class TaskQueueParser:
             # Build line
             line = f"- {checkbox} {task.description}"
             
-            # Add dependencies if present
+            # Add dependencies if present (use hyphen for compatibility)
             if task.blocked_by:
                 deps = ", ".join(task.blocked_by)
-                line += f" — blocked by: {deps}"
+                line += f" - blocked by: {deps}"
             
             lines.append(line)
         
         return "\n".join(lines)
+    
+    @staticmethod
+    def parse_markdown(content: str) -> list[QueueTask]:
+        """
+        Parse markdown content into list of QueueTask objects.
+        
+        Supports priority labels (P1/P2/P3) and dependency syntax.
+        
+        Args:
+            content: Markdown task list content
+            
+        Returns:
+            List of QueueTask objects
+        """
+        import re
+
+        tasks = []
+        lines = content.strip().split("\n")
+        
+        # Pattern: - [checkbox] P1: Description - blocked by: task-name
+        # Supports em-dash (\u2014), en-dash (\u2013), and hyphen as separators
+        task_pattern = re.compile(
+            r"^-\s+\[([ x/])\]\s+(?:P[123]:\s+)?(.+?)(?:\s+[\u2014\u2013-]\s+(?:blocked by|depends on):\s+(.+))?$",
+            re.IGNORECASE
+        )
+        
+        for line in lines:
+            stripped = line.strip()
+            match = task_pattern.match(stripped)
+            if not match:
+                continue
+            
+            checkbox, description, dependencies = match.groups()
+            
+            # Determine status from checkbox
+            if checkbox == "x":
+                status = "completed"
+            elif checkbox == "/":
+                status = "in_progress"
+            else:
+                status = "pending"
+            
+            # Parse blocked_by list
+            blocked_list = []
+            if dependencies:
+                blocked_list = [d.strip() for d in dependencies.split(",")]
+            
+            tasks.append(QueueTask(
+                description=description.strip(),
+                status=status,
+                blocked_by=blocked_list
+            ))
+        
+        return tasks
 
 
 class WorkStealingQueue:
@@ -3574,7 +3550,7 @@ This will properly close the Ralph session."""
 
     def handle_hook_subagent_start(self, stdin_content: Optional[str] = None) -> dict:
         """
-        Handle SubagentStart hook — track agent spawn in state.
+        Handle SubagentStart hook - track agent spawn in state.
 
         Records the subagent spawn event with timestamp and agent metadata.
         """
@@ -3601,7 +3577,7 @@ This will properly close the Ralph session."""
 
     def handle_hook_subagent_stop(self, stdin_content: Optional[str] = None) -> dict:
         """
-        Handle SubagentStop hook — track agent completion, enforce iteration limits, manage retries.
+        Handle SubagentStop hook - track agent completion, enforce iteration limits, manage retries.
 
         Records completion, updates metrics, detects failures, and queues failed agents
         for retry (max 3 retries per agent).
@@ -3792,9 +3768,9 @@ Project configured: `{project_root}`
 - Run `/serena-workflow` for the full tool matrix and editing workflows
 
 ### Reflection Checkpoints:
-- `mcp__serena__think_about_collected_information` — after gathering context
-- `mcp__serena__think_about_task_adherence` — before making changes
-- `mcp__serena__think_about_whether_you_are_done` — before reporting completion
+- `mcp__serena__think_about_collected_information` - after gathering context
+- `mcp__serena__think_about_task_adherence` - before making changes
+- `mcp__serena__think_about_whether_you_are_done` - before reporting completion
 """
         else:
             return """
@@ -4188,7 +4164,7 @@ Serena provides LSP-powered semantic code analysis. To enable:
 ## On Issues Found:
 - Auto-fix simple issues (formatting, imports, type annotations)
 - Escalate complex issues via AskUserQuestion
-- Do NOT leave TODO comments — fix or escalate immediately
+- Do NOT leave TODO comments - fix or escalate immediately
 
 ## Output Format (REQUIRED):
 When complete, output exactly:
@@ -5032,7 +5008,7 @@ SPECIALTY FOCUS ({specialty}):
         results = []
 
         if num_agents <= BATCH_SIZE:
-            # Single batch — standard semaphore approach
+            # Single batch - standard semaphore approach
             semaphore = asyncio.Semaphore(concurrent_limit)
             spawn_tasks = [
                 self.spawn_agent(agent, task, semaphore)
@@ -5912,7 +5888,7 @@ WORK PROTOCOL:
 9. Design review - verify UI/UX consistency if frontend changes present
 10. Auto-fix simple issues (imports, types, formatting)
 11. Use AskUserQuestion for complex issues requiring human decision
-12. Do NOT leave TODO comments — fix or escalate
+12. Do NOT leave TODO comments - fix or escalate
 13. IMPORTANT: Write summary of quality check results (steps 1-9) to .claude/verify-fix-quality.log
     - Include: build status, type errors, lint issues, dead code, validation results
     - Format as concise bullet list for review phase context
@@ -6025,7 +6001,7 @@ def agent_tracker() -> None:
     if phase == "complete":
         _debug_exit("phase already complete", 0)
 
-    # Check for stale session (>4h old) — auto-cleanup (Fix B)
+    # Check for stale session (>4h old) - auto-cleanup (Fix B)
     started_at = state.get("startedAt") or state.get("started_at")
     if started_at:
         try:
@@ -6103,7 +6079,7 @@ Verify-Fix agents should:
 3. Run type checks where applicable
 4. Auto-fix simple issues (imports, types, formatting)
 5. Use AskUserQuestion for complex issues
-6. Do NOT leave TODO comments — fix or escalate
+6. Do NOT leave TODO comments - fix or escalate
 
 **DO NOT** output completion signals yet. Spawn verify-fix agents NOW."""
 

@@ -180,6 +180,9 @@ def hook_handler() -> None:
     if tool_name != "Bash":
         sys.exit(0)
 
+    # TODO-P2: PostToolUse hook should verify tool_result exists before accessing
+    # If tool_result is missing or malformed, this will fail silently with .get() defaults
+    # Should validate schema: {"tool_name": str, "tool_result": {"exit_code": int, "stdout": str, "stderr": str}}
     tool_result = hook_input.get("tool_result", {})
     exit_code = tool_result.get("exit_code", 0)
 
@@ -187,6 +190,8 @@ def hook_handler() -> None:
     if exit_code == 0:
         sys.exit(0)
 
+    # TODO-P3: Missing validation - what if tool_result exists but stdout/stderr are missing?
+    # Should check isinstance(stdout, str) to prevent crashes on malformed hook data
     # Failure detected - check for error patterns
     stdout = tool_result.get("stdout", "")
     stderr = tool_result.get("stderr", "")

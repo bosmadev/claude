@@ -1,9 +1,0 @@
-[
-  {
-    "from": "agent-9",
-    "text": "{\"type\":\"task_assignment\",\"taskId\":\"9\",\"subject\":\"IMPL-9: Security gate PostToolUse hooks\",\"description\":\"Add PostToolUse handlers for Edit/Write in hooks/security-gate.py. Validate post-edit state of security-sensitive files. Register in settings.json.\",\"assignedBy\":\"agent-9\",\"timestamp\":\"2026-02-06T10:33:33.019Z\"}",
-    "timestamp": "2026-02-06T10:33:33.019Z",
-    "color": "blue",
-    "read": true
-  }
-]
