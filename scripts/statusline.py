@@ -141,15 +141,66 @@ def _read_team_config(session_id: str) -> dict | None:
                     members = config.get("members", [])
                     if not isinstance(members, list):
                         members = []
+                    
+                    # Compute model mix from member models
+                    model_counts = {"opus": 0, "sonnet": 0}
+                    for member in members:
+                        model = member.get("model", "opus").lower()
+                        if "sonnet" in model:
+                            model_counts["sonnet"] += 1
+                        else:
+                            model_counts["opus"] += 1
+                    
                     return {
                         "team_name": config.get("name", ""),
                         "member_count": len(members),
-                        "members": members
+                        "members": members,
+                        "model_mix": model_counts,
                     }
             except (OSError, json.JSONDecodeError, KeyError):
                 continue
 
         return None
+    except (OSError, PermissionError):
+        return None
+
+def _read_task_list_progress(team_name: str) -> dict | None:
+    """Compute progress from native task list files.
+    
+    Reads ~/.claude/tasks/{team-name}/*.json and counts task statuses.
+    Returns dict with total/completed/in_progress or None if no tasks.
+    """
+    try:
+        tasks_dir = CACHE_DIR / "tasks" / team_name
+        if not tasks_dir.exists():
+            return None
+
+        total = completed = in_progress = 0
+        for task_file in sorted(tasks_dir.iterdir()):
+            if not task_file.suffix == ".json":
+                continue
+            try:
+                task = json.loads(task_file.read_text(encoding="utf-8"))
+                status = task.get("status", "")
+                if status == "deleted":
+                    continue
+                total += 1
+                if status == "completed":
+                    completed += 1
+                elif status == "in_progress":
+                    in_progress += 1
+            except (OSError, json.JSONDecodeError):
+                continue
+
+        if total == 0:
+            return None
+
+        return {
+            "total": total,
+            "completed": completed,
+            "in_progress": in_progress,
+            "updated_at": datetime.now().isoformat(),
+        }
     except (OSError, PermissionError):
         return None
 
@@ -877,6 +928,40 @@ def main() -> None:
 
         # Combine Ralph section (with leading separator only; trailing separator added conditionally)
         ralph_section = f" {DARK_GREY}|{RESET} {agent_block}{model_mix}{struggle_indicator}{build_intel}{team_indicator}"
+    elif team_data:
+        # Fallback: Native Agent Teams active but no progress.json
+        # Try to compute progress from task list
+        team_name = team_data.get("team_name", "")
+        task_progress = _read_task_list_progress(team_name) if team_name else None
+        
+        if task_progress and task_progress.get("total", 0) > 0:
+            # Format: "3/10:8O2S 👥10"
+            completed = task_progress.get("completed", 0)
+            total = task_progress.get("total", 0)
+            in_prog = task_progress.get("in_progress", 0)
+            
+            # Agent block: completed+in_progress/total
+            active = completed + in_prog
+            active = min(active, total)  # Clamp
+            agent_block = f"{BRIGHT_WHITE}{active}{RESET}{CYAN}/{total}{RESET}"
+            
+            # Model mix from team config
+            mix = team_data.get("model_mix", {})
+            opus_count = mix.get("opus", 0)
+            sonnet_count = mix.get("sonnet", 0)
+            
+            if opus_count > 0 and sonnet_count > 0:
+                model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}"
+            else:
+                model_mix = ""
+            
+            # Build intelligence indicator
+            build_intel = read_build_intelligence(cwd)
+            
+            ralph_section = f" {DARK_GREY}|{RESET} {agent_block}{model_mix}{build_intel}{team_indicator}"
+        elif team_indicator:
+            # Show team indicator only
+            ralph_section = f" {DARK_GREY}|{RESET}{team_indicator}"
     elif team_indicator:
         # Show team indicator even without Ralph progress
         ralph_section = f" {DARK_GREY}|{RESET}{team_indicator}"

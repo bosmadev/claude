@@ -442,6 +442,115 @@ def test_read_build_intelligence_no_agents(tmp_path: Path):
 
 
 # ============================================================================
+# P1: _read_task_list_progress tests
+# ============================================================================
+
+
+def test_read_task_list_progress_empty_dir(tmp_path: Path, monkeypatch):
+    """Test _read_task_list_progress with empty tasks directory."""
+    from scripts.statusline import _read_task_list_progress
+
+    monkeypatch.setattr("scripts.statusline.CACHE_DIR", tmp_path)
+
+    # Create empty tasks/team-name directory
+    tasks_dir = tmp_path / "tasks" / "ralph-impl"
+    tasks_dir.mkdir(parents=True)
+
+    result = _read_task_list_progress("ralph-impl")
+    assert result is None
+
+
+def test_read_task_list_progress_counts_correctly(tmp_path: Path, monkeypatch):
+    """Test _read_task_list_progress counts task statuses correctly."""
+    from scripts.statusline import _read_task_list_progress
+
+    monkeypatch.setattr("scripts.statusline.CACHE_DIR", tmp_path)
+
+    tasks_dir = tmp_path / "tasks" / "ralph-impl"
+    tasks_dir.mkdir(parents=True)
+
+    # Create 3 tasks: 1 completed, 1 in_progress, 1 pending
+    task1 = {"subject": "Task 1", "status": "completed"}
+    task2 = {"subject": "Task 2", "status": "in_progress"}
+    task3 = {"subject": "Task 3", "status": "pending"}
+
+    (tasks_dir / "task-1.json").write_text(json.dumps(task1))
+    (tasks_dir / "task-2.json").write_text(json.dumps(task2))
+    (tasks_dir / "task-3.json").write_text(json.dumps(task3))
+
+    result = _read_task_list_progress("ralph-impl")
+
+    assert result is not None
+    assert result["total"] == 3
+    assert result["completed"] == 1
+    assert result["in_progress"] == 1
+
+
+def test_read_task_list_progress_skips_deleted(tmp_path: Path, monkeypatch):
+    """Test _read_task_list_progress skips deleted tasks."""
+    from scripts.statusline import _read_task_list_progress
+
+    monkeypatch.setattr("scripts.statusline.CACHE_DIR", tmp_path)
+
+    tasks_dir = tmp_path / "tasks" / "ralph-impl"
+    tasks_dir.mkdir(parents=True)
+
+    # Create 2 tasks: 1 completed, 1 deleted
+    task1 = {"subject": "Task 1", "status": "completed"}
+    task2 = {"subject": "Task 2", "status": "deleted"}
+
+    (tasks_dir / "task-1.json").write_text(json.dumps(task1))
+    (tasks_dir / "task-2.json").write_text(json.dumps(task2))
+
+    result = _read_task_list_progress("ralph-impl")
+
+    assert result is not None
+    assert result["total"] == 1  # Deleted task not counted
+    assert result["completed"] == 1
+
+
+def test_read_task_list_progress_missing_dir(tmp_path: Path, monkeypatch):
+    """Test _read_task_list_progress with nonexistent team directory."""
+    from scripts.statusline import _read_task_list_progress
+
+    monkeypatch.setattr("scripts.statusline.CACHE_DIR", tmp_path)
+
+    # Call with team name that doesn't have a directory
+    result = _read_task_list_progress("nonexistent-team")
+    assert result is None
+
+
+def test_team_config_model_mix(tmp_path: Path, monkeypatch):
+    """Test _read_team_config with opus and sonnet model mix."""
+    from scripts.statusline import _read_team_config
+
+    monkeypatch.setenv("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1")
+    monkeypatch.setattr("scripts.statusline.CACHE_DIR", tmp_path)
+
+    teams_dir = tmp_path / "teams" / "ralph-impl"
+    teams_dir.mkdir(parents=True)
+
+    config = {
+        "name": "ralph-impl",
+        "leadSessionId": "5b47e9a3-ba2a-4a3a-b91c-49aa1768909d",
+        "members": [
+            {"name": "agent-1", "model": "claude-opus-4-6"},
+            {"name": "agent-2", "model": "claude-sonnet-4-5"},
+            {"name": "agent-3", "model": "claude-opus-4-6"},
+            {"name": "agent-4", "model": "claude-sonnet-4-5"},
+        ],
+    }
+    (teams_dir / "config.json").write_text(json.dumps(config))
+
+    result = _read_team_config("5b47e9a3-ba2a-4a3a-b91c-49aa1768909d")
+
+    assert result is not None
+    assert result["member_count"] == 4
+    assert result["model_mix"]["opus"] == 2
+    assert result["model_mix"]["sonnet"] == 2
+
+
+# ============================================================================
 # P2: _short_model tests
 # ============================================================================
 
