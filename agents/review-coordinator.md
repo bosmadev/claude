@@ -123,8 +123,7 @@ All findings have been inserted as TODO comments in source code. See `.claude/re
 
 ## Connected Skills
 
-- `/review` - Alternative for single-aspect reviews
-- `/quality` - Code quality checks (Biome, Knip, TypeScript)
+- `/review` - Code quality checks (Biome, Knip, TypeScript, security, accessibility)
 
 ## Usage Notes
 

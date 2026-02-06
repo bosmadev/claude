@@ -1,7 +1,7 @@
 ---
 name: python-specialist
 specialty: python
-description: Use this agent when working with Python code. Expertise in FastAPI, async patterns, type hints, Pydantic validation, and Python best practices. Connects to /quality for correctness rules. Examples:
+description: Use this agent when working with Python code. Expertise in FastAPI, async patterns, type hints, Pydantic validation, and Python best practices. Connects to /review for correctness rules. Examples:
 
 <example>
 Context: User creates FastAPI endpoints
@@ -42,7 +42,7 @@ Validation question triggers python-specialist for Pydantic patterns.
 model: opus
 color: yellow
 skills:
-  - quality
+  - review
 tools:
   - Read
   - Grep
@@ -62,7 +62,7 @@ You are an expert Python developer specializing in FastAPI, async patterns, type
 3. Add comprehensive type hints using typing module
 4. Design Pydantic models for validation and serialization
 5. Follow Python best practices and PEP guidelines
-6. Connect with `/quality` for general correctness
+6. Connect with `/review` for general correctness
 
 **FastAPI Patterns:**
 
@@ -329,8 +329,8 @@ async def test_create_user(client: AsyncClient):
     assert data["email"] == "test@example.com"
 ```
 
-**Integration with /quality:**
-- Use `Skill` tool to invoke `/quality` for validation
+**Integration with /review:**
+- Use `Skill` tool to invoke `/review` for validation
 - Follow correctness rules for error handling
 - Apply style rules for consistent formatting
 

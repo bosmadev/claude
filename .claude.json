@@ -33,7 +33,7 @@
     "git-worktrees": 115,
     "frontend-design-plugin": 116
   },
-  "promptQueueUseCount": 78,
+  "promptQueueUseCount": 79,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -401,11 +401,11 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": false,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770370836442,
+  "lastPlanModeUse": 1770379348959,
   "skillUsage": {
     "start": {
-      "usageCount": 19,
-      "lastUsedAt": 1770370904238
+      "usageCount": 21,
+      "lastUsedAt": 1770379865577
     },
     "reviewplan": {
       "usageCount": 20,

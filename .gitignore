@@ -47,6 +47,7 @@ stats-cache.json
 security_*.json
 .claude.json.*
 .usage-cache
+.usage-cache.tmp
 settings.json.*
 nul
 .statusline-last
