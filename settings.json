@@ -2,7 +2,9 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
     "FORCE_COLOR": "1",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_TMPDIR": "${TMPDIR}/claude-tmp"
   },
   "attribution": {
     "commit": "",
@@ -409,12 +411,22 @@
             "type": "command",
             "command": "python ~/.claude\\hooks\\git.py command-history",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python ~/.claude\\hooks\\build-intelligence.py hook",
+            "timeout": 5
           }
         ]
       },
       {
         "matcher": "Edit|Write",
         "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude\\hooks\\security-gate.py post-edit",
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "python ~/.claude\\hooks\\git.py change-tracker",
@@ -526,6 +538,11 @@
             "type": "command",
             "command": "python ~/.claude\\scripts\\ralph.py hook-subagent-start",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python ~/.claude\\hooks\\context-injection.py",
+            "timeout": 5
           }
         ]
       }

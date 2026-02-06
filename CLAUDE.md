@@ -1,6 +1,6 @@
 # Claude Code Configuration
 
-#### Based on claude-code: 2.1.31
+#### Based on claude-code: 2.1.32
 
 **Stack:** Next.js 16.1+, React 19+, Node.js 25+, Python 3.14+, FastAPI, TypeScript 5.9.3+, Tailwind CSS v4+, Shadcn UI, Radix, Playwright, Vitest, Biome 2.3.10+, Knip 5.77.1+, uv 0.9.18+, pnpm 10.26.2+.
 
@@ -49,6 +49,7 @@ All plans in `/plans/` MUST follow Plan Change Tracking:
 **Created:** YYYY-MM-DD
 **Last Updated:** YYYY-MM-DDTHH:MM:SSZ
 **Status:** Pending Approval | In Progress | Completed
+**Session:** {session-name}
 ```
 
 **On every plan update:**
@@ -136,23 +137,27 @@ Branch names include build IDs to track work across non-linear merges:
 **Format:** `{type}/b{id}-{description}`
 
 **Examples:**
+
 - `feature/b101-user-auth` - Feature branch for build 101
 - `fix/b102-login-bug` - Bugfix for build 102
 - `refactor/b103-api-cleanup` - Refactor for build 103
 
 **Build ID Assignment:**
+
 - Build IDs are manually assigned (no auto-generation)
 - Sequential but can have gaps (e.g., 101, 102, 105)
 - Use next available number when creating branches
 - Check existing branches to avoid conflicts
 
 **Why Build IDs:**
+
 - Track changes across non-linear merge history
 - Link PR summaries to specific work items
 - Enable automated CHANGELOG grouping
 - Survive squash merges and rebases
 
 **Branch Types:**
+
 - `feature/` - New functionality
 - `fix/` - Bug fixes
 - `refactor/` - Code restructuring
@@ -166,20 +171,20 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 ### Workflow: @claude prepare → Review → Squash Merge → Auto CHANGELOG
 
 1. **@claude prepare** - Bot creates PR with:
+
    - Aggregated commit summary (grouped by file)
    - Build ID extracted from branch name
    - Review checklist
-
 2. **Review** - Team reviews PR via GitHub UI
+
    - Add comments, request changes
    - Approve when ready
-
 3. **Squash Merge** - Merge PR to main:
+
    - GitHub Actions triggers automatically
    - Reads PR body for commit aggregation
    - Extracts build ID from branch name
    - Generates CHANGELOG entry
-
 4. **CHANGELOG Entry Format:**
 
 ```markdown
@@ -199,21 +204,25 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 ### Key Points
 
 **Worktree Behavior:**
+
 - Working branches do NOT edit CHANGELOG directly
 - All CHANGELOG updates happen via GitHub Actions post-merge
 - Prevents merge conflicts and duplication
 
 **Build ID Extraction:**
+
 - Workflow parses branch name: `feature/b101-auth` → Build 101
 - Used in CHANGELOG header and grouping
 - Enables non-linear merge tracking
 
 **Version Bumping:**
+
 - Uses `scripts/aggregate-pr.py --bump` logic
 - Follows semantic versioning (major.minor.patch)
 - Auto-detects version type from PR labels or commit messages
 
 **Manual Override:**
+
 - Edit CHANGELOG directly on main if needed
 - Use conventional commit format in PR title to influence versioning
 - Add `skip-changelog` label to PR to bypass automation
@@ -222,26 +231,26 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 
 Token-efficient model assignment via permanent, native mechanisms:
 
-| Layer | Mechanism | Scope | Effect |
-|-------|-----------|-------|--------|
-| **L1: Global Default** | `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` in `settings.json` env | ALL subagents | All forked skills run as Sonnet |
-| **L2: Skill Fork** | `context: fork` in SKILL.md frontmatter | The skill itself | Skill runs as Sonnet subagent (via L1) |
-| **L3: Per-Agent Override** | `model="opus"` in `Task()` calls | Individual agents | Overrides L1 for agents needing Opus |
+| Layer                            | Mechanism                                                      | Scope             | Effect                                 |
+| -------------------------------- | -------------------------------------------------------------- | ----------------- | -------------------------------------- |
+| **L1: Global Default**     | `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` in `settings.json` env | ALL subagents     | All forked skills run as Sonnet        |
+| **L2: Skill Fork**         | `context: fork` in SKILL.md frontmatter                      | The skill itself  | Skill runs as Sonnet subagent (via L1) |
+| **L3: Per-Agent Override** | `model="opus"` in `Task()` calls                           | Individual agents | Overrides L1 for agents needing Opus   |
 
 ### Skills Model Assignment
 
-| Skill | Fork? | Model | Rationale |
-|-------|-------|-------|-----------|
-| `/start` | No | Opus (main) | Complex orchestration, spawns Opus agents (L3) |
-| `/repotodo` | No | Opus (main) | Critical code changes across files |
-| `/reviewplan` | No | Opus (main) | Spawns research agents |
-| `/review` | No fork | Opus (main) | Spawns Task agents with model="sonnet" |
-| `/commit` | Fork | Sonnet (L1) | Pattern matching, no code changes |
-| `/openpr` | Fork | Sonnet (L1) | Reads commits, generates PR body |
-| `/screen` | Fork | Sonnet (L1) | Screenshot management |
-| `/youtube` | Fork | Sonnet (L1) | Transcription management |
-| `/launch` | Fork | Sonnet (L1) | Browser verification |
-| `/token` | Fork | Sonnet (L1) | Token status/refresh |
+| Skill           | Fork?   | Model       | Rationale                                      |
+| --------------- | ------- | ----------- | ---------------------------------------------- |
+| `/start`      | No      | Opus (main) | Complex orchestration, spawns Opus agents (L3) |
+| `/repotodo`   | No      | Opus (main) | Critical code changes across files             |
+| `/reviewplan` | No      | Opus (main) | Spawns research agents                         |
+| `/review`     | No fork | Opus (main) | Spawns Task agents with model="sonnet"         |
+| `/commit`     | Fork    | Sonnet (L1) | Pattern matching, no code changes              |
+| `/openpr`     | Fork    | Sonnet (L1) | Reads commits, generates PR body               |
+| `/screen`     | Fork    | Sonnet (L1) | Screenshot management                          |
+| `/youtube`    | Fork    | Sonnet (L1) | Transcription management                       |
+| `/launch`     | Fork    | Sonnet (L1) | Browser verification                           |
+| `/token`      | Fork    | Sonnet (L1) | Token status/refresh                           |
 
 ---
 

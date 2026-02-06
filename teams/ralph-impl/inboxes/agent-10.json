@@ -1,0 +1,9 @@
+[
+  {
+    "from": "agent-10",
+    "text": "{\"type\":\"task_assignment\",\"taskId\":\"10\",\"subject\":\"IMPL-10: E2E tests + VERIFY+FIX in /review\",\"description\":\"Create tests/ directory with pytest.ini, test_aggregate_pr.py, test_statusline.py, conftest.py. Also add VERIFY+FIX checklist items to skills/review/SKILL.md in TODO-leaving mode. Optionally create agents/review-verify.md.\",\"assignedBy\":\"agent-10\",\"timestamp\":\"2026-02-06T10:33:41.863Z\"}",
+    "timestamp": "2026-02-06T10:33:41.864Z",
+    "color": "green",
+    "read": false
+  }
+]

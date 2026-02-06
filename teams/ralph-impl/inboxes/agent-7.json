@@ -1,0 +1,9 @@
+[
+  {
+    "from": "agent-7",
+    "text": "{\"type\":\"task_assignment\",\"taskId\":\"7\",\"subject\":\"IMPL-7: TaskQueueParser in ralph.py\",\"description\":\"Add TaskQueueParser class to scripts/ralph.py. Parse markdown-formatted task queues with priority markers (P1/P2/P3), status markers, and dependencies. Integrate with Ralph task management.\",\"assignedBy\":\"agent-7\",\"timestamp\":\"2026-02-06T10:33:14.882Z\"}",
+    "timestamp": "2026-02-06T10:33:14.882Z",
+    "color": "cyan",
+    "read": false
+  }
+]

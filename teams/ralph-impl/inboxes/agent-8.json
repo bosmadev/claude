@@ -1,0 +1,9 @@
+[
+  {
+    "from": "agent-8",
+    "text": "{\"type\":\"task_assignment\",\"taskId\":\"8\",\"subject\":\"IMPL-8: Receipt audit trail\",\"description\":\"Create scripts/audit-receipts.py and .claude/ralph/receipts/ directory structure. Log agent actions with timestamps. Provide audit report generation.\",\"assignedBy\":\"agent-8\",\"timestamp\":\"2026-02-06T10:33:17.577Z\"}",
+    "timestamp": "2026-02-06T10:33:17.577Z",
+    "color": "red",
+    "read": false
+  }
+]

@@ -214,12 +214,21 @@ Complete routing matrix for all Claude Code components. See CLAUDE.md "3-Layer M
 | VERIFY+FIX full | Opus 4.6 | ↑ High | 200K | Opus | — | Final gate |
 | VERIFY+FIX plan | Opus 4.6 | → Med | 200K | Opus | — | Plan checks |
 | Post-review agents | Sonnet 4.5 | N/A | 1M | Sonnet | L3 | Read-only review |
-| GitHub Actions (default) | Sonnet 4.5 | N/A | 200K | Sonnet | — | Auto PR |
-| GitHub Actions (manual) | User picks | User picks | Varies | Varies | — | workflow_dispatch |
+| Ralph impl agents | Opus 4.6 | ↑ High | 200K | Opus | L3 | Task(model="opus") |
+| Ralph work-stealing | Opus 4.6 | ↑ High | 200K | Opus | L3 | Same as impl |
+| Ralph retry queue | Opus 4.6 | ↑ High | 200K | Opus | L3 | Retries need best quality |
+| GH Actions (auto PR) | Sonnet 4.5 | N/A | 200K | Sonnet | — | Default trigger |
+| GH Actions: Summarize | Sonnet 4.5 | N/A | 1M | Sonnet | — | Large PRs, [1m] |
+| GH Actions: Review | Sonnet 4.5 | N/A | 1M | Sonnet | — | Full repo context |
+| GH Actions: Security | Opus 4.6 | → Med | 200K | Opus | — | OWASP depth |
+| GH Actions: Custom | User picks | User picks | Varies | Varies | — | workflow_dispatch |
+| GH Actions: Scheduled | Haiku 4.5 | N/A | 200K | Haiku | — | Health checks (future) |
 | Impl agent .md (6) | opus | — | — | — | .md | Code changes |
 | Review agent .md (9) | sonnet | — | — | — | .md | Read-only analysis |
 | Coordination .md (2) | opus | — | — | — | .md | Orchestration |
 | Security .md (2) | mixed | — | — | — | .md | owasp:opus, sentinel:sonnet |
+| Ops agent .md (2) | opus | — | — | — | .md | scraper, devops |
+| Verify-fix .md (1) | opus | — | — | — | .md | Auto-fix code |
 
 **Legend:**
 - **Effort:** ↓ Low, → Med, ↑ High (Opus only)
@@ -785,6 +794,29 @@ Manual cleanup required after team sessions:
 - One team per session
 - No nested teams (teammates can't create sub-teams)
 - Lead agent is fixed (can't change lead)
+
+### Ralph → Agent Teams Migration (Future)
+
+Ralph currently uses a custom hybrid system (file-based inbox, TeamConfig dataclass,
+subprocess spawning). Native Agent Teams integration is planned in 3 phases:
+
+| Phase | Change | Benefit | Complexity |
+|-------|--------|---------|------------|
+| 1 | Add SendMessage for progress | Real-time updates | Low |
+| 2 | Replace file inbox with DMs | Eliminate file I/O | Medium |
+| 3 | Full TeamCreate + TaskList | Named agents, shared tasks | High |
+
+**Phase 3 triggers:** Native agent swarm primitives in Claude Code, user pain with
+file relay, or TaskList performance for 50+ agents.
+
+### Idle Notification Handling
+
+Agent Teams teammates send `idle_notification` JSON on every turn end.
+For high-agent-count scenarios (Ralph), filter with:
+
+- **Message filter**: Skip messages where `type == "idle_notification"`
+- **Prompt suppression**: Include "Do NOT send idle notifications" in agent prompts
+- **Summary mode**: Log idle notifications to file instead of displaying
 
 ---
 

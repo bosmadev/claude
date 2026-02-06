@@ -404,9 +404,10 @@ def do_notify() -> None:
 
 # Model ID patterns:
 #   claude-opus-4-5-20251101   → Opus 4.5
+#   claude-opus-4-6            → Opus 4.6  (no date suffix = alias)
 #   claude-sonnet-5-20260201   → Sonnet 5
 #   claude-haiku-3-5-20241022  → Haiku 3.5
-# Strategy: try major-minor-date first, fall back to major-date
+# Strategy: try dated patterns first, then date-less patterns
 _MODEL_PATTERN_FULL = re.compile(
     r"claude-(?P<family>[a-z]+)-(?P<major>\d+)-(?P<minor>\d{1,2})-(?P<date>\d{8,})",
     re.IGNORECASE,
@@ -415,12 +416,21 @@ _MODEL_PATTERN_SHORT = re.compile(
     r"claude-(?P<family>[a-z]+)-(?P<major>\d+)-(?P<date>\d{8,})",
     re.IGNORECASE,
 )
+_MODEL_PATTERN_FULL_NO_DATE = re.compile(
+    r"claude-(?P<family>[a-z]+)-(?P<major>\d+)-(?P<minor>\d{1,2})$",
+    re.IGNORECASE,
+)
+_MODEL_PATTERN_SHORT_NO_DATE = re.compile(
+    r"claude-(?P<family>[a-z]+)-(?P<major>\d+)$",
+    re.IGNORECASE,
+)
 
 # Fallback for short names: "opus", "sonnet", "haiku"
+# Versionless — bare name without version = regex didn't match, investigate why.
 _SHORT_NAMES = {
-    "opus": {"family": "Opus", "version": "4.5"},
-    "sonnet": {"family": "Sonnet", "version": "4.5"},
-    "haiku": {"family": "Haiku", "version": "3.5"},
+    "opus": {"family": "Opus", "version": ""},
+    "sonnet": {"family": "Sonnet", "version": ""},
+    "haiku": {"family": "Haiku", "version": ""},
 }
 
 
@@ -437,13 +447,18 @@ def parse_model_id(model_id: str) -> dict:
     if not model_id:
         return result
 
-    # Try full pattern (major-minor-date) first, then short (major-date)
-    m = _MODEL_PATTERN_FULL.match(model_id) or _MODEL_PATTERN_SHORT.match(model_id)
+    # Try dated patterns first, then date-less patterns
+    m = (
+        _MODEL_PATTERN_FULL.match(model_id)
+        or _MODEL_PATTERN_SHORT.match(model_id)
+        or _MODEL_PATTERN_FULL_NO_DATE.match(model_id)
+        or _MODEL_PATTERN_SHORT_NO_DATE.match(model_id)
+    )
     if m:
         family = m.group("family").capitalize()
         major = m.group("major") or ""
         minor = m.group("minor") if "minor" in m.groupdict() and m.group("minor") else ""
-        date = m.group("date") or ""
+        date = m.group("date") if "date" in m.groupdict() and m.group("date") else ""
 
         version = f"{major}.{minor}" if minor else major
         result.update({
@@ -465,10 +480,11 @@ def parse_model_id(model_id: str) -> dict:
     short = parts[0]
     if short in _SHORT_NAMES:
         info = _SHORT_NAMES[short]
+        display = f"{info['family']} {info['version']}" if info["version"] else info["family"]
         result.update({
             "family": info["family"],
             "version": info["version"],
-            "display": f"{info['family']} {info['version']}",
+            "display": display,
         })
         return result
 
@@ -483,6 +499,29 @@ def parse_model_id(model_id: str) -> dict:
     first_word = words[0]
     result.update({"family": first_word.capitalize(), "display": first_word.capitalize()})
     return result
+
+
+def get_session_name(session_id: str) -> str:
+    """Look up the display name for a session from sessions-index.json.
+
+    Searches all project session indices for the given session ID.
+    Returns customTitle (from /rename) if present, else summary, else empty string.
+    """
+    if not session_id:
+        return ""
+    try:
+        claude_dir = Path.home() / ".claude" / "projects"
+        for idx_path in claude_dir.glob("*/sessions-index.json"):
+            try:
+                data = json.loads(idx_path.read_text(encoding="utf-8"))
+                for entry in data.get("entries", []):
+                    if entry.get("sessionId") == session_id:
+                        return entry.get("customTitle") or entry.get("summary") or ""
+            except (json.JSONDecodeError, OSError):
+                continue
+    except Exception:
+        pass
+    return ""
 
 
 def do_model_capture() -> None:

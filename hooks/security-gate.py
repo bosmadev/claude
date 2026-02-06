@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Security Gate Hook - Layered Defense Layer 1 (Pre-Check)
+Security Gate Hook - Layered Defense Layer 1 (Pre-Check) + Layer 2 (Post-Check)
 
 Intercepts potentially dangerous commands before execution.
 Uses AskUserQuestion for soft-blocks, hard-blocks for critical threats.
@@ -12,9 +12,11 @@ Threat Categories:
 - Secret leaks (API keys, tokens, passwords)
 - Dangerous git commands (--force, --hard)
 - Prompt injection (hidden instructions)
+- Sensitive file modifications (credentials, keys, config)
 
 Usage:
   python security-gate.py pre-check    # PreToolUse: Check Bash commands
+  python security-gate.py post-edit    # PostToolUse: Check Edit/Write for sensitive files
   python security-gate.py audit        # View recent security events
   python security-gate.py stats        # Security statistics
 """
@@ -89,9 +91,35 @@ SECURITY_DIR = Path.home() / ".claude" / "security"
 AUDIT_LOG = SECURITY_DIR / "audit.jsonl"
 BLOCKS_LOG = SECURITY_DIR / "blocks.jsonl"
 OVERRIDES_LOG = SECURITY_DIR / "overrides.jsonl"
+SENSITIVE_EDITS_LOG = SECURITY_DIR / "sensitive-edits.jsonl"
 
 # Ensure directories exist
 SECURITY_DIR.mkdir(parents=True, exist_ok=True)
+
+# Sensitive file patterns (for PostToolUse detection)
+SENSITIVE_FILE_PATTERNS = [
+    r"\.env$",
+    r"\.env\.",
+    r"credentials\.json$",
+    r"secrets\.",
+    r"\.key$",
+    r"\.pem$",
+    r"\.p12$",
+    r"\.pfx$",
+    r"id_rsa$",
+    r"id_ed25519$",
+    r"\.ssh/config$",
+    r"settings\.json$",  # Claude Code config
+    r"\.aws/credentials$",
+    r"\.aws/config$",
+    r"\.npmrc$",
+    r"\.pypirc$",
+    r"\.netrc$",
+    r"\.git-credentials$",
+    r"\.docker/config\.json$",
+    r"kubeconfig$",
+    r"\.kube/config$",
+]
 
 
 # =============================================================================
@@ -570,6 +598,74 @@ def run_security_checks(command: str) -> tuple[Optional[dict], str]:
 
 
 # =============================================================================
+# Sensitive File Detection
+# =============================================================================
+
+
+def is_sensitive_file(file_path: str) -> Optional[str]:
+    """
+    Check if a file path matches sensitive file patterns.
+
+    Returns:
+        Pattern description if sensitive, None otherwise.
+    """
+    if not file_path:
+        return None
+
+    # Normalize path separators for cross-platform matching
+    normalized_path = file_path.replace("\\", "/")
+
+    pattern_descriptions = {
+        r"\.env$": "Environment file (.env)",
+        r"\.env\.": "Environment file variant",
+        r"credentials\.json$": "Credentials file",
+        r"secrets\.": "Secrets file",
+        r"\.key$": "Private key file",
+        r"\.pem$": "PEM certificate/key",
+        r"\.p12$": "PKCS#12 certificate",
+        r"\.pfx$": "PFX certificate",
+        r"id_rsa$": "SSH private key (RSA)",
+        r"id_ed25519$": "SSH private key (Ed25519)",
+        r"\.ssh/config$": "SSH config",
+        r"settings\.json$": "Claude Code settings",
+        r"\.aws/credentials$": "AWS credentials",
+        r"\.aws/config$": "AWS config",
+        r"\.npmrc$": "npm config",
+        r"\.pypirc$": "PyPI config",
+        r"\.netrc$": "netrc credentials",
+        r"\.git-credentials$": "Git credentials",
+        r"\.docker/config\.json$": "Docker config",
+        r"kubeconfig$": "Kubernetes config",
+        r"\.kube/config$": "Kubernetes config",
+    }
+
+    for pattern, description in pattern_descriptions.items():
+        if re.search(pattern, normalized_path, re.IGNORECASE):
+            return description
+
+    return None
+
+
+def log_sensitive_edit(file_path: str, file_type: str, tool_name: str) -> None:
+    """
+    Log edits to sensitive files for audit trail.
+    """
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": "sensitive_file_edit",
+        "file_path": file_path,
+        "file_type": file_type,
+        "tool": tool_name,
+    }
+
+    try:
+        with open(SENSITIVE_EDITS_LOG, "a") as f:
+            f.write(json.dumps(event) + "\n")
+    except OSError:
+        pass
+
+
+# =============================================================================
 # Hook Handler: Pre-Check
 # =============================================================================
 
@@ -687,6 +783,69 @@ def pre_check() -> None:
 
 
 # =============================================================================
+# Hook Handler: Post-Edit Check
+# =============================================================================
+
+
+def post_edit_check() -> None:
+    """
+    PostToolUse hook for Edit/Write commands.
+    Detects modifications to security-sensitive files and logs them.
+
+    This is a warning-only hook - it does NOT block edits, only audits them.
+    """
+    try:
+        # Limit stdin read to prevent memory exhaustion
+        raw_input = sys.stdin.read(MAX_STDIN_SIZE)
+        if len(raw_input) >= MAX_STDIN_SIZE:
+            # Input too large, exit silently (allow the edit)
+            sys.exit(0)
+        hook_input = json.loads(raw_input)
+        _cancel_timeout()
+    except json.JSONDecodeError:
+        # JSON parsing error, exit silently (allow the edit)
+        sys.exit(0)
+
+    tool_name = hook_input.get("tool_name", "")
+    if tool_name not in ("Edit", "Write"):
+        sys.exit(0)
+
+    tool_input = hook_input.get("tool_input", {})
+    file_path = tool_input.get("file_path", "")
+
+    if not file_path:
+        sys.exit(0)
+
+    # Check if file is sensitive
+    file_type = is_sensitive_file(file_path)
+    if file_type:
+        # Log the edit
+        log_sensitive_edit(file_path, file_type, tool_name)
+
+        # Output warning to user (non-blocking)
+        warning_msg = (
+            f"⚠️ Security: Modified sensitive file\n"
+            f"File: {file_path}\n"
+            f"Type: {file_type}\n"
+            f"Tool: {tool_name}\n\n"
+            f"This edit has been logged to the security audit trail."
+        )
+
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "permissionDecision": "allow",
+                "userFacingMessage": warning_msg,
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
+
+    # Not a sensitive file, allow silently
+    sys.exit(0)
+
+
+# =============================================================================
 # CLI Commands
 # =============================================================================
 
@@ -768,7 +927,7 @@ def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
         print(
-            "Usage: security-gate.py [pre-check|audit|stats]",
+            "Usage: security-gate.py [pre-check|post-edit|audit|stats]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -776,6 +935,8 @@ def main() -> None:
     mode = sys.argv[1]
     if mode == "pre-check":
         pre_check()
+    elif mode == "post-edit":
+        post_edit_check()
     elif mode == "audit":
         cmd_audit()
     elif mode == "stats":

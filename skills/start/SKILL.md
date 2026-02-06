@@ -309,6 +309,7 @@ When creating or updating a plan file, ALWAYS include:
 **Created:** YYYY-MM-DD
 **Last Updated:** YYYY-MM-DDTHH:MM:SSZ
 **Status:** Pending Approval | In Progress | Completed
+**Session:** {session-name}
 
 **Ralph Configuration:**
 - Implementation Agents: [N from parsed args]
@@ -793,31 +794,49 @@ For detailed documentation on specific topics:
 - **[ralph.md](ralph.md)** - Ralph Mode initialization, work loop, completion criteria, stuck detection, review agents, plan guardian
 - **[import.md](import.md)** - Import tasks from PRD files, YAML, GitHub Issues, or PR descriptions
 
-## Agent Spawning via Task Tool (MANDATORY)
+## Agent Spawning via Native Team Agents (MANDATORY)
 
-After parsing arguments and creating/validating the plan, you MUST spawn agents directly using the Task tool. All agents are spawned in PARALLEL in a SINGLE message with multiple Task() calls.
+After parsing arguments and creating/validating the plan, you MUST create a native team and spawn agents as teammates. All agents are spawned in PARALLEL in a SINGLE message with multiple Task() calls that include `team_name`.
 
 ### Execution Flow
 
 1. Parse `$ARGUMENTS` per Decision Tree
 2. Echo parsed values for confirmation
 3. If task provided: Create/update plan file with Ralph Configuration block
-4. **Spawn ALL agents in PARALLEL** via multiple Task() calls in a single message
-5. Each agent:
+4. **Initialize Ralph state** via `ralph.py setup` (state files only, no spawning)
+5. **Create native team** via `TeamCreate(team_name="ralph-impl")`
+6. **Create tasks** via TaskCreate for each work unit
+7. **Spawn ALL agents in PARALLEL** via multiple Task() calls with `team_name="ralph-impl"`
+8. Each agent:
+   - Joins the native team as a teammate
    - Receives agent number and total count in prompt
    - Gets phase name and specific task assignment
    - Uses correct model (opus/sonnet based on modelMode)
    - Loads plan file for context
+   - Coordinates via SendMessage and shared TaskList
    - Follows anti-hallucination standard
    - Pushes commits before completion (Push Gate)
    - Emits `ULTRATHINK_COMPLETE` when done
-6. After all agents complete: Check `.claude/ralph/retry-queue.json` for failed tasks
-7. If retry queue has entries: Spawn additional agents for retries
-8. Report completion summary
+9. **Monitor progress** — As team lead, watch for idle notifications and completed tasks
+10. After all agents complete: Check `.claude/ralph/retry-queue.json` for failed tasks
+11. If retry queue has entries: Spawn additional agents for retries
+12. **Shutdown team** — Send shutdown_request to each agent, then TeamDelete()
+13. Report completion summary
+
+### Team Creation (MANDATORY)
+
+Before spawning any agents, create the native team:
+
+```python
+TeamCreate(
+    team_name="ralph-impl",
+    description="Ralph implementation team for: [TASK_DESCRIPTION]"
+)
+```
 
 ### Spawning Pattern (MANDATORY)
 
-**CRITICAL:** All agents MUST be spawned in a SINGLE message with multiple Task() calls. Do NOT spawn them sequentially across multiple messages.
+**CRITICAL:** All agents MUST be spawned in a SINGLE message with multiple Task() calls. Each MUST include `team_name` and `name` parameters.
 
 Example: Spawning 3 agents in parallel (single message, 3 Task calls):
 
@@ -826,11 +845,19 @@ Task(
     subagent_type="general-purpose",
     model="opus",  # or "sonnet" based on modelMode
     mode="acceptEdits",  # if auto-accept enabled
+    team_name="ralph-impl",  # REQUIRED: joins native team
+    name="agent-1",  # REQUIRED: unique teammate name
     prompt="""RALPH Agent 1/3 - Phase 2.1: Implementation
 
 **Plan file:** ~/.claude\\plans\\feature-auth.md
 
 **Your task:** Implement OAuth flow with PKCE
+
+**Ralph protocol:**
+- Check TaskList for available work
+- Claim tasks with TaskUpdate(owner="agent-1")
+- Use SendMessage(recipient="team-lead") to report progress
+- Mark tasks completed when done
 
 **Specifically:**
 1. Read plan file for architectural context
@@ -852,11 +879,19 @@ Task(
     subagent_type="general-purpose",
     model="opus",
     mode="acceptEdits",
+    team_name="ralph-impl",
+    name="agent-2",
     prompt="""RALPH Agent 2/3 - Phase 2.1: Implementation
 
 **Plan file:** ~/.claude\\plans\\feature-auth.md
 
 **Your task:** Add frontend login UI
+
+**Ralph protocol:**
+- Check TaskList for available work
+- Claim tasks with TaskUpdate(owner="agent-2")
+- Use SendMessage(recipient="team-lead") to report progress
+- Mark tasks completed when done
 
 **Specifically:**
 1. Create login form component
@@ -877,11 +912,19 @@ Task(
     subagent_type="general-purpose",
     model="opus",
     mode="acceptEdits",
+    team_name="ralph-impl",
+    name="agent-3",
     prompt="""RALPH Agent 3/3 - Phase 2.1: Implementation
 
 **Plan file:** ~/.claude\\plans\\feature-auth.md
 
 **Your task:** Update API middleware for auth
+
+**Ralph protocol:**
+- Check TaskList for available work
+- Claim tasks with TaskUpdate(owner="agent-3")
+- Use SendMessage(recipient="team-lead") to report progress
+- Mark tasks completed when done
 
 **Specifically:**
 1. Add JWT validation middleware
@@ -934,6 +977,12 @@ RALPH Agent {X}/{N} - Phase {phase_number}: {phase_name}
 
 **Your task:** {specific_task_description}
 
+**Ralph protocol:**
+- Check TaskList for available work
+- Claim tasks with TaskUpdate(owner="{agent_name}")
+- Use SendMessage(recipient="team-lead") to report progress
+- Mark tasks completed when done
+
 **Specifically:**
 {detailed_steps_or_requirements}
 
@@ -953,6 +1002,12 @@ When complete, output: ULTRATHINK_COMPLETE
 - `{detailed_steps_or_requirements}` - Breakdown of work
 - `{what_defines_completion}` - Clear completion criteria
 
+**Required Task() parameters:**
+- `team_name="ralph-impl"` - Joins the native team
+- `name="agent-{X}"` - Unique teammate identifier
+- `model="opus"` or `"sonnet"` - Based on modelMode
+- `mode="acceptEdits"` - If auto-accept enabled
+
 ### Retry Queue Check (MANDATORY)
 
 After all agents emit `ULTRATHINK_COMPLETE`, check for retries:
@@ -971,11 +1026,13 @@ fi
 If `postReviewEnabled = true` (default), after implementation completes:
 
 1. Output: "Implementation complete! Starting post-implementation review..."
-2. Spawn review agents using same Task() pattern
-3. Set agent prompts to review mode (see skills/review/SKILL.md)
-4. Review agents use `disallowedTools: [Write, Edit, MultiEdit]`
-5. Review agents leave TODO-P1/P2/P3 comments
-6. Review agents report findings to `.claude/review-agents.md`
+2. Send `shutdown_request` to all implementation agents
+3. Spawn review agents using same Task() pattern with `team_name="ralph-impl"`
+4. Set agent prompts to review mode (see skills/review/SKILL.md)
+5. Review agents use `disallowedTools: [Write, Edit, MultiEdit]`
+6. Review agents leave TODO-P1/P2/P3 comments
+7. Review agents report findings to `.claude/review-agents.md`
+8. After review complete: Send `shutdown_request` to review agents, then `TeamDelete()`
 
 **Review agent counts:**
 - Default: 5 review agents, 2 iterations
