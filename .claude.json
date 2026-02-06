@@ -1,5 +1,5 @@
 {
-  "numStartups": 122,
+  "numStartups": 126,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -8,29 +8,29 @@
     "new-user-warmup": 7,
     "plan-mode-for-complex-tasks": 45,
     "terminal-setup": 120,
-    "memory-command": 108,
-    "shift-enter-setup": 13,
-    "theme-command": 106,
+    "memory-command": 123,
+    "shift-enter-setup": 126,
+    "theme-command": 126,
     "prompt-queue": 50,
     "enter-to-steer-in-relatime": 107,
     "todo-list": 107,
-    "install-github-app": 113,
-    "install-slack-app": 113,
-    "drag-and-drop-images": 115,
-    "double-esc-code-restore": 115,
-    "continue": 115,
+    "install-github-app": 125,
+    "install-slack-app": 125,
+    "drag-and-drop-images": 125,
+    "double-esc-code-restore": 125,
+    "continue": 125,
     "shift-tab": 120,
     "image-paste": 108,
-    "desktop-app": 109,
-    "web-app": 109,
-    "custom-agents": 108,
-    "agent-flag": 108,
-    "mobile-app": 109,
-    "guest-passes": 120,
-    "permissions": 114,
-    "rename-conversation": 111,
-    "custom-commands": 111,
-    "git-worktrees": 115,
+    "desktop-app": 125,
+    "web-app": 125,
+    "custom-agents": 123,
+    "agent-flag": 125,
+    "mobile-app": 125,
+    "guest-passes": 125,
+    "permissions": 125,
+    "rename-conversation": 126,
+    "custom-commands": 126,
+    "git-worktrees": 125,
     "frontend-design-plugin": 116
   },
   "promptQueueUseCount": 84,
@@ -146,7 +146,7 @@
       "lastAPIDuration": 0,
       "lastAPIDurationWithoutRetries": 0,
       "lastToolDuration": 0,
-      "lastDuration": 13986,
+      "lastDuration": 26125,
       "lastLinesAdded": 0,
       "lastLinesRemoved": 0,
       "lastTotalInputTokens": 0,
@@ -155,7 +155,9 @@
       "lastTotalCacheReadInputTokens": 0,
       "lastTotalWebSearchRequests": 0,
       "lastModelUsage": {},
-      "lastSessionId": "6ffe9cc3-c3d8-42df-bde0-723f97d42c17"
+      "lastSessionId": "74a72aee-4e1b-4629-915d-ba205268cfa7",
+      "lastFpsAverage": 2.3,
+      "lastFpsLow1Pct": 42.34
     },
     "D:/source/cwchat": {
       "allowedTools": [],
@@ -276,7 +278,7 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770402222258
+      "timestamp": 1770405842030
     }
   },
   "groveConfigCache": {
@@ -295,7 +297,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770401713385
+      "timestamp": 1770409929609
     }
   },
   "lastReleaseNotesSeen": "2.1.34",
@@ -349,19 +351,19 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770400371093,
+  "lastPlanModeUse": 1770405196600,
   "skillUsage": {
     "start": {
-      "usageCount": 27,
-      "lastUsedAt": 1770404795723
+      "usageCount": 30,
+      "lastUsedAt": 1770406343694
     },
     "reviewplan": {
       "usageCount": 20,
       "lastUsedAt": 1770334619382
     },
     "commit": {
-      "usageCount": 12,
-      "lastUsedAt": 1770404967412
+      "usageCount": 14,
+      "lastUsedAt": 1770410035637
     },
     "screen": {
       "usageCount": 2,
@@ -397,5 +399,8 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": true
   },
   "showSpinnerTree": false,
-  "hasUsedBackslashReturn": true
+  "hasUsedBackslashReturn": true,
+  "hasIdeOnboardingBeenShown": {
+    "vscode": true
+  }
 }
