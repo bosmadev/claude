@@ -1,9 +1,0 @@
-[
-  {
-    "from": "agent-2",
-    "text": "{\"type\":\"task_assignment\",\"taskId\":\"2\",\"subject\":\"IMPL-2: Statusline team agent display\",\"description\":\"Investigate and implement team agent display in statusline. Check how team agent data flows into stdin JSON. Ensure teammates are visible in statusline during /start flow.\",\"assignedBy\":\"agent-2\",\"timestamp\":\"2026-02-06T10:32:26.711Z\"}",
-    "timestamp": "2026-02-06T10:32:26.711Z",
-    "color": "green",
-    "read": true
-  }
-]

@@ -1,9 +1,0 @@
-[
-  {
-    "from": "agent-4",
-    "text": "{\"type\":\"task_assignment\",\"taskId\":\"4\",\"subject\":\"IMPL-4: Build intelligence hook\",\"description\":\"Create hooks/build-intelligence.py hook for PreToolUse/PostToolUse on Bash commands. Detect build/test/lint failures. Feed data to StruggleDetector. Register in settings.json.\",\"assignedBy\":\"agent-4\",\"timestamp\":\"2026-02-06T10:32:50.774Z\"}",
-    "timestamp": "2026-02-06T10:32:50.774Z",
-    "color": "purple",
-    "read": true
-  }
-]

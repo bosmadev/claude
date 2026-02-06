@@ -76,7 +76,7 @@ STYLE_DISPLAY = {"Engineer": "⚙", "Default": "·"}
 
 def _read_ralph_progress(cwd: str) -> dict | None:
     """Read Ralph progress.json, return dict or None if missing/stale/invalid.
-    
+
     Returns None if:
     - File doesn't exist
     - File is empty or has parse error
@@ -86,13 +86,15 @@ def _read_ralph_progress(cwd: str) -> dict | None:
         progress_path = Path(cwd) / ".claude" / "ralph" / "progress.json"
         if not progress_path.exists():
             return None
-        
+
         content = progress_path.read_text(encoding="utf-8").strip()
         if not content:
             return None
-        
+
         data = json.loads(content)
-        
+
+        # TODO-P2: Validate data structure before use (check impl/review/total keys exist) - Review agent review-1
+
         # Check staleness (>5 minutes old)
         updated_at = data.get("updated_at", "")
         if updated_at:
@@ -105,7 +107,7 @@ def _read_ralph_progress(cwd: str) -> dict | None:
             except (ValueError, TypeError):
                 # Invalid timestamp format - treat as stale
                 return None
-        
+
         return data
     except (OSError, json.JSONDecodeError, KeyError):
         return None
@@ -123,6 +125,8 @@ def _read_team_config(session_id: str) -> dict | None:
     if os.environ.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") != "1":
         return None
 
+    # TODO-P3: Add validation for session_id format before glob search - Review agent review-1
+
     try:
         teams_dir = CACHE_DIR / "teams"
         if not teams_dir.exists():
@@ -135,6 +139,7 @@ def _read_team_config(session_id: str) -> dict | None:
                 if config.get("leadSessionId") == session_id:
                     # Found matching team
                     members = config.get("members", [])
+                    # TODO-P2: Validate members is a list before calling len() - Review agent review-1
                     return {
                         "team_name": config.get("name", ""),
                         "member_count": len(members),
@@ -150,38 +155,40 @@ def _read_team_config(session_id: str) -> dict | None:
 def read_build_intelligence(cwd: str) -> str:
     """
     Read build intelligence data and return formatted statusline segment.
-    
+
     Returns empty string if:
     - File doesn't exist
     - File is empty or has parse error
     - No struggling agents detected
-    
+
     Returns color-coded status:
     - Green (BUILD_OK): All agents healthy
     - Yellow (BUILD_WARN): 1 agent struggling
     - Red (BUILD_ERROR): 2-3 agents struggling
     - Bright Red (BUILD_CRITICAL): 4+ agents struggling
     """
+    # TODO-P2: Add staleness check (compare with _read_ralph_progress 5min TTL) - Review agent review-1
     try:
         intel_path = Path(cwd) / ".claude" / "ralph" / "build-intelligence.json"
         if not intel_path.exists():
             return ""
-        
+
         content = intel_path.read_text(encoding="utf-8").strip()
         if not content:
             return ""
-        
+
         data = json.loads(content)
-        
+
         # Extract struggle summary
         summary = data.get("summary", {})
+        # TODO-P2: Validate summary is dict before calling .get() - Review agent review-1
         struggling = summary.get("total_struggling", 0)
         total = summary.get("total_agents", 0)
-        
+
         # No agents or no struggling - show nothing
         if total == 0 or struggling == 0:
             return ""
-        
+
         # Choose color based on struggle count
         if struggling == 1:
             color = BUILD_WARN
@@ -189,10 +196,10 @@ def read_build_intelligence(cwd: str) -> str:
             color = BUILD_ERROR
         else:
             color = BUILD_CRITICAL
-        
+
         # Format: "🔥2" for 2 struggling agents
         return f" {color}🔥{struggling}{RESET}"
-    
+
     except (OSError, json.JSONDecodeError, KeyError, TypeError):
         # Gracefully handle any read/parse errors
         return ""
@@ -296,6 +303,7 @@ def read_usage_cache(cache_path: Path) -> dict:
     if cache_path.exists():
         try:
             data = json.loads(cache_path.read_text(encoding="utf-8"))
+            # TODO-P2: Add bounds check for utilization values (clamp 0-100 or warn on >100) - Review agent review-1
             # All-models weekly
             val = data.get("seven_day", {}).get("utilization", 0)
             result["all_weekly"] = str(int(float(val)))
@@ -460,6 +468,7 @@ MOCK_SCENARIOS = {
             "struggling": 0,
             "updated_at": datetime.now().isoformat() + "Z",
         },
+        # TODO-P3: Add build_intelligence mock data for complete scenario coverage - Review agent review-1
     },
     "ralph_struggling": {
         "name": "Ralph Progress with Struggle Alert",
@@ -664,6 +673,7 @@ def main() -> None:
         commit_hash = git_data.get("commit_hash", "")
 
         # Normalise remote URL to HTTPS for hyperlinks
+        # TODO-P3: Expand regex to support gitlab.com, bitbucket.org, etc. - Review agent review-1
         if remote_url:
             remote_url = re.sub(r"^git@github\.com:", "https://github.com/", remote_url)
             remote_url = re.sub(r"\.git$", "", remote_url)
@@ -720,6 +730,7 @@ def main() -> None:
 
             if remote_url:
                 # OSC 8 hyperlink
+                # TODO-P2: Validate branch name doesn't contain special chars before URL interpolation (security) - Review agent review-1
                 git_section = (
                     f"{SNOW_WHITE}"
                     f"\033]8;;{remote_url}/tree/{branch}\033\\{branch}\033]8;;\033\\"
@@ -746,6 +757,7 @@ def main() -> None:
 
     if team_data and team_data.get("member_count", 0) > 0:
         count = team_data["member_count"]
+        # TODO-P3: Add cap on team_indicator display (e.g., 99+ for >99 agents) - Review agent review-1
         # Show team member count: 👥4 for 4 agents
         team_indicator = f" {CYAN}👥{count}{RESET}"
 
@@ -753,10 +765,13 @@ def main() -> None:
         impl = ralph_progress.get("impl", {})
         review = ralph_progress.get("review", {})
 
+        # TODO-P2: Validate impl/review are dicts before calling .get() - Review agent review-1
+
         # Build phase display (Element 1)
         parts = []
         if impl.get("total", 0) > 0:
             completed = impl.get("completed", 0) + impl.get("failed", 0)
+            # TODO-P3: Add overflow protection for completed > total (clamp to total) - Review agent review-1
             parts.append(f"{BRIGHT_WHITE}{completed}{RESET}{CYAN}/{impl['total']}{RESET}")
         if review.get("total", 0) > 0:
             completed = review.get("completed", 0) + review.get("failed", 0)

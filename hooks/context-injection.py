@@ -136,6 +136,11 @@ def build_context_block(state: dict, bi: Optional[dict]) -> str:
 
 def main() -> None:
     """SubagentStart hook handler for context injection."""
+    # TODO-P1: CRITICAL - SubagentStart hooks do NOT receive stdin JSON from Claude Code
+    # This hook assumes stdin input but SubagentStart hooks are triggered without input
+    # Hook should exit(0) immediately if no Ralph state exists, output format is correct
+    # BUT: verify Claude Code actually sends stdin for SubagentStart hooks
+
     # Quick exit if not in Ralph mode
     ralph_active = Path(RALPH_STATE_FILE).exists()
     if not ralph_active:
@@ -154,6 +159,8 @@ def main() -> None:
     # Build context block
     context_block = build_context_block(state, bi)
 
+    # TODO-P2: Output format validation - does Claude Code expect this exact schema?
+    # Should test if "hookSpecificOutput" wrapper is required or if bare output works
     # Output augmented context via SubagentStart hook schema
     # SubagentStart hooks use: {hookEventName, additionalContext}
     output = {

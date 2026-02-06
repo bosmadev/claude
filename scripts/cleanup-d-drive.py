@@ -3,8 +3,8 @@
 D: Drive Cleanup Script
 
 Removes temporary files and directories from D: drive:
-- cache-break-*.diff files in D:\tmp\claude\
-- NUL files at D:\claude\nul and D:\nul (via Git Bash)
+- cache-break-*.diff files in D:\\tmp\\claude\\
+- NUL files at D:\\claude\\nul and D:\\nul (via Git Bash)
 - Empty directories after cleanup
 
 Git Bash rm is required for NUL files because Windows treats "nul" as a
@@ -13,8 +13,15 @@ os.remove() fail with "The system cannot find the file specified" error.
 Git Bash rm bypasses this restriction by using POSIX path semantics.
 """
 
+import io
 import subprocess
+import sys
 from pathlib import Path
+
+# Fix Windows cp1252 encoding for Unicode output (checkmarks, arrows)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 
 def format_size(size_bytes: int) -> str:
@@ -28,7 +35,7 @@ def format_size(size_bytes: int) -> str:
 
 
 def cleanup_cache_break_diffs() -> None:
-    """Remove cache-break-*.diff files from D:\tmp\claude\."""
+    r"""Remove cache-break-*.diff files from D:\tmp\claude\."""
     print("[cache-break diffs]")
     tmp_dir = Path("D:/tmp/claude")
 
@@ -102,7 +109,7 @@ def cleanup_nul_files() -> None:
 
 
 def cleanup_empty_directories() -> None:
-    """Remove empty D:\claude\ directory if applicable."""
+    r"""Remove empty D:\claude\ directory if applicable."""
     print("\n[directories]")
 
     claude_dir = Path("D:/claude")

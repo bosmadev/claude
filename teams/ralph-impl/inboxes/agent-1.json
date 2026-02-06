@@ -1,9 +1,0 @@
-[
-  {
-    "from": "agent-1",
-    "text": "{\"type\":\"task_assignment\",\"taskId\":\"1\",\"subject\":\"IMPL-1: Statusline test mode\",\"description\":\"Add --test flag and MOCK_SCENARIOS to scripts/statusline.py. Test team agent display in active /start flow. After verification, remove test/mock code.\",\"assignedBy\":\"agent-1\",\"timestamp\":\"2026-02-06T10:32:18.412Z\"}",
-    "timestamp": "2026-02-06T10:32:18.412Z",
-    "color": "blue",
-    "read": false
-  }
-]

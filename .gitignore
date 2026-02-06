@@ -27,6 +27,7 @@ transcriptions/
 statsig/
 tmp/
 security/
+teams/
 
 # Files
 !.gitkeep

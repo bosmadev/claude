@@ -1,5 +1,5 @@
 {
-  "numStartups": 115,
+  "numStartups": 116,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -26,14 +26,14 @@
     "custom-agents": 108,
     "agent-flag": 108,
     "mobile-app": 109,
-    "guest-passes": 113,
+    "guest-passes": 116,
     "permissions": 114,
     "rename-conversation": 111,
     "custom-commands": 111,
     "git-worktrees": 115,
-    "frontend-design-plugin": 96
+    "frontend-design-plugin": 116
   },
-  "promptQueueUseCount": 75,
+  "promptQueueUseCount": 78,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -109,7 +109,7 @@
   "opusProMigrationComplete": true,
   "thinkingMigrationComplete": true,
   "cachedChromeExtensionInstalled": true,
-  "changelogLastFetched": 1770375715335,
+  "changelogLastFetched": 1770377560263,
   "oauthAccount": {
     "accountUuid": "d944b29f-4832-4a63-b293-6eceae956e45",
     "emailAddress": "dennis@bosma.dev",
@@ -142,22 +142,47 @@
         "packageManager": null
       },
       "hasCompletedProjectOnboarding": true,
-      "lastCost": 0,
-      "lastAPIDuration": 0,
-      "lastAPIDurationWithoutRetries": 0,
-      "lastToolDuration": 0,
-      "lastDuration": 12387,
-      "lastLinesAdded": 0,
-      "lastLinesRemoved": 0,
-      "lastTotalInputTokens": 0,
-      "lastTotalOutputTokens": 0,
-      "lastTotalCacheCreationInputTokens": 0,
-      "lastTotalCacheReadInputTokens": 0,
-      "lastTotalWebSearchRequests": 0,
-      "lastModelUsage": {},
-      "lastSessionId": "e4dc758a-a312-4233-82aa-93d3d3d3dfed",
-      "lastFpsAverage": 35.63,
-      "lastFpsLow1Pct": 164.48
+      "lastCost": 65.81805249999996,
+      "lastAPIDuration": 9308129,
+      "lastAPIDurationWithoutRetries": 9304311,
+      "lastToolDuration": 5648982,
+      "lastDuration": 36329333,
+      "lastLinesAdded": 3667,
+      "lastLinesRemoved": 722,
+      "lastTotalInputTokens": 246536,
+      "lastTotalOutputTokens": 390612,
+      "lastTotalCacheCreationInputTokens": 3892720,
+      "lastTotalCacheReadInputTokens": 62939559,
+      "lastTotalWebSearchRequests": 1,
+      "lastModelUsage": {
+        "claude-haiku-4-5-20251001": {
+          "inputTokens": 175858,
+          "outputTokens": 10593,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 14783,
+          "webSearchRequests": 1,
+          "costUSD": 0.25730175
+        },
+        "claude-sonnet-4-5-20250929": {
+          "inputTokens": 69553,
+          "outputTokens": 281607,
+          "cacheReadInputTokens": 43746988,
+          "cacheCreationInputTokens": 2828487,
+          "webSearchRequests": 0,
+          "costUSD": 46.93947775
+        },
+        "claude-opus-4-6": {
+          "inputTokens": 1125,
+          "outputTokens": 98412,
+          "cacheReadInputTokens": 19192571,
+          "cacheCreationInputTokens": 1049450,
+          "webSearchRequests": 0,
+          "costUSD": 18.621273000000002
+        }
+      },
+      "lastSessionId": "5b47e9a3-ba2a-4a3a-b91c-49aa1768909d",
+      "lastFpsAverage": 2.69,
+      "lastFpsLow1Pct": 17.98
     },
     "D:/source/cwchat": {
       "allowedTools": [],
@@ -303,13 +328,13 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770370070399
+      "timestamp": 1770377567904
     }
   },
   "groveConfigCache": {
     "d944b29f-4832-4a63-b293-6eceae956e45": {
       "grove_enabled": true,
-      "timestamp": 1770288755103
+      "timestamp": 1770377567402
     }
   },
   "passesEligibilityCache": {
@@ -322,10 +347,10 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770373766998
+      "timestamp": 1770377567198
     }
   },
-  "lastReleaseNotesSeen": "2.1.33",
+  "lastReleaseNotesSeen": "2.1.34",
   "passesUpsellSeenCount": 4,
   "passesLastSeenCampaign": "claude_code_guest_pass",
   "hasShownOpus45Notice": {
@@ -387,8 +412,8 @@
       "lastUsedAt": 1770334619382
     },
     "commit": {
-      "usageCount": 9,
-      "lastUsedAt": 1770236993585
+      "usageCount": 11,
+      "lastUsedAt": 1770378632862
     },
     "screen": {
       "usageCount": 2,
@@ -419,5 +444,6 @@
   "hasShownOpus46Notice": {
     "18a6ba0d-8927-47b6-9571-0f549ada2369": true
   },
-  "showSpinnerTree": false
+  "showSpinnerTree": false,
+  "hasUsedBackslashReturn": true
 }
