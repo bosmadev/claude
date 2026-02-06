@@ -124,8 +124,8 @@ Install GitHub workflow templates only.
 2. Copy workflow template from Claude config:
 
    ```bash
-   # Template location
-   TEMPLATE="C:/Users/Dennis/.claude/.github/workflows/claude.yml"
+   # Template location (use tilde expansion for cross-platform compatibility)
+   TEMPLATE=~/.claude/.github/workflows/claude.yml
 
    # Destination
    DEST=".github/workflows/claude.yml"
@@ -353,7 +353,7 @@ All templates are sourced from Claude Code's configuration directory:
 
 | Template  | Source                                                   | Destination                      |
 | --------- | -------------------------------------------------------- | -------------------------------- |
-| Workflows | `C:/Users/Dennis/.claude/.github/workflows/claude.yml` | `.github/workflows/claude.yml` |
+| Workflows | `~/.claude/.github/workflows/claude.yml` | `.github/workflows/claude.yml` |
 
 **Note:** On Windows, use forward slashes in paths for cross-platform compatibility.
 
@@ -362,7 +362,7 @@ All templates are sourced from Claude Code's configuration directory:
 Before copying any template, verify it exists:
 
 ```bash
-TEMPLATE="C:/Users/Dennis/.claude/.github/workflows/claude.yml"
+TEMPLATE=~/.claude/.github/workflows/claude.yml
 
 if [ ! -f "$TEMPLATE" ]; then
     echo "Error: Template file not found at $TEMPLATE"
@@ -387,7 +387,7 @@ cp "$TEMPLATE" ".github/workflows/claude.yml"
 
 ## File Content: claude.yml
 
-The workflow template is copied from `C:/Users/Dennis/.claude/.github/workflows/claude.yml`.
+The workflow template is copied from `~/.claude/.github/workflows/claude.yml`.
 
 Key features:
 
@@ -424,13 +424,13 @@ The template uses scope-prefix commit format (feat, fix, refactor, etc.).
 
 ## Error Handling
 
-| Error                                                                      | Action                                                  |
-| -------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Not a git repo                                                             | Instruct to run `git init` first                      |
-| No write permission                                                        | Report permission error                                 |
-| Template not found at C:/Users/Dennis/.claude/.github/workflows/claude.yml | Report missing template, check Claude Code installation |
-| File exists                                                                | Show warning and skip to avoid overwriting              |
-| Cannot create directory                                                    | Check filesystem permissions                            |
+| Error                                                             | Action                                                  |
+| ----------------------------------------------------------------- | ------------------------------------------------------- |
+| Not a git repo                                                    | Instruct to run `git init` first                      |
+| No write permission                                               | Report permission error                                 |
+| Template not found at ~/.claude/.github/workflows/claude.yml      | Report missing template, check Claude Code installation |
+| File exists                                                       | Show warning and skip to avoid overwriting              |
+| Cannot create directory                                           | Check filesystem permissions                            |
 
 ## Safety Rules
 
@@ -551,13 +551,13 @@ The workflow automatically updates CHANGELOG.md when PRs are merged to main.
 
 ### Cross-Platform Paths
 
-Use forward slashes for paths in bash commands:
+Use tilde expansion for paths in bash commands:
 
 ```bash
-TEMPLATE="C:/Users/Dennis/.claude/.github/workflows/claude.yml"
+TEMPLATE=~/.claude/.github/workflows/claude.yml
 ```
 
-This ensures compatibility when running from Git Bash on Windows.
+This ensures cross-platform compatibility and works for any user's home directory.
 
 ### Idempotency
 
@@ -574,7 +574,7 @@ Before copying, verify the template exists:
 ```bash
 if [ ! -f "$TEMPLATE" ]; then
     echo "Error: Template not found at $TEMPLATE"
-    echo "Check Claude Code installation: C:/Users/Dennis/.claude/"
+    echo "Check Claude Code installation: ~/.claude/"
     exit 1
 fi
 ```
