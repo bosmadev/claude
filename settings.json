@@ -357,6 +357,15 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude\\scripts\\fix-chrome-native-host.py",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PreCompact": [

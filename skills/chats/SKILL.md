@@ -1,6 +1,7 @@
 ---
 name: chats
 description: Manage Claude Code chats - list, rename, delete, and clean up old chats. Use when viewing chat history, cleaning up disk space, or resuming previous work.
+argument-hint: "[id|rename|delete|cache|open|filter|commits|plans|help]"
 user-invocable: true
 context: fork
 ---
