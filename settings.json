@@ -278,7 +278,6 @@
       "Bash(mv:*)",
       "Bash(format:*)",
       "Bash(dd:*)"
-      
     ],
     "defaultMode": "plan"
   },
@@ -534,41 +533,41 @@
       }
     ],
     "UserPromptSubmit": [
-           {
-             "matcher": "^/(?!start\\b)",
-          "hooks": [
-                {
-              "type": "command",
-               "command": "python ~/.claude\\scripts\\guards.py skill-interceptor",
-              "timeout": 5
-             }
-             ]
-          },
-         {
-            "matcher": "^/start",
-             "hooks": [
-              {
-              "type": "command",
-          "command": "python ~/.claude\\scripts\\guards.py skill-parser",
-               "timeout": 5
-            }
-           ]
-       },
-         {
-           "hooks": [
-           {
-              "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py plan-comments",
-             "timeout": 5
-             },
-             {
-              "type": "command",
-              "command": "python ~/.claude\\scripts\\guards.py auto-ralph",
-              "timeout": 5
-             }
-           ]
+      {
+        "matcher": "^/(?!start\\b)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude\\scripts\\guards.py skill-interceptor",
+            "timeout": 5
           }
-      ],
+        ]
+      },
+      {
+        "matcher": "^/start",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude\\scripts\\guards.py skill-parser",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude\\scripts\\guards.py plan-comments",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python ~/.claude\\scripts\\guards.py auto-ralph",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SubagentStart": [
       {
         "hooks": [

@@ -311,6 +311,12 @@ Token-efficient model assignment via permanent, native mechanisms:
 
 ---
 
+## Agent Shutdown Protocol
+
+All team agents (IMPL, VERIFY+FIX, review) MUST handle shutdown gracefully:
+
+When you receive a `shutdown_request` message (JSON with `type: "shutdown_request"`), respond by calling `SendMessage` with `type="shutdown_response"`, `request_id` from the message, and `approve=true`. This terminates your process. **Never** respond with "I can't exit" or "close the window" — always use the `SendMessage` tool.
+
 ## Skills & Infrastructure
 
 See [USAGE.md](./USAGE.md) for complete reference:
