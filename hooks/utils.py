@@ -645,8 +645,7 @@ def main() -> None:
         signal.signal(signal.SIGHUP, lambda *_: sys.exit(0))
 
     if len(sys.argv) < 2:
-        print("Usage: utils.py [focus|notify|model-capture] [args...]", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     mode = sys.argv[1]
 
@@ -658,8 +657,8 @@ def main() -> None:
     elif mode == "model-capture":
         do_model_capture()
     else:
-        print("Usage: utils.py [focus|notify|model-capture] [args...]", file=sys.stderr)
-        sys.exit(1)
+        # Unknown mode - exit gracefully to avoid hook errors
+        sys.exit(0)
 
 
 if __name__ == "__main__":

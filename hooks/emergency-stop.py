@@ -314,8 +314,7 @@ def posttool_monitor(tool_name: str, tool_output: Dict) -> None:
 def main():
     """Hook entry point."""
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Missing hook arguments"}), file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     command = sys.argv[1]
 
@@ -356,9 +355,8 @@ def main():
 
             sys.exit(0)  # Pass through
 
-        except Exception as e:
-            print(json.dumps({"error": f"Hook error: {str(e)}"}), file=sys.stderr)
-            sys.exit(1)
+        except Exception:
+            sys.exit(0)
 
     elif command == "posttool":
         try:

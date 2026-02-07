@@ -62,16 +62,14 @@ def main() -> None:
     _setup_timeout()
 
     if len(sys.argv) < 2:
-        print("Usage: ralph.py [stop|session-start|pre-compact]", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     mode = sys.argv[1]
 
     # Validate mode to prevent command injection
     valid_modes = {"stop", "session-start", "pre-compact", "subagent-start", "subagent-stop"}
     if mode not in valid_modes:
-        print(f"Invalid mode: {mode}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     hook_command = f"hook-{mode}"
 
@@ -125,8 +123,8 @@ def main() -> None:
         sys.exit(0)  # Don't block Claude Code
     except (FileNotFoundError, PermissionError) as e:
         # Log script execution errors
-        print(f"Error executing ralph.py: {e}", file=sys.stderr)
-        sys.exit(1)
+        # Can't find/run script — exit gracefully
+        sys.exit(0)
 
     # Forward stdout/stderr
     if result.stdout:

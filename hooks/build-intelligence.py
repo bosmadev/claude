@@ -215,15 +215,14 @@ def hook_handler() -> None:
 def main() -> None:
     """Main entry point."""
     if len(sys.argv) < 2:
-        print("Usage: build-intelligence.py hook", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     mode = sys.argv[1]
     if mode == "hook":
         hook_handler()
     else:
-        print(f"Unknown mode: {mode}", file=sys.stderr)
-        sys.exit(1)
+        # Unknown mode - exit gracefully to avoid hook errors
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

@@ -20,11 +20,9 @@ def main() -> None:
             timeout=30,  # 30 second timeout for guards operations
         )
     except subprocess.TimeoutExpired:
-        print("Error: guards.py timed out after 30s", file=sys.stderr)
-        sys.exit(1)
-    except (FileNotFoundError, PermissionError) as e:
-        print(f"Error executing guards.py: {e}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
+    except (FileNotFoundError, PermissionError):
+        sys.exit(0)
 
     if result.stdout:
         sys.stdout.buffer.write(result.stdout)

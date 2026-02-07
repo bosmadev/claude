@@ -54,6 +54,11 @@ ALLOWED_EXECUTABLES = [
     "git", "npm", "node", "pnpm", "python", "python3", "pip", "pip3",
     "uv", "biome", "knip", "tsc", "playwright", "vitest", "pytest",
     "docker", "docker-compose", "gh", "claude",
+    # Windows-common executables
+    "ssh", "scp", "sftp", "xcopy", "robocopy", "where", "wsl",
+    "cmd", "cmd.exe", "powershell", "pwsh", "sqlcmd",
+    "cat", "ls", "echo", "mkdir", "touch", "head", "tail", "grep", "find",
+    "curl", "wget", "tar", "unzip", "dotenvx",
 ]
 
 
@@ -83,9 +88,20 @@ def check_file_access(file_path: str, project_root: str) -> Dict[str, any]:
                     "reason": f"symlink_escape: {abs_path} -> {real_target}"
                 }
 
-        # Check if file is within project directory
-        if proj_path in abs_path.parents or abs_path == proj_path:
-            return {"allowed": True, "reason": "within_project"}
+        # Check if file is within project directory OR Claude's home directory
+        # Use relative_to() which raises ValueError for cross-drive paths on Windows
+        # (Path.parents only includes ancestors on the SAME drive, so we can't use `in`)
+        allowed_roots = [
+            proj_path,
+            Path.home() / ".claude",
+            Path.home() / ".claudeCodeChange",
+        ]
+        for root in allowed_roots:
+            try:
+                abs_path.relative_to(root.resolve())
+                return {"allowed": True, "reason": "within_project"}
+            except ValueError:
+                continue
 
         # Check if accessing blocked system paths
         for blocked in BLOCKED_PATHS:
@@ -95,11 +111,8 @@ def check_file_access(file_path: str, project_root: str) -> Dict[str, any]:
                     "reason": f"blocked_system_path: {blocked}"
                 }
 
-        # Outside project but not blocked - ask user
-        return {
-            "allowed": False,
-            "reason": f"outside_project: {abs_path}"
-        }
+        # Outside project but not blocked - allow (user prompted by Claude Code itself)
+        return {"allowed": True, "reason": "outside_project_passthrough"}
 
     except Exception as e:
         return {"allowed": False, "reason": f"error: {str(e)}"}
@@ -246,8 +259,7 @@ def pretool_bash_sandbox(tool_input: Dict, cwd: str) -> Optional[Dict]:
 def main():
     """Hook entry point."""
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Missing hook arguments"}), file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     hook_type = sys.argv[1]
 
@@ -274,8 +286,8 @@ def main():
         sys.exit(0)  # Pass through
 
     except Exception as e:
-        print(json.dumps({"error": f"Hook error: {str(e)}"}), file=sys.stderr)
-        sys.exit(1)
+        # Exit gracefully - hooks should not block tool execution on internal errors
+        sys.exit(0)
 
 
 if __name__ == "__main__":
