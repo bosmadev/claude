@@ -680,7 +680,7 @@ def pre_check() -> None:
     """
     try:
         # Limit stdin read to prevent memory exhaustion
-        raw_input = sys.stdin.read(MAX_STDIN_SIZE)
+        raw_input = sys.stdin.buffer.read(MAX_STDIN_SIZE).decode('utf-8', errors='replace')
         if len(raw_input) >= MAX_STDIN_SIZE:
             # Input too large, block for safety
             output = {
@@ -799,7 +799,7 @@ def post_edit_check() -> None:
     """
     try:
         # Limit stdin read to prevent memory exhaustion
-        raw_input = sys.stdin.read(MAX_STDIN_SIZE)
+        raw_input = sys.stdin.buffer.read(MAX_STDIN_SIZE).decode('utf-8', errors='replace')
         if len(raw_input) >= MAX_STDIN_SIZE:
             # Input too large, exit silently (allow the edit)
             sys.exit(0)

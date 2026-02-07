@@ -24,6 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Add hooks module to path for transaction primitives
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from hooks.transaction import atomic_write_text, transactional_update_occ, atomic_write_json
+
 # Fix Windows cp1252 encoding for Unicode output
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -218,7 +222,11 @@ def fix_title_collisions(entries: list[dict]) -> None:
 def backup_index(index_path: Path) -> Path:
     """Create backup of sessions-index.json before modifications."""
     backup_path = index_path.with_suffix(".json.bak")
-    backup_path.write_text(index_path.read_text(encoding="utf-8"), encoding="utf-8")
+    content = index_path.read_text(encoding="utf-8")
+    try:
+        atomic_write_text(backup_path, content, fsync=True)
+    except Exception as e:
+        raise RuntimeError(f"Failed to create backup at {backup_path}: {e}") from e
     return backup_path
 
 
@@ -233,8 +241,11 @@ def repair_project(project_dir: Path, fix: bool, verbose: bool) -> dict:
     if not index_path.exists():
         if fix:
             # Bootstrap: create empty index so repair can populate it
-            index_path.write_text('{"entries": []}', encoding="utf-8")
-            print(f"  ✓ Bootstrapped new sessions-index.json in {project_dir.name}", file=sys.stderr)
+            try:
+                atomic_write_json(index_path, {"entries": []}, fsync=True)
+                print(f"  ✓ Bootstrapped new sessions-index.json in {project_dir.name}", file=sys.stderr)
+            except Exception as e:
+                return {"error": f"Failed to bootstrap index: {e}"}
         else:
             return {"error": f"sessions-index.json not found in {project_dir} (use --fix to bootstrap)"}
 
@@ -276,32 +287,45 @@ def repair_project(project_dir: Path, fix: bool, verbose: bool) -> dict:
 
     if fix:
         # Backup before modifications
-        backup_path = backup_index(index_path)
-        stats["backup"] = str(backup_path)
+        try:
+            backup_path = backup_index(index_path)
+            stats["backup"] = str(backup_path)
+        except Exception as e:
+            return {"error": f"Backup failed: {e}"}
 
-        # Remove dead entries
-        cleaned_entries = [e for e in existing_entries if e not in dead]
+        # Define update function for OCC
+        def update_index(current_data: dict) -> dict:
+            """Apply repair transformations to index data."""
+            current_entries = current_data.get("entries", [])
 
-        # Add orphaned sessions
-        all_entries = cleaned_entries + orphaned
+            # Remove dead entries
+            cleaned_entries = [e for e in current_entries if e not in dead]
 
-        # Fix title collisions
-        fix_title_collisions(all_entries)
+            # Add orphaned sessions
+            all_entries = cleaned_entries + orphaned
 
-        # Sort by creation date (most recent first)
-        all_entries.sort(key=lambda x: x.get("created", ""), reverse=True)
+            # Fix title collisions
+            fix_title_collisions(all_entries)
 
-        # Update index data
-        index_data["entries"] = all_entries
+            # Sort by creation date (most recent first)
+            all_entries.sort(key=lambda x: x.get("created", ""), reverse=True)
 
-        # Write updated index
-        index_path.write_text(
-            json.dumps(index_data, indent=2, ensure_ascii=False),
-            encoding="utf-8"
-        )
+            # Return updated structure
+            return {"entries": all_entries}
 
-        stats["fixed"] = True
-        stats["new_total"] = len(all_entries)
+        # Write updated index using OCC
+        try:
+            updated_data = transactional_update_occ(
+                index_path,
+                update_index,
+                retries=3,
+                fsync=True,
+                default={"entries": []}
+            )
+            stats["fixed"] = True
+            stats["new_total"] = len(updated_data.get("entries", []))
+        except Exception as e:
+            return {"error": f"Failed to write repaired index: {e}"}
 
     return stats
 

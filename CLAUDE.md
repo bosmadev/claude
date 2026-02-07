@@ -37,6 +37,49 @@ All temporary pending files MUST be created in `{repo}/.claude/` directory, neve
 
 This keeps repo root clean and prevents accidental commits of temporary files.
 
+## ACID Data Integrity
+
+All state files use transactional primitives from `hooks/transaction.py`:
+
+| File | Pattern | Timeout | Why |
+|------|---------|---------|-----|
+| `sessions-index.json` | OCC (lockless) | N/A | Low write contention |
+| `ralph/progress.json` | Locked R/W | 5s | High-conflict agent updates |
+| `commit.md` | Atomic write | N/A | Sequential hooks, crash safety |
+| `receipts.json` | Locked append | 5s | Audit trail integrity |
+| `emergency-state.json` | Locked R/W | 5s | Cross-platform safety |
+
+**Import pattern:**
+```python
+from hooks.transaction import atomic_write_json, transactional_update, locked_read_json
+```
+
+**Error handling:** Catch `LockTimeoutError` for graceful degradation, `ValidationError` for schema issues.
+
+**Test coverage:** Run `python -m pytest scripts/test_transaction.py -v` (21 tests)
+
+## Frontend Visual Verification
+
+When editing frontend files (pages, components, styles), verify changes visually:
+
+**Files requiring verification:**
+- `app/**/*.tsx` - Next.js pages and layouts
+- `components/**/*.tsx` - React components
+- `styles/**/*.css` - Stylesheets
+- `public/**/*` - Static assets
+
+**Verification workflow:**
+1. PostToolUse hook detects frontend edit → outputs suggestion
+2. Run `/launch` to start dev server and open browsers
+3. Check for visual regressions, console errors, network issues
+4. Document findings in response
+
+**Exceptions (skip verification):**
+- README/documentation changes
+- Test file edits (`*.test.tsx`, `*.spec.tsx`)
+- Type definition changes (`*.d.ts`)
+- Config files (`*.config.ts`, `*.config.js`)
+
 ## Plan Files (MANDATORY)
 
 All plans in `/plans/` MUST follow Plan Change Tracking:
@@ -185,7 +228,13 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
    - Reads PR body for commit aggregation
    - Extracts build ID from branch name
    - Generates CHANGELOG entry
-4. **CHANGELOG Entry Format:**
+4. **Auto Release** - GitHub Actions creates tag + release:
+
+   - Reads new version from package.json
+   - Creates annotated git tag `v{version}`
+   - Creates GitHub Release with CHANGELOG entry as notes
+   - Skips if tag already exists
+5. **CHANGELOG Entry Format:**
 
 ```markdown
 ## Build {id} | {version}
@@ -200,6 +249,13 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 - {file_section_2}
 - ...
 ```
+
+6. **Release Format:**
+
+- Tag: `v{version}` (e.g., `v1.2.3`)
+- Title: `Release v{version}`
+- Body: Extracted CHANGELOG entry for the build
+- Created by: `github-actions[bot]`
 
 ### Key Points
 
@@ -226,6 +282,7 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 - Edit CHANGELOG directly on main if needed
 - Use conventional commit format in PR title to influence versioning
 - Add `skip-changelog` label to PR to bypass automation
+- Add `skip-release` label to PR to bypass release creation
 
 ## 3-Layer Model Routing
 

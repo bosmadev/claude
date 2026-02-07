@@ -90,7 +90,7 @@ def main() -> None:
     def read_stdin():
         nonlocal stdin_data
         try:
-            stdin_data = sys.stdin.read()
+            stdin_data = sys.stdin.buffer.read().decode('utf-8', errors='replace')
         except Exception:
             stdin_data = ""
 

@@ -172,7 +172,7 @@ def hook_handler() -> None:
         sys.exit(0)
 
     try:
-        hook_input = json.loads(sys.stdin.read())
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
     except json.JSONDecodeError:
         sys.exit(0)
 

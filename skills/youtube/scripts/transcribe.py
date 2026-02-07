@@ -225,23 +225,10 @@ url: "https://youtube.com/watch?v={video_id}"
 
 
 def track_usage(video_id: str, title: str, file_path: str) -> None:
-    """Track YouTube transcript usage in project-local file for RALPH cleanup."""
-    # Use YOUTUBE_PROJECT_DIR if set (allows tracking in project dir when script runs from ~/.claude/youtube)
-    project_dir_raw = os.environ.get("YOUTUBE_PROJECT_DIR", ".")
-
-    # Validate environment variable to prevent path traversal attacks
-    project_dir = Path(project_dir_raw).resolve()
-
-    # Security check: ensure project_dir is a valid directory and not attempting path traversal
-    # Allow only absolute paths or current directory
-    if not project_dir.exists():
-        print(f"Warning: YOUTUBE_PROJECT_DIR does not exist: {project_dir}", file=sys.stderr)
-        project_dir = Path(".").resolve()
-    elif not project_dir.is_dir():
-        print(f"Warning: YOUTUBE_PROJECT_DIR is not a directory: {project_dir}", file=sys.stderr)
-        project_dir = Path(".").resolve()
-
-    tracker_file = project_dir / ".claude" / "youtube-session.json"
+    """Track YouTube transcript usage in ~/.claude/youtube/youtube-session.json (gitignored)."""
+    # Store in ~/.claude/youtube/ which is gitignored, not in project .claude/ dirs
+    claude_home = Path.home() / ".claude"
+    tracker_file = claude_home / "youtube" / "youtube-session.json"
     tracker_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Load or create

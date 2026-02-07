@@ -565,3 +565,163 @@ jobs:
                 throw new Error(`Git commit or push failed: ${commitError.message}`);
               }
             }
+
+  # ============================================
+  # Job 3: Create GitHub Release + Tag
+  # ============================================
+  create-release:
+    name: Create Release
+    needs: changelog
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to create tags and releases
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Full history for tag creation
+
+      - name: Pull latest changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin ${{ github.ref_name }} || true
+
+      - name: Create tag and release
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync, spawnSync } = require('child_process');
+
+            function safeExec(cmd, errorMsg) {
+              // Validate command is safe (git/find only, no shell expansion)
+              const allowedCommands = /^(git|find)\s/;
+              if (!allowedCommands.test(cmd)) {
+                throw new Error(`Unsafe command rejected: ${cmd}`);
+              }
+              try {
+                return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              } catch (error) {
+                console.error(`${errorMsg}: ${error.message}`);
+                throw new Error(`${errorMsg}: ${error.stderr || error.message}`);
+              }
+            }
+
+            // Find package.json (exclude node_modules)
+            let pkgPath = null;
+            try {
+              const result = safeExec('find . -name "package.json" -not -path "*/node_modules/*" | head -1', 'Failed to find package.json').trim();
+              if (result) pkgPath = result;
+            } catch (e) {
+              console.log('No package.json found, skipping release');
+              return;
+            }
+
+            if (!pkgPath || !fs.existsSync(pkgPath)) {
+              console.log('No package.json found, skipping release');
+              return;
+            }
+
+            // Read version from package.json
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            const version = pkg.version || '0.0.0';
+            const tagName = `v${version}`;
+
+            console.log(`Creating release for version ${version}`);
+
+            // Check if tag already exists
+            try {
+              const existingTags = safeExec('git tag -l', 'Failed to list tags');
+              if (existingTags.split('\n').includes(tagName)) {
+                console.log(`Tag ${tagName} already exists, skipping release`);
+                return;
+              }
+            } catch (error) {
+              console.log('No existing tags found');
+            }
+
+            // Extract build ID from commit message
+            const commitMsg = safeExec('git log -1 --pretty=format:%B', 'Failed to get commit message').trim();
+            const commitSubject = commitMsg.split('\n')[0];
+            const buildMatch = commitSubject.match(/Build\s+(\d{1,6})/i);
+            const buildId = buildMatch ? buildMatch[1] : null;
+
+            console.log(`Build ID: ${buildId || 'not found'}`);
+
+            // Extract release notes from CHANGELOG
+            let releaseNotes = '';
+            const changelogPath = 'CHANGELOG.md';
+
+            if (fs.existsSync(changelogPath) && buildId) {
+              const changelog = fs.readFileSync(changelogPath, 'utf8');
+              const buildRegex = new RegExp(`^## Build ${buildId}(\\s|\\|)`, 'm');
+              const match = changelog.match(buildRegex);
+
+              if (match) {
+                const startIdx = changelog.indexOf(match[0]);
+                const nextBuildIdx = changelog.indexOf('\n## Build ', startIdx + 1);
+                const endIdx = nextBuildIdx !== -1 ? nextBuildIdx : changelog.length;
+                const section = changelog.slice(startIdx, endIdx).trim();
+
+                // Remove the header line and extract content
+                const lines = section.split('\n').slice(1);
+                releaseNotes = lines.join('\n').trim();
+
+                console.log('Extracted release notes from CHANGELOG');
+              } else {
+                console.log(`No CHANGELOG entry found for Build ${buildId}`);
+              }
+            }
+
+            // Fallback to generic release notes if none found
+            if (!releaseNotes) {
+              releaseNotes = buildId
+                ? `Release for Build ${buildId}\n\nSee commit history for details.`
+                : `Release version ${version}\n\nSee commit history for details.`;
+              console.log('Using generic release notes');
+            }
+
+            // Create annotated git tag using spawnSync (not in safeExec allowlist)
+            const tagMessage = buildId ? `Build ${buildId} | ${version}` : `Release ${version}`;
+            console.log(`Creating tag ${tagName} with message: ${tagMessage}`);
+
+            const tagResult = spawnSync('git', ['tag', '-a', tagName, '-m', tagMessage], { encoding: 'utf8' });
+            if (tagResult.error || tagResult.status !== 0) {
+              throw new Error(`Failed to create tag: ${tagResult.stderr || tagResult.error?.message}`);
+            }
+
+            // Push tags
+            console.log('Pushing tags to remote');
+            const pushResult = spawnSync('git', ['push', 'origin', '--tags'], { encoding: 'utf8' });
+            if (pushResult.error || pushResult.status !== 0) {
+              throw new Error(`Failed to push tags: ${pushResult.stderr || pushResult.error?.message}`);
+            }
+
+            // Write release notes to temp file to avoid shell escaping issues
+            const notesPath = '/tmp/release-notes.md';
+            fs.writeFileSync(notesPath, releaseNotes);
+
+            // Create GitHub Release using gh CLI
+            const releaseTitle = buildId ? `Build ${buildId} | ${version}` : version;
+            console.log(`Creating GitHub Release: ${releaseTitle}`);
+
+            const ghResult = spawnSync('gh', [
+              'release', 'create', tagName,
+              '--title', releaseTitle,
+              '--notes-file', notesPath
+            ], { encoding: 'utf8' });
+
+            if (ghResult.error || ghResult.status !== 0) {
+              throw new Error(`Failed to create GitHub Release: ${ghResult.stderr || ghResult.error?.message}`);
+            }
+
+            console.log(`✅ Successfully created release ${tagName}`);
+
+            // Clean up temp file
+            fs.unlinkSync(notesPath);

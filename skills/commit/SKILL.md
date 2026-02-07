@@ -67,6 +67,21 @@ For large commits spanning multiple scopes, pick the dominant one or use a gener
 - `config: Windows migration + Serena workflow integration`
 - `cleanup: browser removal + statusline restructure`
 
+## File Precedence & Migration
+
+The skill has evolved to use a **single source of truth**: `.claude/commit.md`
+
+| File | Status | Purpose | When to Delete |
+|------|--------|---------|----------------|
+| `.claude/commit.md` | **Primary** | Single source - `## Pending` (hook tracking) + `## Ready` (user message) | Never (only clear sections) |
+| `.claude/pending-commit.md` | **Deprecated/Legacy** | Old format from commit-helper.py script | **After every `/commit confirm`** |
+| `.claude/pending-pr.md` | Optional | PR message preparation (separate workflow) | User's choice |
+
+**Migration Notes:**
+- If both `commit.md ## Ready` and `pending-commit.md` exist, `commit.md ## Ready` takes precedence
+- Always delete `pending-commit.md` after successful commit to prevent stale content
+- The commit-helper.py script may still generate `pending-commit.md` - ignore it if `commit.md` exists
+
 ## Commit.md File Structure (Single File with Sections)
 
 The `.claude/commit.md` file uses a two-section structure:
@@ -168,8 +183,32 @@ The change-tracker hook in `hooks/git.py` automatically writes file changes to t
 
 When user runs `/commit confirm`:
 
-1. **Re-read `.claude/commit.md`**
-2. **Parse `## Ready` section**
+1. **Detect commit message source (with validation)**
+   ```bash
+   # Check which file has the commit message
+   COMMIT_SOURCE=""
+
+   if [ -f .claude/commit.md ] && grep -q "^## Ready" .claude/commit.md; then
+       # Check if Ready section has content (not just the header)
+       if grep -A 999 "^## Ready" .claude/commit.md | tail -n +2 | grep -q "[^[:space:]]"; then
+           COMMIT_SOURCE="commit.md"
+           echo "Using commit message from: commit.md ## Ready section"
+       fi
+   fi
+
+   if [ -z "$COMMIT_SOURCE" ] && [ -f .claude/pending-commit.md ]; then
+       COMMIT_SOURCE="pending-commit.md"
+       echo "Warning: Using legacy pending-commit.md (will be deleted after commit)"
+   fi
+
+   if [ -z "$COMMIT_SOURCE" ]; then
+       echo "Error: No commit message found in commit.md ## Ready or pending-commit.md"
+       exit 1
+   fi
+   ```
+
+2. **Re-read the detected source file**
+3. **Parse `## Ready` section (if using commit.md) or entire content (if using pending-commit.md)**
    - Extract bullet points
    - Generate subject line from content
    - Use bullet points as commit body
@@ -268,14 +307,35 @@ When user runs `/commit confirm`:
    - Clear both `## Pending` and `## Ready` sections in `.claude/commit.md`
    - Keep the file structure intact:
      ```markdown
-     # .claude/commit.md
+     # Pending Changes
 
      ## Pending
 
      ## Ready
      ```
+   - **Delete `.claude/pending-commit.md` if it exists** (prevents stale legacy content)
    - Check for and offer to delete `.claude/pending-pr.md` if it exists
    - This prevents stale content from being included in future commits
+
+   **Cleanup commands:**
+   ```bash
+   # Clear commit.md sections
+   cat > .claude/commit.md << 'EOF'
+   # Pending Changes
+
+   ## Pending
+
+   ## Ready
+   EOF
+
+   # Delete legacy pending-commit.md
+   rm -f .claude/pending-commit.md
+
+   # Optionally remove pending-pr.md
+   if [ -f .claude/pending-pr.md ]; then
+       echo "Note: .claude/pending-pr.md still exists (for PR workflow)"
+   fi
+   ```
 
 ### Phase 3: Abort
 
@@ -432,33 +492,45 @@ The change-tracker hook in `hooks/git.py` automatically logs file changes to the
 
 ## Post-Commit Cleanup
 
-After a successful commit, always clean up the commit.md file to prevent stale content:
+After a successful commit, always clean up ALL commit-related files to prevent stale content:
 
-### Sections to Clear
+### Files to Clean
 
-| Section | When to Clear |
-|---------|---------------|
-| `## Pending` | After `/commit confirm` succeeds |
-| `## Ready` | After `/commit confirm` succeeds |
+| File | Action | When |
+|------|--------|------|
+| `.claude/commit.md` | Clear both `## Pending` and `## Ready` sections | After `/commit confirm` succeeds |
+| `.claude/pending-commit.md` | **DELETE entirely** | After `/commit confirm` succeeds |
+| `.claude/pending-pr.md` | Optionally delete | User's choice (separate PR workflow) |
 
-### Cleanup Command
+### Cleanup Commands
 
 ```bash
-# Clear both sections but keep structure
+# Clear commit.md sections but keep structure
 cat > .claude/commit.md << 'EOF'
-# .claude/commit.md
+# Pending Changes
 
 ## Pending
 
 ## Ready
 EOF
+
+# Delete legacy pending-commit.md (prevents stale content)
+rm -f .claude/pending-commit.md
+
+# Optionally handle pending-pr.md
+if [ -f .claude/pending-pr.md ]; then
+    echo "Note: .claude/pending-pr.md exists (for PR workflow)"
+    echo "Delete? (y/n)"
+fi
 ```
 
 ### Why Cleanup Matters
 
-- Stale content in `## Ready` will be included in the next commit if not cleared
-- Old file entries in `## Pending` may cause confusion about what's actually changed
-- Keeping the file structure intact makes it ready for the next development cycle
+- **Stale commit.md content**: Content in `## Ready` will be included in the next commit if not cleared
+- **Legacy pending-commit.md**: If not deleted, may cause confusion about which file is the source of truth
+- **Old pending entries**: File entries in `## Pending` may cause confusion about what's actually changed
+- **File precedence**: Only commit.md should exist after cleanup - pending-commit.md is deprecated
+- Keeping clean state makes the next development cycle unambiguous
 
 ## Error Handling
 
@@ -477,6 +549,8 @@ EOF
 | Empty ## Ready section | Abort and prompt user to add content |
 | Missing subject line | Generate from bullets or abort |
 | User edited file after /commit | Use edited version (re-read fresh) |
+| Both commit.md and pending-commit.md exist | Prefer commit.md ## Ready, warn about pending-commit.md |
+| pending-commit.md used instead of commit.md | Warn user about legacy format, delete after commit |
 
 ## Safety Rules
 

@@ -66,11 +66,9 @@ The script handles common failure scenarios and exits with descriptive errors:
 
 When the script fails, report the error to the user with context about what went wrong and next steps.
 
-The `YOUTUBE_PROJECT_DIR` environment variable ensures the session tracker is created in the current project directory, not the script directory.
-
 ### 2. Track Session Usage
 
-The script automatically tracks usage in `.claude/youtube-session.json` for RALPH cleanup.
+The script automatically tracks usage in `~/.claude/youtube/youtube-session.json` (gitignored) for RALPH cleanup.
 
 ### 3. Display Result
 
@@ -103,7 +101,7 @@ For each file, extract:
 
 For each transcript, check which sessions have used it by scanning:
 - `%USERPROFILE%\.claude\projects\*\sessions-index.json` for session metadata
-- `.claude/youtube-session.json` files in project directories
+- `~/.claude/youtube/youtube-session.json` files in project directories
 
 ### 4. Display Table
 
@@ -158,7 +156,7 @@ rm -f ~/.claude/youtube/transcriptions/youtube-${VIDEO_ID}.md
 
 ### 4. Update Session Tracker
 
-Remove entry from `.claude/youtube-session.json` if present.
+Remove entry from `~/.claude/youtube/youtube-session.json` if present.
 
 ---
 
@@ -190,7 +188,7 @@ This action cannot be undone.
 On "yes":
 ```bash
 rm -f ~/.claude/youtube/transcriptions/*.md
-rm -f .claude/youtube-session.json
+rm -f ~/.claude/youtube/youtube-session.json
 ```
 
 ### 5. Report
@@ -205,7 +203,7 @@ Deleted X transcripts, freed Y
 
 ### Tracker File Location
 
-`.claude/youtube-session.json` (project-local)
+`~/.claude/youtube/youtube-session.json` (project-local)
 
 ### Format
 
@@ -225,7 +223,7 @@ Deleted X transcripts, freed Y
 ### RALPH Integration
 
 When `<promise>RALPH_COMPLETE</promise>` is detected, the ralph.py hook (SubagentStop handler) will:
-1. Check for `.claude/youtube-session.json`
+1. Check for `~/.claude/youtube/youtube-session.json`
 2. Prompt user to delete session transcripts
 3. Clean up on confirmation
 
@@ -300,4 +298,4 @@ Deleted transcript dQw4w9WgXcQ
 |------|---------|
 | `~/.claude\skills\youtube\scripts\transcribe.py` | Main transcription script |
 | `%USERPROFILE%\.claude\youtube\transcriptions\*.md` | Stored transcripts (global, per-user) |
-| `.claude/youtube-session.json` | Session usage tracker (project-local) |
+| `~/.claude/youtube/youtube-session.json` | Session usage tracker (project-local) |

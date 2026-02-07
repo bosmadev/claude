@@ -66,6 +66,10 @@ from ralph_lib import (
     AGENT_SPECIALTIES,
 )
 
+# Import transaction primitives from hooks
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from hooks.transaction import atomic_write_json, transactional_update
+
 # Optional Redis import for real-time context injection
 try:
     from redis import Redis
@@ -96,24 +100,6 @@ VERIFY_FIX_EFFORT: dict[str, str] = {
     "full": "high",       # Post-all-impl: thorough final gate
     "plan": "medium",     # Plan verification: moderate depth
 }
-
-
-# =============================================================================
-# Atomic Write Helper
-# =============================================================================
-
-def _atomic_write_json(path: str, data: dict) -> None:
-    """Atomically write JSON data to file using temp + rename."""
-    import tempfile
-    dir_name = os.path.dirname(os.path.abspath(path))
-    with tempfile.NamedTemporaryFile(
-        mode='w', suffix='.tmp', dir=dir_name, delete=False
-    ) as tmp:
-        json.dump(data, tmp, indent=2)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp_path = tmp.name
-    os.replace(tmp_path, path)
 
 
 # =============================================================================
@@ -997,7 +983,7 @@ class WorkStealingQueue:
             content = queue.to_markdown()
             self.queue_path.write_text(content, encoding="utf-8")
         else:
-            _atomic_write_json(str(self.queue_path), queue.to_dict())
+            atomic_write_json(self.queue_path, queue.to_dict(), fsync=True)
 
     def claim_next_task(self, agent_id: str) -> Optional[QueueTask]:
         """
@@ -2303,7 +2289,10 @@ class RalphProtocol:
             # Backup before overwrite (keep last 3)
             self._backup_config()
 
-            _atomic_write_json(str(self.state_path), state.to_dict())
+            # Add integrity marker for state.json
+            state_data = state.to_dict()
+            state_data["integrity_marker"] = "claude_ralph_state_v1"
+            atomic_write_json(self.state_path, state_data, fsync=True)
             self.log_activity(f"State written: {state.session_id}")
             return True
         except IOError as e:
@@ -2658,7 +2647,7 @@ class RalphProtocol:
             if hasattr(self, '_perf_tracker') and self._perf_tracker:
                 progress_data["performance"] = self._perf_tracker.summary()
             self.progress_path.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write_json(str(self.progress_path), progress_data)
+            atomic_write_json(self.progress_path, progress_data, fsync=True)
         except IOError:
             pass
 
@@ -3549,32 +3538,51 @@ This will properly close the Ralph session."""
         """Update progress.json with aggregated agent cost and completion status."""
         try:
             progress_path = self.base_dir / self.PROGRESS_FILE
-            if progress_path.exists():
-                with open(progress_path, 'r') as f:
-                    progress = json.load(f)
-            else:
-                progress = {
+
+            def update_fn(current: dict) -> dict:
+                """Apply cost and completion updates."""
+                # Initialize if None (file doesn't exist)
+                if current is None:
+                    current = {
+                        "total": 0,
+                        "completed": 0,
+                        "failed": 0,
+                        "done": 0,
+                        "cost_usd": 0,
+                    }
+
+                # Update cost
+                current["cost_usd"] = round(current.get("cost_usd", 0) + cost_usd, 4)
+
+                # Update completion counters based on exit status
+                if exit_status == 0:
+                    current["completed"] = current.get("completed", 0) + 1
+                else:
+                    current["failed"] = current.get("failed", 0) + 1
+                current["done"] = current.get("completed", 0) + current.get("failed", 0)
+
+                current["updated_at"] = datetime.now().isoformat()
+                current["integrity_marker"] = "claude_ralph_progress_v1"
+
+                return current
+
+            # Use transactional_update with locking
+            transactional_update(
+                progress_path,
+                update_fn,
+                timeout=5.0,
+                retries=3,
+                fsync=True,
+                default={
                     "total": 0,
                     "completed": 0,
                     "failed": 0,
                     "done": 0,
                     "cost_usd": 0,
                 }
-
-            progress["cost_usd"] = round(progress.get("cost_usd", 0) + cost_usd, 4)
-            
-            # Update completion counters based on exit status
-            if exit_status == 0:
-                progress["completed"] = progress.get("completed", 0) + 1
-            else:
-                progress["failed"] = progress.get("failed", 0) + 1
-            progress["done"] = progress.get("completed", 0) + progress.get("failed", 0)
-            
-            progress["updated_at"] = datetime.now().isoformat()
-
-            progress_path.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write_json(str(progress_path), progress)
-        except (IOError, json.JSONDecodeError):
+            )
+        except Exception:
+            # Silent fail as before (progress updates are non-critical)
             pass
 
     def _queue_failed_agent_for_retry(self, agent_id: str, failure_info: dict) -> bool:
@@ -3625,9 +3633,10 @@ This will properly close the Ralph session."""
 
             retry_queue[agent_id] = agent_entry
 
-            # Write updated retry queue
+            # Write updated retry queue with integrity marker
             retry_queue_path.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write_json(str(retry_queue_path), retry_queue)
+            retry_queue["integrity_marker"] = "claude_ralph_retry_v1"
+            atomic_write_json(retry_queue_path, retry_queue, fsync=True)
 
             self.log_activity(
                 f"Agent {agent_id} queued for retry (attempt {current_retry_count + 1}/{MAX_RETRIES})"
