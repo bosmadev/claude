@@ -25,6 +25,7 @@ telemetry/
 bin/
 .claude/*
 transcriptions/
+youtube/
 statsig/
 tmp/
 security/

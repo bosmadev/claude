@@ -256,7 +256,7 @@ def main():
 
     # Read hook payload from stdin
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
         tool_name = payload.get("tool_name", "")
 
         if tool_name != "Bash":

@@ -13,7 +13,7 @@ def main():
     Validates that file operations stay within safe boundaries.
     """
     try:
-        hook_input = json.loads(sys.stdin.read())
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
     except (json.JSONDecodeError, TypeError):
         hook_input = {}
 

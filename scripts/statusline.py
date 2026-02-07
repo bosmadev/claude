@@ -23,6 +23,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
+# Import transaction primitives for locked reads
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from hooks.transaction import locked_read_json, LockTimeoutError
+
 # ---------------------------------------------------------------------------
 # Timeout guard — kill process if stdin hangs (Windows-safe)
 # ---------------------------------------------------------------------------
@@ -83,17 +87,20 @@ def _read_ralph_progress(cwd: str) -> dict | None:
     - File doesn't exist
     - File is empty or has parse error
     - updated_at is older than 5 minutes
+    - Lock acquisition times out (statusline must not hang)
     """
     try:
         progress_path = Path(cwd) / ".claude" / "ralph" / "progress.json"
         if not progress_path.exists():
             return None
 
-        content = progress_path.read_text(encoding="utf-8").strip()
-        if not content:
+        # Use locked read with SHORT timeout (1.0s) - statusline is UI-critical
+        try:
+            data = locked_read_json(progress_path, timeout=1.0, default=None)
+        except LockTimeoutError:
+            # Lock timeout - return None, don't crash statusline
             return None
 
-        data = json.loads(content)
         if not isinstance(data, dict):
             return None
 
@@ -122,6 +129,7 @@ def _read_team_config(session_id: str) -> dict | None:
     - A team config exists where leadSessionId matches current session_id
 
     Returns None if no active team or Agent Teams not enabled.
+    Uses locked reads with SHORT timeout (0.5s per config) - statusline must not hang.
     """
     # Check if Agent Teams feature is enabled
     if os.environ.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") != "1":
@@ -135,13 +143,16 @@ def _read_team_config(session_id: str) -> dict | None:
         # Search all team configs for matching leadSessionId
         for team_config_path in teams_dir.glob("*/config.json"):
             try:
-                config = json.loads(team_config_path.read_text(encoding="utf-8"))
+                # Use locked read with SHORT timeout (0.5s per file)
+                config = locked_read_json(team_config_path, timeout=0.5, default=None)
+                if config is None:
+                    continue
                 if config.get("leadSessionId") == session_id:
                     # Found matching team
                     members = config.get("members", [])
                     if not isinstance(members, list):
                         members = []
-                    
+
                     # Compute model mix from member models
                     model_counts = {"opus": 0, "sonnet": 0}
                     for member in members:
@@ -150,13 +161,16 @@ def _read_team_config(session_id: str) -> dict | None:
                             model_counts["sonnet"] += 1
                         else:
                             model_counts["opus"] += 1
-                    
+
                     return {
                         "team_name": config.get("name", ""),
                         "member_count": len(members),
                         "members": members,
                         "model_mix": model_counts,
                     }
+            except LockTimeoutError:
+                # Lock timeout - skip this config file
+                continue
             except (OSError, json.JSONDecodeError, KeyError):
                 continue
 
@@ -166,9 +180,10 @@ def _read_team_config(session_id: str) -> dict | None:
 
 def _read_task_list_progress(team_name: str) -> dict | None:
     """Compute progress from native task list files.
-    
+
     Reads ~/.claude/tasks/{team-name}/*.json and counts task statuses.
     Returns dict with total/completed/in_progress or None if no tasks.
+    Uses locked reads with VERY SHORT timeout (0.5s per file) - statusline must not hang.
     """
     try:
         tasks_dir = CACHE_DIR / "tasks" / team_name
@@ -180,7 +195,9 @@ def _read_task_list_progress(team_name: str) -> dict | None:
             if not task_file.suffix == ".json":
                 continue
             try:
-                task = json.loads(task_file.read_text(encoding="utf-8"))
+                # Use locked read with VERY SHORT timeout (0.5s per file)
+                # Skip this file on timeout - move to next file
+                task = locked_read_json(task_file, timeout=0.5, default={})
                 status = task.get("status", "")
                 if status == "deleted":
                     continue
@@ -189,6 +206,9 @@ def _read_task_list_progress(team_name: str) -> dict | None:
                     completed += 1
                 elif status == "in_progress":
                     in_progress += 1
+            except LockTimeoutError:
+                # Lock timeout - skip this file, continue to next
+                continue
             except (OSError, json.JSONDecodeError):
                 continue
 
@@ -212,23 +232,30 @@ def read_build_intelligence(cwd: str) -> str:
     - File doesn't exist
     - File is empty or has parse error
     - No struggling agents detected
+    - Lock acquisition times out (statusline must not hang)
 
     Returns color-coded status:
     - Green (BUILD_OK): All agents healthy
     - Yellow (BUILD_WARN): 1 agent struggling
     - Red (BUILD_ERROR): 2-3 agents struggling
     - Bright Red (BUILD_CRITICAL): 4+ agents struggling
+
+    Uses locked read with SHORT timeout (1.0s) - statusline is UI-critical.
     """
     try:
         intel_path = Path(cwd) / ".claude" / "ralph" / "build-intelligence.json"
         if not intel_path.exists():
             return ""
 
-        content = intel_path.read_text(encoding="utf-8").strip()
-        if not content:
+        # Use locked read with SHORT timeout (1.0s) - statusline is UI-critical
+        try:
+            data = locked_read_json(intel_path, timeout=1.0, default=None)
+        except LockTimeoutError:
+            # Lock timeout - return empty, don't crash statusline
             return ""
 
-        data = json.loads(content)
+        if data is None:
+            return ""
 
         # Extract struggle summary
         summary = data.get("summary", {})

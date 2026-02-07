@@ -238,7 +238,7 @@ def commit_review() -> None:
     User can edit .claude/pending-commit.md before confirming.
     """
     try:
-        hook_input = json.loads(sys.stdin.read())
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
         _cancel_timeout()
     except json.JSONDecodeError as e:
         # Log JSON error for debugging
@@ -301,7 +301,8 @@ def commit_review() -> None:
 """
 
     try:
-        commit_file.write_text(commit_content)
+        from hooks.transaction import atomic_write_text
+        atomic_write_text(commit_file, commit_content, fsync=True)
     except (OSError, PermissionError) as e:
         output = {
             "hookSpecificOutput": {
@@ -605,7 +606,12 @@ def update_commit_md(repo_root: Path, relative_path: str, action_type: str, desc
 
     new_content.append("")
 
-    commit_file.write_text("\n".join(new_content))
+    try:
+        from hooks.transaction import atomic_write_text
+        atomic_write_text(commit_file, "\n".join(new_content), fsync=True)
+    except Exception:
+        # Silent fail - don't block PostToolUse hooks
+        pass
 
 
 # =============================================================================
@@ -623,109 +629,58 @@ def log_receipt(repo_root: Path, relative_path: str, action_type: str) -> None:
     - Relative path
     """
     import hashlib
-    import fcntl
+    from hooks.transaction import transactional_update
 
     receipts_file = repo_root / ".claude" / "receipts.json"
     receipts_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Use file locking to prevent race conditions
-    lock_file = repo_root / ".claude" / ".receipts.lock"
+    # Validate path is within repo to prevent path traversal
+    file_path = (repo_root / relative_path).resolve()
+    if not str(file_path).startswith(str(repo_root.resolve())):
+        # Path traversal attempt - skip this file silently
+        return
+
+    # Compute SHA-256 hash of file content
+    if file_path.exists() and action_type != "removed":
+        try:
+            content = file_path.read_bytes()
+            file_hash = hashlib.sha256(content).hexdigest()
+        except OSError:
+            file_hash = "ERROR_READING_FILE"
+    else:
+        file_hash = "DELETED" if action_type == "removed" else "FILE_NOT_FOUND"
+
+    # Create receipt entry
+    receipt = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "path": relative_path,
+        "action": action_type,
+        "sha256": file_hash,
+    }
+
+    def append_receipt(current):
+        if not isinstance(current, list):
+            current = []
+        current.append(receipt)
+        return current
 
     try:
-        with open(lock_file, "w") as lock:
-            if sys.platform != "win32":
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-
-            # Load existing receipts
-            receipts = []
-            if receipts_file.exists():
-                try:
-                    receipts = json.loads(receipts_file.read_text(encoding="utf-8"))
-                except (json.JSONDecodeError, OSError):
-                    # Backup corrupted receipts before resetting
-                    backup_file = receipts_file.with_suffix(".json.corrupt")
-                    try:
-                        if receipts_file.exists():
-                            receipts_file.rename(backup_file)
-                    except OSError:
-                        pass
-                    receipts = []
-
-            # Validate path is within repo to prevent path traversal
-            file_path = (repo_root / relative_path).resolve()
-            if not str(file_path).startswith(str(repo_root.resolve())):
-                # Path traversal attempt - skip this file silently
-                return
-
-            # Compute SHA-256 hash of file content
-            if file_path.exists() and action_type != "removed":
-                try:
-                    content = file_path.read_bytes()
-                    file_hash = hashlib.sha256(content).hexdigest()
-                except OSError:
-                    file_hash = "ERROR_READING_FILE"
-            else:
-                file_hash = "DELETED" if action_type == "removed" else "FILE_NOT_FOUND"
-
-            # Create receipt entry
-            receipt = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "path": relative_path,
-                "action": action_type,
-                "sha256": file_hash,
-            }
-
-            # Append and save
-            receipts.append(receipt)
-            try:
-                receipts_file.write_text(json.dumps(receipts, indent=2), encoding="utf-8")
-            except OSError:
-                pass  # Silent fail - don't block commits
-
-            if sys.platform != "win32":
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-    except (OSError, ImportError):
-        # Fallback: proceed without locking on Windows or if fcntl unavailable
-        receipts = []
-        if receipts_file.exists():
-            try:
-                receipts = json.loads(receipts_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                receipts = []
-
-        # Validate path is within repo to prevent path traversal
-        file_path = (repo_root / relative_path).resolve()
-        if not str(file_path).startswith(str(repo_root.resolve())):
-            return
-
-        # Compute SHA-256 hash of file content
-        if file_path.exists() and action_type != "removed":
-            try:
-                content = file_path.read_bytes()
-                file_hash = hashlib.sha256(content).hexdigest()
-            except OSError:
-                file_hash = "ERROR_READING_FILE"
-        else:
-            file_hash = "DELETED" if action_type == "removed" else "FILE_NOT_FOUND"
-
-        receipt = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": relative_path,
-            "action": action_type,
-            "sha256": file_hash,
-        }
-
-        receipts.append(receipt)
-        try:
-            receipts_file.write_text(json.dumps(receipts, indent=2), encoding="utf-8")
-        except OSError:
-            pass
+        transactional_update(
+            receipts_file,
+            append_receipt,
+            timeout=5.0,
+            retries=3,
+            fsync=True,
+            default=[]
+        )
+    except Exception:
+        pass  # Silent fail - don't block commits
 
 
 def change_tracker() -> None:
     """Track file changes and log to commit.md with bullet style."""
     try:
-        hook_input = json.loads(sys.stdin.read())
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
         _cancel_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
@@ -773,13 +728,75 @@ def change_tracker() -> None:
 
 
 # =============================================================================
+# Frontend Verification Reminder (PostToolUse) - Suggest /launch for visual checks
+# =============================================================================
+
+def frontend_verification_reminder() -> None:
+    """Suggest visual verification via /launch when editing frontend files."""
+    try:
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
+        _cancel_timeout()
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_name = hook_input.get("tool_name", "")
+    if tool_name not in ("Edit", "Write"):
+        sys.exit(0)
+
+    tool_input = hook_input.get("tool_input", {})
+    file_path = tool_input.get("file_path", "")
+
+    # Normalize path separators for pattern matching
+    file_path_normalized = file_path.replace("\\", "/")
+
+    # Frontend file patterns requiring visual verification
+    frontend_patterns = [
+        r"app/.*\.tsx$",           # Next.js pages/layouts
+        r"components/.*\.tsx$",    # React components
+        r"styles/.*\.css$",        # Stylesheets
+        r"public/.*",              # Static assets
+    ]
+
+    # Skip patterns (docs, tests, types, config)
+    skip_patterns = [
+        r"README",
+        r"\.test\.tsx$",
+        r"\.spec\.tsx$",
+        r"\.d\.ts$",
+        r"\.config\.(ts|js)$",
+    ]
+
+    # Check if file should skip verification
+    for pattern in skip_patterns:
+        if re.search(pattern, file_path_normalized, re.IGNORECASE):
+            sys.exit(0)
+
+    # Check if file matches frontend patterns
+    is_frontend = any(re.search(pattern, file_path_normalized) for pattern in frontend_patterns)
+
+    if is_frontend:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "userFacingMessage": (
+                    f"Frontend file edited: {file_path}\n"
+                    "Consider running /launch to verify changes visually in the browser."
+                )
+            }
+        }
+        print(json.dumps(output))
+
+    sys.exit(0)
+
+
+# =============================================================================
 # Command History (PostToolUse) - Per-project bash command tracking
 # =============================================================================
 
 def command_history() -> None:
     """Track bash commands in per-project command-history.log."""
     try:
-        hook_input = json.loads(sys.stdin.read())
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
         _cancel_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
@@ -847,7 +864,7 @@ def check_env_encryption() -> None:
     3. Blocks commit if unencrypted .env files are staged
     """
     try:
-        hook_input = json.loads(sys.stdin.read())
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
         _cancel_timeout()
     except json.JSONDecodeError:
         return
@@ -940,7 +957,7 @@ def check_env_encryption() -> None:
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print("Usage: git.py [commit-review|change-tracker|command-history|env-check|pre-commit-checks]", file=sys.stderr)
+        print("Usage: git.py [commit-review|change-tracker|command-history|env-check|pre-commit-checks|frontend-verification]", file=sys.stderr)
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -950,13 +967,15 @@ def main() -> None:
         change_tracker()
     elif mode == "command-history":
         command_history()
+    elif mode == "frontend-verification":
+        frontend_verification_reminder()
     elif mode == "env-check":
         check_env_encryption()
     elif mode == "pre-commit-checks":
         # Combined mode: runs both commit-review and env-check in one process.
         # Early-exits for non-git-commit commands before any heavy logic.
         try:
-            hook_input = json.loads(sys.stdin.read())
+            hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
             _cancel_timeout()
         except json.JSONDecodeError:
             sys.exit(0)

@@ -22,6 +22,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+from hooks.transaction import atomic_write_json as _txn_atomic_write_json
+
 # ---------------------------------------------------------------------------
 # Platform detection
 # ---------------------------------------------------------------------------
@@ -265,7 +267,7 @@ def _read_stdin_with_timeout(timeout_seconds: int = 5) -> str:
 
     def reader():
         try:
-            result.append(sys.stdin.read())
+            result.append(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
         except Exception:
             result.append("{}")
         finally:
@@ -538,32 +540,6 @@ def parse_model_id(model_id: str) -> dict:
     return result
 
 
-def _atomic_write_json(path: Path, data: dict) -> None:
-    """Write JSON data atomically using temp file + rename pattern.
-
-    Prevents file corruption if process crashes mid-write.
-    Uses os.replace() which is atomic on both Windows and Unix.
-    """
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Create temp file in same directory to ensure same filesystem
-        with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
-            dir=path.parent,
-            delete=False,
-            suffix='.tmp'
-        ) as tmp:
-            tmp.write(json.dumps(data, indent=2))
-            tmp_path = tmp.name
-        # Atomic rename on same filesystem
-        os.replace(tmp_path, path)
-    except OSError:
-        # Clean up temp file on failure
-        try:
-            os.unlink(tmp_path)
-        except (OSError, NameError):
-            pass
 
 
 def get_session_name(session_id: str) -> str:
@@ -631,7 +607,7 @@ def do_model_capture() -> None:
 
     # Write to ~/.claude/.model-info using atomic write
     model_info_path = Path.home() / ".claude" / ".model-info"
-    _atomic_write_json(model_info_path, parsed)
+    _txn_atomic_write_json(model_info_path, parsed, fsync=True)
 
     # Extract session_id and write to ~/.claude/.session-info
     session_id = data.get("session_id", "")
@@ -644,7 +620,7 @@ def do_model_capture() -> None:
         }
         # Write using atomic write and set restrictive permissions
         session_info_path = Path.home() / ".claude" / ".session-info"
-        _atomic_write_json(session_info_path, session_info)
+        _txn_atomic_write_json(session_info_path, session_info, fsync=True)
         # Set permissions to 600 (owner read/write only) on Unix systems
         if not IS_WIN:
             try:

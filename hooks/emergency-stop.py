@@ -22,6 +22,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Import ACID transaction primitives
+from transaction import atomic_write_json, transactional_update
+
 
 # =============================================================================
 # Configuration
@@ -106,52 +109,55 @@ def load_state() -> Dict:
 
 
 def save_state(state: Dict) -> None:
-    """Save emergency stop state."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+    """Save emergency stop state atomically."""
+    atomic_write_json(STATE_FILE, state, fsync=True)
 
 
 def record_block(reason: str) -> None:
-    """Record a security block event with file locking."""
-    import fcntl
-
+    """Record a security block event with transactional update."""
     # Validate and truncate reason to prevent disk exhaustion
     if not isinstance(reason, str):
         reason = str(reason)
     reason = reason[:500]  # Limit reason length
 
-    # Use file locking to prevent race conditions
-    lock_file = STATE_FILE.parent / ".emergency-state.lock"
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    # Default state for new files
+    default_state = {
+        "blocks": [],
+        "shutdowns": [],
+        "manual_kill": False,
+        "integrity_marker": "claude_emergency_state_v1"
+    }
 
-    try:
-        with open(lock_file, "w") as lock:
-            if sys.platform != "win32":
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-
-            state = load_state()
-            now = time.time()
-
-            # Add new block
-            state["blocks"].append({"timestamp": now, "reason": reason})
-
-            # Prune blocks older than time window
-            cutoff = now - TIME_WINDOW
-            state["blocks"] = [b for b in state["blocks"] if b["timestamp"] > cutoff]
-
-            save_state(state)
-
-            if sys.platform != "win32":
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-    except (OSError, ImportError):
-        # Fallback: proceed without locking on Windows or if fcntl unavailable
-        state = load_state()
+    # Update function for transactional_update
+    def update_fn(state):
         now = time.time()
-        state["blocks"].append({"timestamp": now, "reason": reason[:500]})
+
+        # Ensure state has required fields
+        if not isinstance(state, dict):
+            state = default_state.copy()
+        for key in default_state:
+            if key not in state:
+                state[key] = default_state[key]
+
+        # Add new block
+        state["blocks"].append({"timestamp": now, "reason": reason})
+
+        # Prune blocks older than time window
         cutoff = now - TIME_WINDOW
         state["blocks"] = [b for b in state["blocks"] if b["timestamp"] > cutoff]
-        save_state(state)
+
+        # Ensure integrity marker
+        state["integrity_marker"] = "claude_emergency_state_v1"
+
+        return state
+
+    # Transactional update with exclusive locking
+    transactional_update(
+        STATE_FILE,
+        update_fn,
+        default=default_state,
+        fsync=True
+    )
 
 
 # Severity weights for different block types
@@ -339,7 +345,7 @@ def main():
     # Hook mode
     if command == "pretool":
         try:
-            payload = json.loads(sys.stdin.read())
+            payload = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
             tool_input = payload.get("tool_input", {})
 
             result = pretool_emergency_check(tool_input)
@@ -356,7 +362,7 @@ def main():
 
     elif command == "posttool":
         try:
-            payload = json.loads(sys.stdin.read())
+            payload = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
             tool_name = payload.get("tool_name", "")
             tool_output = payload.get("tool_output", {})
 

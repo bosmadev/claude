@@ -467,6 +467,11 @@
           },
           {
             "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\git.py frontend-verification",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "python C:\\Users\\Dennis\\.claude\\scripts\\guards.py guardian",
             "timeout": 5
           },

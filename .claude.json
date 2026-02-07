@@ -1,5 +1,5 @@
 {
-  "numStartups": 128,
+  "numStartups": 151,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -7,33 +7,33 @@
   "tipsHistory": {
     "new-user-warmup": 7,
     "plan-mode-for-complex-tasks": 45,
-    "terminal-setup": 120,
-    "memory-command": 123,
+    "terminal-setup": 151,
+    "memory-command": 138,
     "shift-enter-setup": 126,
-    "theme-command": 126,
+    "theme-command": 147,
     "prompt-queue": 50,
-    "enter-to-steer-in-relatime": 127,
-    "todo-list": 127,
-    "install-github-app": 125,
-    "install-slack-app": 125,
-    "drag-and-drop-images": 125,
-    "double-esc-code-restore": 125,
-    "continue": 125,
-    "shift-tab": 120,
-    "image-paste": 128,
-    "desktop-app": 125,
-    "web-app": 125,
-    "custom-agents": 123,
-    "agent-flag": 125,
-    "mobile-app": 125,
-    "guest-passes": 128,
-    "permissions": 125,
-    "rename-conversation": 126,
-    "custom-commands": 126,
-    "git-worktrees": 125,
+    "enter-to-steer-in-relatime": 147,
+    "todo-list": 147,
+    "install-github-app": 147,
+    "install-slack-app": 147,
+    "drag-and-drop-images": 147,
+    "double-esc-code-restore": 147,
+    "continue": 147,
+    "shift-tab": 144,
+    "image-paste": 149,
+    "desktop-app": 140,
+    "web-app": 140,
+    "custom-agents": 138,
+    "agent-flag": 140,
+    "mobile-app": 140,
+    "guest-passes": 151,
+    "permissions": 147,
+    "rename-conversation": 144,
+    "custom-commands": 144,
+    "git-worktrees": 147,
     "frontend-design-plugin": 128
   },
-  "promptQueueUseCount": 106,
+  "promptQueueUseCount": 151,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -109,7 +109,7 @@
   "opusProMigrationComplete": true,
   "thinkingMigrationComplete": true,
   "cachedChromeExtensionInstalled": true,
-  "changelogLastFetched": 1770377560263,
+  "changelogLastFetched": 1770469131525,
   "oauthAccount": {
     "accountUuid": "d944b29f-4832-4a63-b293-6eceae956e45",
     "emailAddress": "dennis@bosma.dev",
@@ -142,22 +142,31 @@
         "packageManager": null
       },
       "hasCompletedProjectOnboarding": true,
-      "lastCost": 0,
-      "lastAPIDuration": 0,
-      "lastAPIDurationWithoutRetries": 0,
+      "lastCost": 0.00076,
+      "lastAPIDuration": 1548,
+      "lastAPIDurationWithoutRetries": 1540,
       "lastToolDuration": 0,
-      "lastDuration": 26125,
+      "lastDuration": 1666507,
       "lastLinesAdded": 0,
       "lastLinesRemoved": 0,
-      "lastTotalInputTokens": 0,
-      "lastTotalOutputTokens": 0,
+      "lastTotalInputTokens": 580,
+      "lastTotalOutputTokens": 36,
       "lastTotalCacheCreationInputTokens": 0,
       "lastTotalCacheReadInputTokens": 0,
       "lastTotalWebSearchRequests": 0,
-      "lastModelUsage": {},
-      "lastSessionId": "74a72aee-4e1b-4629-915d-ba205268cfa7",
-      "lastFpsAverage": 2.3,
-      "lastFpsLow1Pct": 42.34
+      "lastModelUsage": {
+        "claude-haiku-4-5-20251001": {
+          "inputTokens": 580,
+          "outputTokens": 36,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "webSearchRequests": 0,
+          "costUSD": 0.00076
+        }
+      },
+      "lastSessionId": "5426722a-63a8-4ee1-b6fb-0490958dd8a7",
+      "lastFpsAverage": 0.28,
+      "lastFpsLow1Pct": 61.17
     },
     "D:/source/cwchat": {
       "allowedTools": [],
@@ -215,7 +224,7 @@
       "lastAPIDuration": 0,
       "lastAPIDurationWithoutRetries": 0,
       "lastToolDuration": 0,
-      "lastDuration": 30097809,
+      "lastDuration": 1408262,
       "lastLinesAdded": 0,
       "lastLinesRemoved": 0,
       "lastTotalInputTokens": 0,
@@ -223,10 +232,10 @@
       "lastTotalCacheCreationInputTokens": 0,
       "lastTotalCacheReadInputTokens": 0,
       "lastTotalWebSearchRequests": 0,
-      "lastFpsAverage": 0.01,
-      "lastFpsLow1Pct": 9.04,
+      "lastFpsAverage": 0.07,
+      "lastFpsLow1Pct": 74.07,
       "lastModelUsage": {},
-      "lastSessionId": "da6d7140-3933-4e38-b1f4-b04fbeb7f339"
+      "lastSessionId": "bfbae86d-b5f7-43d3-93ad-e5d021b1141b"
     },
     "D:/source/gswarm-api/main": {
       "allowedTools": [],
@@ -278,13 +287,13 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770421109879
+      "timestamp": 1770468193161
     }
   },
   "groveConfigCache": {
     "d944b29f-4832-4a63-b293-6eceae956e45": {
       "grove_enabled": true,
-      "timestamp": 1770377567402
+      "timestamp": 1770464579165
     }
   },
   "passesEligibilityCache": {
@@ -297,7 +306,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770421109098
+      "timestamp": 1770477892987
     }
   },
   "lastReleaseNotesSeen": "2.1.34",
@@ -351,27 +360,27 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770418576834,
+  "lastPlanModeUse": 1770472268458,
   "skillUsage": {
     "start": {
-      "usageCount": 32,
-      "lastUsedAt": 1770421987759
+      "usageCount": 41,
+      "lastUsedAt": 1770472275908
     },
     "reviewplan": {
       "usageCount": 20,
       "lastUsedAt": 1770334619382
     },
     "commit": {
-      "usageCount": 15,
-      "lastUsedAt": 1770423366390
+      "usageCount": 18,
+      "lastUsedAt": 1770477979900
     },
     "screen": {
       "usageCount": 2,
       "lastUsedAt": 1770056150434
     },
     "chats": {
-      "usageCount": 5,
-      "lastUsedAt": 1770410339291
+      "usageCount": 13,
+      "lastUsedAt": 1770468387471
     },
     "repotodo": {
       "usageCount": 5,
@@ -384,6 +393,10 @@
     "launch": {
       "usageCount": 1,
       "lastUsedAt": 1770401674957
+    },
+    "youtube": {
+      "usageCount": 1,
+      "lastUsedAt": 1770472292483
     }
   },
   "hasVisitedPasses": false,
