@@ -33,7 +33,7 @@
     "git-worktrees": 147,
     "frontend-design-plugin": 128
   },
-  "promptQueueUseCount": 151,
+  "promptQueueUseCount": 202,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -306,7 +306,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770477892987
+      "timestamp": 1770481647519
     }
   },
   "lastReleaseNotesSeen": "2.1.34",
@@ -360,19 +360,19 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770472268458,
+  "lastPlanModeUse": 1770481003303,
   "skillUsage": {
     "start": {
-      "usageCount": 41,
-      "lastUsedAt": 1770472275908
+      "usageCount": 43,
+      "lastUsedAt": 1770481053783
     },
     "reviewplan": {
-      "usageCount": 20,
-      "lastUsedAt": 1770334619382
+      "usageCount": 21,
+      "lastUsedAt": 1770480831013
     },
     "commit": {
-      "usageCount": 18,
-      "lastUsedAt": 1770477979900
+      "usageCount": 21,
+      "lastUsedAt": 1770481707913
     },
     "screen": {
       "usageCount": 2,

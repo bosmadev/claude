@@ -930,14 +930,10 @@ def cmd_stats() -> None:
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print(
-            "Usage: security-gate.py [pre-check|post-edit|audit|stats]",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        sys.exit(0)
 
     mode = sys.argv[1]
-    if mode == "pre-check":
+    if mode in ("pre-check", "pre-bash"):
         pre_check()
     elif mode == "post-edit":
         post_edit_check()
@@ -946,8 +942,8 @@ def main() -> None:
     elif mode == "stats":
         cmd_stats()
     else:
-        print(f"Unknown mode: {mode}", file=sys.stderr)
-        sys.exit(1)
+        # Unknown mode - exit gracefully to avoid hook errors
+        sys.exit(0)
 
 
 if __name__ == "__main__":

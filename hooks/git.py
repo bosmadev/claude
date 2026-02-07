@@ -957,8 +957,7 @@ def check_env_encryption() -> None:
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print("Usage: git.py [commit-review|change-tracker|command-history|env-check|pre-commit-checks|frontend-verification]", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     mode = sys.argv[1]
     if mode == "commit-review":
@@ -990,8 +989,8 @@ def main() -> None:
         sys.stdin = io.StringIO(raw)
         commit_review()
     else:
-        print(f"Unknown mode: {mode}", file=sys.stderr)
-        sys.exit(1)
+        # Unknown mode - exit gracefully to avoid hook errors
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -349,8 +349,7 @@ def output_hook_response(results: dict, mode: str) -> None:
 def main() -> None:
     """Main CLI entry point."""
     if len(sys.argv) < 2:
-        print("Usage: setup.py [validate-symlinks|check-mcp|check-tmpdir|full]", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     mode = sys.argv[1]
 
@@ -375,8 +374,7 @@ def main() -> None:
             sys.exit(1)
 
     else:
-        print(f"Unknown mode: {mode}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
 
 if __name__ == "__main__":

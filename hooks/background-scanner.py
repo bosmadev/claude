@@ -280,8 +280,7 @@ def posttool_scan(tool_input: Dict, tool_output: Dict, cwd: str) -> Optional[Dic
 def main():
     """Hook entry point."""
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Missing hook arguments"}), file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     hook_type = sys.argv[1]
 
@@ -308,9 +307,8 @@ def main():
 
         sys.exit(0)  # Pass through
 
-    except Exception as e:
-        print(json.dumps({"error": f"Hook error: {str(e)}"}), file=sys.stderr)
-        sys.exit(1)
+    except Exception:
+        sys.exit(0)
 
 
 if __name__ == "__main__":

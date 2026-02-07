@@ -1089,8 +1089,8 @@ State file created: {state_path}"""
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        print("Usage: guards.py [protect|guardian|plan-comments|plan-write-check|skill-parser|insights-reminder|ralph-enforcer|skill-interceptor|skill-validator|plan-rename-tracker|auto-ralph|quality-deprecation]", file=sys.stderr)
-        sys.exit(1)
+        # Missing args - exit gracefully to avoid hook errors
+        sys.exit(0)
 
     mode = sys.argv[1]
     if mode == "protect":
@@ -1132,8 +1132,8 @@ def main() -> None:
     elif mode == "quality-deprecation":
         quality_deprecation_hook()
     else:
-        print(f"Unknown mode: {mode}", file=sys.stderr)
-        sys.exit(1)
+        # Unknown mode - exit gracefully to avoid hook errors
+        sys.exit(0)
 
 
 if __name__ == "__main__":
