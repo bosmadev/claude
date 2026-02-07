@@ -213,6 +213,7 @@ Task(
 - Claim tasks with TaskUpdate(owner="agent-1")
 - Use SendMessage to report progress to team lead
 - Mark tasks completed when done
+- When you receive a shutdown_request message (JSON with type "shutdown_request"), you MUST respond by calling SendMessage with type="shutdown_response", request_id=(from the message), approve=true. This terminates your process gracefully. Do NOT just say "I can't exit" — use the tool.
 
 **Success criteria:**
 [WHAT_DEFINES_COMPLETION]
@@ -362,6 +363,7 @@ You are a **fresh code reviewer** starting with a clean slate.
 2. **INDEPENDENT ANALYSIS** - Form your own opinions about the code
 3. **NO AUTO-FIXES** - Leave TODO comments only, do NOT implement fixes
 4. **FRESH PERSPECTIVE** - Review as if seeing this code for the first time
+5. **SHUTDOWN** - When you receive a shutdown_request (JSON with type "shutdown_request"), call SendMessage with type="shutdown_response", request_id=(from the message), approve=true. Do NOT say "I can't exit" — use the SendMessage tool.
 ```
 
 ## Grand Plan Context Loading

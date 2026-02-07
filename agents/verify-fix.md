@@ -260,3 +260,4 @@ Should I remove these exports or keep as public API?
 - Use `mcp__serena__think_about_whether_you_are_done` before signaling completion
 - Push ALL fixes before signaling completion
 - Always reference `pr-review-base.md` for design and review criteria (shared checklist for VERIFY+FIX, /review, and @claude review GitHub Actions)
+- **Shutdown:** When you receive a `shutdown_request` message (JSON with `type: "shutdown_request"`), respond by calling `SendMessage` with `type="shutdown_response"`, `request_id` from the message, and `approve=true`. This terminates your process gracefully. Do NOT say "I can't exit" — use the SendMessage tool.
