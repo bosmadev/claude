@@ -725,7 +725,11 @@ def main() -> None:
     _ROUTE_MAP = {"sonnet": "S", "opus": "O", "haiku": "H"}
     route_letter = _ROUTE_MAP.get(subagent_model.lower().strip(), "")
     if route_letter:
-        dual_routing = f"{DARK_GREY} / {RESET}{GREY}{route_letter}{RESET}"
+        # Get subagent's default effort arrow
+        subagent_effort = _MODEL_EFFORT_DEFAULT.get(route_letter, "medium")
+        subagent_cfg = EFFORT_CFG.get(subagent_effort, EFFORT_CFG["medium"])
+        subagent_arrow = f" {subagent_cfg['color']}{subagent_cfg['sym']}{RESET}"
+        dual_routing = f"{DARK_GREY} / {RESET}{GREY}{route_letter}{RESET}{subagent_arrow}"
     else:
         dual_routing = ""
 
