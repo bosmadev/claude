@@ -1,5 +1,5 @@
 {
-  "numStartups": 126,
+  "numStartups": 128,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -12,28 +12,28 @@
     "shift-enter-setup": 126,
     "theme-command": 126,
     "prompt-queue": 50,
-    "enter-to-steer-in-relatime": 107,
-    "todo-list": 107,
+    "enter-to-steer-in-relatime": 127,
+    "todo-list": 127,
     "install-github-app": 125,
     "install-slack-app": 125,
     "drag-and-drop-images": 125,
     "double-esc-code-restore": 125,
     "continue": 125,
     "shift-tab": 120,
-    "image-paste": 108,
+    "image-paste": 128,
     "desktop-app": 125,
     "web-app": 125,
     "custom-agents": 123,
     "agent-flag": 125,
     "mobile-app": 125,
-    "guest-passes": 125,
+    "guest-passes": 128,
     "permissions": 125,
     "rename-conversation": 126,
     "custom-commands": 126,
     "git-worktrees": 125,
-    "frontend-design-plugin": 116
+    "frontend-design-plugin": 128
   },
-  "promptQueueUseCount": 84,
+  "promptQueueUseCount": 106,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -278,7 +278,7 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770405842030
+      "timestamp": 1770421109879
     }
   },
   "groveConfigCache": {
@@ -297,7 +297,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770409929609
+      "timestamp": 1770421109098
     }
   },
   "lastReleaseNotesSeen": "2.1.34",
@@ -351,27 +351,27 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770405196600,
+  "lastPlanModeUse": 1770418576834,
   "skillUsage": {
     "start": {
-      "usageCount": 30,
-      "lastUsedAt": 1770406343694
+      "usageCount": 32,
+      "lastUsedAt": 1770421987759
     },
     "reviewplan": {
       "usageCount": 20,
       "lastUsedAt": 1770334619382
     },
     "commit": {
-      "usageCount": 14,
-      "lastUsedAt": 1770410035637
+      "usageCount": 15,
+      "lastUsedAt": 1770423366390
     },
     "screen": {
       "usageCount": 2,
       "lastUsedAt": 1770056150434
     },
     "chats": {
-      "usageCount": 4,
-      "lastUsedAt": 1770113517567
+      "usageCount": 5,
+      "lastUsedAt": 1770410339291
     },
     "repotodo": {
       "usageCount": 5,

@@ -911,13 +911,8 @@ def main() -> None:
         opus_count = mix.get("opus", 0)
         sonnet_count = mix.get("sonnet", 0)
 
-        if opus_count > 0 or sonnet_count > 0:
-            mix_parts = []
-            if opus_count > 0:
-                mix_parts.append(f"{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}")
-            if sonnet_count > 0:
-                mix_parts.append(f"{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}")
-            model_mix = f"{CYAN}:{RESET}{''.join(mix_parts)}"
+        if opus_count > 0 and sonnet_count > 0:
+            model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}o{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}s{RESET}"
         else:
             model_mix = ""
 
@@ -952,13 +947,8 @@ def main() -> None:
             opus_count = mix.get("opus", 0)
             sonnet_count = mix.get("sonnet", 0)
             
-            if opus_count > 0 or sonnet_count > 0:
-                mix_parts = []
-                if opus_count > 0:
-                    mix_parts.append(f"{LIGHT_AMBER}{opus_count}{RESET}{CYAN}O{RESET}")
-                if sonnet_count > 0:
-                    mix_parts.append(f"{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}S{RESET}")
-                model_mix = f"{CYAN}:{RESET}{''.join(mix_parts)}"
+            if opus_count > 0 and sonnet_count > 0:
+                model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}o{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}s{RESET}"
             else:
                 model_mix = ""
             
@@ -1003,9 +993,9 @@ def main() -> None:
         f"{DARK_GREY}|{RESET} "
         f"{AURORA_GREEN}${cost_fmt}{RESET} "
         f"{DARK_GREY}|{RESET} "
-        f"{GREY}s:{RESET}{sonnet_color}{sonnet_weekly}%{RESET}"
+        f"{sonnet_color}{sonnet_weekly}%{RESET}"
         f"{DARK_GREY}/{RESET}"
-        f"{GREY}w:{RESET}{weekly_color}{all_weekly}%{RESET}"
+        f"{weekly_color}{all_weekly}%{RESET}"
         f"{ralph_section}"  # Element 4: Ralph section with leading | (trailing | in git_display)
         f"{git_display}"
     )
