@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.1.3](https://img.shields.io/badge/v1.1.3-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/bc0854e7ebe6d96704bcf691844525cb77fbab76) | Build 4
+
+fix(ci): strip Build prefix before detecting version bump type
+
+- [x] detectBumpType now strips "Build N: " prefix before checking conventional commit type
+- [x] Fixes feat/fix/refactor detection when commit starts with Build ID
+- [x] Without this, "Build 3: feat(ci): ..." was treated as patch instead of minor
+
+
+---
+
 ## [![v1.1.2](https://img.shields.io/badge/v1.1.2-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/b347e9948b799a1cb80a210af4f8bdddb85d5212) | Build 3
 
 feat(ci): auto Build ID from CHANGELOG.md for *-dev branches
