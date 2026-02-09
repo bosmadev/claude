@@ -3,6 +3,19 @@
 
 ---
 
+## [![v1.1.4](https://img.shields.io/badge/v1.1.4-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/bda415730bf53aa417cddfb9b203a1cc63accbff) | Build 5
+
+fix(ci): anchor regex patterns to prevent false positives
+
+- [x] Fixed changelog.ts dedup regex to match only ## headers, not prose
+- [x] Fixed aggregate-pr.py CHANGELOG regex with MULTILINE ^ anchor
+- [x] Fixed aggregate-pr.py branch regex with word boundaries (no cab123→b123)
+- [x] Fixed /commit SKILL.md Phase 2 to preserve Build ID prefix verbatim
+- [x] Added Build ID validation warning step for main branch commits
+
+
+---
+
 ## [![v1.1.3](https://img.shields.io/badge/v1.1.3-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/bc0854e7ebe6d96704bcf691844525cb77fbab76) | Build 4
 
 fix(ci): strip Build prefix before detecting version bump type
