@@ -747,19 +747,6 @@ def main() -> None:
     cfg = EFFORT_CFG.get(effort_raw.lower().strip()) if effort_raw else None
     effort_display = f" {cfg['color']}{cfg['sym']}{RESET}" if cfg else ""
 
-    # Dual routing: show subagent model + its default effort arrow
-    subagent_model = os.environ.get("CLAUDE_CODE_SUBAGENT_MODEL", "")
-    _ROUTE_MAP = {"sonnet": "S", "opus": "O", "haiku": "H"}
-    route_letter = _ROUTE_MAP.get(subagent_model.lower().strip(), "")
-    if route_letter:
-        # Get subagent's default effort arrow
-        subagent_effort = _MODEL_EFFORT_DEFAULT.get(route_letter, "medium")
-        subagent_cfg = EFFORT_CFG.get(subagent_effort, EFFORT_CFG["medium"])
-        subagent_arrow = f" {subagent_cfg['color']}{subagent_cfg['sym']}{RESET}"
-        dual_routing = f"{DARK_GREY} / {RESET}{GREY}{route_letter}{RESET}{subagent_arrow}"
-    else:
-        dual_routing = ""
-
     ctx_val = inp.get("context_window", {})
     try:
         pct_raw = float(ctx_val.get("used_percentage", 0) if isinstance(ctx_val, dict) else 0)
@@ -1013,8 +1000,7 @@ def main() -> None:
         git_display = ""  # Neither Ralph nor git
 
     line = (
-        f"{SALMON}{model}{RESET}{effort_display}"
-        f"{dual_routing} "
+        f"{SALMON}{model}{RESET}{effort_display} "
         f"{GREY}{style}{RESET} "
         f"{ctx_color}{pct}%{context_suffix}{RESET} "
         f"{DARK_GREY}|{RESET} "

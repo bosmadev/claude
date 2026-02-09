@@ -31,6 +31,8 @@ tmp/
 security/
 teams/
 memory/
+research/
+image-cache/
 
 # Files
 !.gitkeep
