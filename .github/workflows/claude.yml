@@ -341,18 +341,24 @@ jobs:
 
             if (fs.existsSync(changelogPath) && buildId) {
               const changelog = fs.readFileSync(changelogPath, 'utf8');
-              const buildRegex = new RegExp(`^## Build ${buildId}(\\s|\\|)`, 'm');
+              // Match new badge format: "| Build {id}" or old "## Build {id}"
+              const buildRegex = new RegExp(`Build ${buildId}(\\s|\\||$)`, 'm');
               const match = changelog.match(buildRegex);
 
               if (match) {
-                const startIdx = changelog.indexOf(match[0]);
-                const nextBuildIdx = changelog.indexOf('\n## Build ', startIdx + 1);
-                const endIdx = nextBuildIdx !== -1 ? nextBuildIdx : changelog.length;
+                const matchIdx = changelog.indexOf(match[0]);
+                // Find the --- separator before this entry
+                const prevSep = changelog.lastIndexOf('\n---', matchIdx);
+                const startIdx = prevSep !== -1 ? prevSep + 1 : matchIdx;
+                // Find the next --- separator after this entry
+                const nextSep = changelog.indexOf('\n---', matchIdx + 1);
+                const endIdx = nextSep !== -1 ? nextSep : changelog.length;
                 const section = changelog.slice(startIdx, endIdx).trim();
 
-                // Remove the header line and extract content
-                const lines = section.split('\n').slice(1);
-                releaseNotes = lines.join('\n').trim();
+                // Remove the --- and badge line, keep content
+                const lines = section.split('\n');
+                const contentLines = lines.filter(l => !l.startsWith('---') && !l.startsWith('[!['));
+                releaseNotes = contentLines.join('\n').trim();
 
                 console.log('Extracted release notes from CHANGELOG');
               } else {
