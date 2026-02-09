@@ -225,8 +225,8 @@ let changelog = '';
 if (fs.existsSync(changelogPath)) {
   changelog = fs.readFileSync(changelogPath, 'utf8');
 
-  // Deduplication check
-  const duplicateCheck = new RegExp(`Build ${buildId}(\\s|\\||$)`, 'm');
+  // Deduplication check - anchored to ## headers to avoid matching prose
+  const duplicateCheck = new RegExp(`^## .*Build ${buildId}(\\s|\\||$)`, 'm');
   if (duplicateCheck.test(changelog)) {
     console.log(`Build ${buildId} already in CHANGELOG, skipping duplicate`);
     process.exit(0);
