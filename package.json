@@ -3,5 +3,5 @@
 	"version": "1.1.0",
 	"type": "module",
 	"private": true,
-	"description": "Claude Code configuration and tooling"
+	"description": "Claude Code configuration, hooks, agents, and CI tooling"
 }
