@@ -112,10 +112,11 @@ def get_next_build_id_from_changelog() -> str | None:
 
     changelog = repo_root / "CHANGELOG.md"
     if not changelog.exists():
-        return "1"
+        return None
 
     content = changelog.read_text(encoding="utf-8")
-    builds = [int(m) for m in re.findall(r'Build\s+(\d+)', content)]
+    # Anchor to markdown headers to avoid matching "Build N" in prose/comments
+    builds = [int(m) for m in re.findall(r'^\#\#\s+.*Build\s+(\d+)', content, re.MULTILINE)]
     if builds:
         return str(max(builds) + 1)
     return "1"
@@ -138,7 +139,8 @@ def extract_build_id(branch: str) -> str:
         some-branch -> (reads CHANGELOG.md or "1")
     """
     # 1. Try branch name pattern (backward compat)
-    match = re.search(r'b(\d+)', branch)
+    # Word boundary to avoid false positives like "cab123" matching "b123"
+    match = re.search(r'(?:^|[/\-_])b(\d+)(?:$|[/\-_])', branch)
     if match:
         return match.group(1)
 
