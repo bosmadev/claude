@@ -248,7 +248,7 @@ jobs:
           node-version: '25'
 
       - name: Update CHANGELOG and bump version (consolidated)
-        run: node .github/changelog.js
+        run: node --experimental-transform-types .github/changelog.ts
 
   create-release:
     name: Create Release
