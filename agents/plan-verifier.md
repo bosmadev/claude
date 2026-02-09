@@ -1,7 +1,7 @@
 ---
 name: plan-verifier
 specialty: verification
-model: opus
+model: sonnet
 description: Verify 100% plan completion with artifact checking. Runs as a native team agent between VERIFY+FIX and REVIEW phases. Reads the plan file AND referenced artifacts (HTML mockups, design specs, screenshots), cross-references with actual code changes, identifies gaps, and spawns gap-fill implementation agents for missing tasks. Iterates up to 3x until 100% coverage.
 
 Examples:

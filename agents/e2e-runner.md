@@ -39,7 +39,7 @@ assistant: "Let me use the e2e-runner agent with /launch to run the application 
 Visual changes need visual verification. Use the e2e-runner with /launch for browser-based verification.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: purple
 skills:
   - launch

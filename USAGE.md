@@ -223,12 +223,10 @@ Complete routing matrix for all Claude Code components. See CLAUDE.md "3-Layer M
 | GH Actions: Security | Opus 4.6 | → Med | 200K | Opus | — | OWASP depth |
 | GH Actions: Custom | User picks | User picks | Varies | Varies | — | workflow_dispatch |
 | GH Actions: Scheduled | Haiku 4.5 | N/A | 200K | Haiku | — | Health checks (future) |
-| Impl agent .md (6) | opus | — | — | — | .md | Code changes |
-| Review agent .md (9) | sonnet | — | — | — | .md | Read-only analysis |
-| Coordination .md (2) | opus | — | — | — | .md | Orchestration |
-| Security .md (2) | mixed | — | — | — | .md | owasp:opus, sentinel:sonnet |
-| Ops agent .md (2) | opus | — | — | — | .md | scraper, devops |
-| Verify-fix .md (1) | opus | — | — | — | .md | Auto-fix code |
+| Specialist agents .md (7) | opus | — | — | — | .md | go, nextjs, python, refactor, verify-fix, owasp, coordinator |
+| Review agents .md (10) | sonnet | — | — | — | .md | a11y, api, arch, commit, db, doc, perf, secret, security |
+| Simple/ops agents .md (6) | sonnet | — | — | — | .md | build-error, e2e, devops, scraper, pr-gen, plan-verify |
+| Git coordinator .md (1) | haiku | — | — | — | .md | Lightweight git ops |
 
 **Legend:**
 - **Effort:** ↓ Low, → Med, ↑ High (Opus only)

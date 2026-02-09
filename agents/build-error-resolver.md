@@ -39,7 +39,7 @@ assistant: "Let me use the build-error-resolver agent to trace the type errors b
 Cascading type errors need root-cause analysis. Use the build-error-resolver to fix errors in dependency order.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: blue
 skills:
   - review
