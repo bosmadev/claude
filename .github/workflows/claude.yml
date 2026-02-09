@@ -242,14 +242,13 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Parse squash commit and update CHANGELOG
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '25'
 
       - name: Update CHANGELOG and bump version (consolidated)
-        run: node .github/changelog-bump-consolidated.js
+        run: node .github/changelog.js
 
   create-release:
     name: Create Release

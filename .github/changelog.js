@@ -36,6 +36,16 @@ if (buildIdNum < 1 || buildIdNum > 999999) {
   throw new Error(`Invalid build ID: ${buildId} (must be 1-999999)`);
 }
 
+// Extract PR number from commit subject, e.g. "feat: auth (#42)" → 42
+const prMatch = commitSubject.match(/\(#(\d+)\)/);
+const prNumber = prMatch ? prMatch[1] : null;
+
+// Get commit SHA for fallback URL
+const commitSha = safeExec('git rev-parse HEAD', 'Failed to get commit SHA').trim();
+
+// Build repo URL from GITHUB_REPOSITORY env var (e.g. "bosmadev/claude")
+const githubRepo = process.env.GITHUB_REPOSITORY || '';
+
 // === PART 1: Version Bump ===
 console.log('[1/3] Detecting version bump type...');
 
@@ -155,10 +165,29 @@ if (commitsIdx !== -1) {
     });
 }
 
-// Build CHANGELOG entry
-const header = newVersion ? `## Build ${buildId} | v${newVersion}` : `## Build ${buildId}`;
-let entry = `${header}\n\n`;
-entry += `**Merged:** ${date}\n\n`;
+// Build CHANGELOG entry with badge format
+const badgeDate = date.replace(/-/g, '--'); // shields.io escaping
+let badgeLabel, badgeUrl;
+
+if (newVersion) {
+  badgeLabel = `v${newVersion}`;
+} else {
+  badgeLabel = `Build_${buildId}`;
+}
+
+if (githubRepo) {
+  if (prNumber) {
+    badgeUrl = `https://github.com/${githubRepo}/pull/${prNumber}`;
+  } else {
+    badgeUrl = `https://github.com/${githubRepo}/commit/${commitSha}`;
+  }
+} else {
+  badgeUrl = '#';
+}
+
+const badge = `[![${badgeLabel}](https://img.shields.io/badge/${badgeLabel}-${badgeDate}-d9a00a.svg)](${badgeUrl})`;
+
+let entry = `---\n\n${badge} | Build ${buildId}\n\n`;
 if (summary) {
   entry += `${summary}\n\n`;
 }
@@ -174,7 +203,7 @@ if (fs.existsSync(changelogPath)) {
   changelog = fs.readFileSync(changelogPath, 'utf8');
 
   // Deduplication check
-  const duplicateCheck = new RegExp(`^## Build ${buildId}(\\s|\\|)`, 'm');
+  const duplicateCheck = new RegExp(`Build ${buildId}(\\s|\\||$)`, 'm');
   if (duplicateCheck.test(changelog)) {
     console.log(`Build ${buildId} already in CHANGELOG, skipping duplicate`);
     process.exit(0);
