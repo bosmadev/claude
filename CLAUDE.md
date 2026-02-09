@@ -307,7 +307,7 @@ Token-efficient model assignment via permanent, native mechanisms:
 | `/screen`     | Fork    | Sonnet (L1) | Screenshot management                          |
 | `/youtube`    | Fork    | Sonnet (L1) | Transcription management                       |
 | `/launch`     | Fork    | Sonnet (L1) | Browser verification                           |
-| `/token`      | Fork    | Sonnet (L1) | Token status/refresh                           |
+| `/token`      | Fork    | Haiku       | Token status/refresh                           |
 
 ---
 

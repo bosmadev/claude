@@ -1,3 +1,14 @@
+---
+name: git-coordinator
+specialty: git
+model: haiku
+description: Lightweight git operations handler for Ralph sessions. Handles all git add/commit/push operations to prevent conflicts from concurrent agents.
+color: gray
+tools:
+  - Read
+  - Bash
+---
+
 # Git Coordinator Agent
 
 **Role:** Designated git operations handler for multi-agent Ralph sessions
