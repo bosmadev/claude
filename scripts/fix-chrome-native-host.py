@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-r"""Self-healing hook for Chrome native host .bat file and Gc4 Windows pipe patch.
+r"""Self-healing hook for Chrome native host .bat file and getSocketPaths Windows pipe patch.
 
 Protects the .bat from being overwritten by Claude Code updates that regenerate it
 to use claude.exe (Bun standalone) which crashes on stdin (GitHub issue #22901).
 
-Also patches Gc4() in cli.js to include Windows named pipe paths, fixing the
-"Browser extension is not connected" issue on Windows. The MCP client in claude.exe
-uses Gc4() to find the native host socket, but on Windows it only returns tmpdir
-paths that can't connect to named pipes. The patch adds named pipe paths.
+Also patches the getSocketPaths function (minified name varies per version) in cli.js
+to include Windows named pipe paths with username sanitization, fixing the
+"Browser extension is not connected" issue on Windows (GitHub issues #23082, #23828, #23539).
 
 This hook maintains TWO cli.js installations:
 1. Isolated install: ~/.claude/chrome/node_host/ (used by .bat for native host)
@@ -15,11 +14,12 @@ This hook maintains TWO cli.js installations:
 
 This hook:
 1. Checks if .bat references claude.exe or Bun
-2. If broken: rewrites to use node.exe + cli.js
-3. Verifies version match between claude.exe and both cli.js installs
-4. If version mismatch: installs correct @anthropic-ai/claude-code version
-5. Patches Gc4() in BOTH cli.js files to add Windows named pipe discovery
-6. Only outputs to stderr if fixes were made (silent when healthy)
+2. If broken: rewrites to use node.exe + cli.js (with USERNAME sanitization)
+3. Gets version from npm global package.json (source of truth)
+4. Verifies version match with isolated cli.js install
+5. If version mismatch: installs correct @anthropic-ai/claude-code version
+6. Patches getSocketPaths in BOTH cli.js files using content-based pattern matching
+7. Only outputs to stderr if fixes were made (silent when healthy)
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal
 
 # Paths
 BAT_PATH = Path(r"~/.claude\chrome\chrome-native-host.bat")
@@ -41,15 +40,28 @@ PACKAGE_JSON_PATH = (
 )
 NPM_CLI_JS_PATH = Path(r"D:\nvm4w\nodejs\node_modules\@anthropic-ai\claude-code\cli.js")
 NPM_PACKAGE_JSON_PATH = Path(r"D:\nvm4w\nodejs\node_modules\@anthropic-ai\claude-code\package.json")
-CLAUDE_EXE = Path(r"C:\Users\Dennis\.local\bin\claude.exe")
 
-# Expected .bat content
-CORRECT_BAT_CONTENT = """@echo off
+# Expected .bat content — includes USERNAME sanitization for pipe name consistency
+CORRECT_BAT_CONTENT = r"""@echo off
 REM Chrome native host wrapper script
 REM Fixed: Uses Node.js instead of Bun standalone to avoid stdin crash (GH #22901)
-REM Node.js path via nvm4w, cli.js installed to isolated directory
-"D:\\nvm4w\\nodejs\\node.exe" "~/.claude\\chrome\\node_host\\node_modules\\@anthropic-ai\\claude-code\\cli.js" --chrome-native-host
+REM Fixed: Strips spaces from USERNAME for pipe name consistency (GH #23828)
+SET "USERNAME=%USERNAME: =%"
+"D:\nvm4w\nodejs\node.exe" "~/.claude\chrome\node_host\node_modules\@anthropic-ai\claude-code\cli.js" --chrome-native-host
 """
+
+# Self-contained ESM-compatible patch: uses process globals only.
+# cli.js is "type": "module" (ESM) so require() is not available.
+# process.env.USERNAME is always set on Windows and matches the native host's pipe name.
+# The native host .bat strips spaces via SET "USERNAME=%USERNAME: =%".
+PIPE_PATCH = (
+    'if(process.platform==="win32"){'
+    'let W=`\\\\\\\\.\\\\pipe\\\\claude-mcp-browser-bridge-${process.env.USERNAME||"default"}`;'
+    'if(!A.includes(W))A.push(W)}'
+)
+
+# Marker to detect if our exact current patch is applied
+PIPE_PATCH_MARKER = 'process.env.USERNAME||"default"}`;if(!A'
 
 
 def hook_response(
@@ -67,28 +79,8 @@ def log_error(message: str) -> None:
     sys.stderr.flush()
 
 
-def get_claude_exe_version() -> str | None:
-    """Get version from claude.exe --version."""
-    if not CLAUDE_EXE.exists():
-        return None
-
-    try:
-        result = subprocess.run(
-            [str(CLAUDE_EXE), "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        # Output format: "2.1.34 (Claude Code)" or "claude-code version X.Y.Z"
-        match = re.search(r"(\d+\.\d+\.\d+)", result.stdout)
-        return match.group(1) if match else None
-    except Exception:
-        return None
-
-
 def get_cli_js_version(package_json_path: Path = PACKAGE_JSON_PATH) -> str | None:
-    """Get version from cli.js package.json."""
+    """Get version from package.json."""
     if not package_json_path.exists():
         return None
 
@@ -100,28 +92,39 @@ def get_cli_js_version(package_json_path: Path = PACKAGE_JSON_PATH) -> str | Non
         return None
 
 
+def get_npm_global_version() -> str | None:
+    """Get version from npm global package.json (source of truth)."""
+    return get_cli_js_version(NPM_PACKAGE_JSON_PATH)
+
+
 def is_bat_broken() -> bool:
-    """Check if .bat references claude.exe or Bun instead of node.exe + cli.js."""
+    """Check if .bat is missing, references claude.exe/Bun, or lacks USERNAME sanitization."""
     if not BAT_PATH.exists():
         return True
 
     try:
         content = BAT_PATH.read_text(encoding="utf-8")
-        # Check for incorrect patterns
-        has_claude_exe = "claude.exe" in content
-        has_bun_ref = "bun" in content.lower()
+        # Check executable lines (skip REM comments) for incorrect patterns
+        exec_lines = [
+            line for line in content.splitlines()
+            if line.strip() and not line.strip().upper().startswith("REM")
+        ]
+        exec_content = "\n".join(exec_lines)
+        has_claude_exe = "claude.exe" in exec_content
+        has_bun_ref = "bun" in exec_content.lower()
         has_correct_node = (
             str(NODE_EXE) in content
             and str(CLI_JS_PATH) in content
         )
+        has_username_fix = "USERNAME=%USERNAME: =%" in content
 
-        return has_claude_exe or has_bun_ref or not has_correct_node
+        return has_claude_exe or has_bun_ref or not has_correct_node or not has_username_fix
     except Exception:
         return True
 
 
 def fix_bat() -> bool:
-    """Rewrite .bat to use node.exe + cli.js. Returns True if fix was applied."""
+    """Rewrite .bat to use node.exe + cli.js with USERNAME sanitization. Returns True if fix was applied."""
     if not BAT_PATH.exists():
         log_error(f"Creating missing .bat: {BAT_PATH}")
     else:
@@ -144,6 +147,7 @@ def sync_cli_js_version(target_version: str) -> bool:
     try:
         NODE_HOST_DIR.mkdir(parents=True, exist_ok=True)
 
+        # Use shell=True on Windows because npm is a .cmd wrapper
         result = subprocess.run(
             [
                 "npm",
@@ -156,12 +160,13 @@ def sync_cli_js_version(target_version: str) -> bool:
             text=True,
             timeout=60,
             check=False,
+            shell=True,
         )
 
         if result.returncode == 0:
             log_error(f"✓ Installed @anthropic-ai/claude-code@{target_version} to isolated dir")
-            # Re-apply Gc4 patch after fresh install
-            patch_gc4(CLI_JS_PATH)
+            # Re-apply pipe patch after fresh install
+            patch_socket_paths(CLI_JS_PATH)
             return True
 
         log_error(f"✗ npm install failed: {result.stderr}")
@@ -171,102 +176,126 @@ def sync_cli_js_version(target_version: str) -> bool:
         return False
 
 
-def sync_npm_cli_version(target_version: str) -> bool:
-    """Install correct @anthropic-ai/claude-code version globally via npm. Returns True if install ran."""
-    log_error(f"Installing @anthropic-ai/claude-code@{target_version} globally via npm...")
+def find_get_socket_paths_function(code: str) -> tuple[int, int, str] | None:
+    """Find the getSocketPaths function by content signature, not minified name.
 
-    try:
-        result = subprocess.run(
-            [
-                "npm",
-                "install",
-                "-g",
-                f"@anthropic-ai/claude-code@{target_version}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+    Strategy: find 'claude-mcp-browser-bridge' anchor, scan backwards for the nearest
+    'function NAME(){' declaration, then use brace counting to find exact boundaries.
+    Only matches functions that also contain 'return A}' (the array return).
 
-        if result.returncode == 0:
-            log_error(f"✓ Installed @anthropic-ai/claude-code@{target_version} globally")
-            # Re-apply Gc4 patch after fresh install
-            patch_gc4(NPM_CLI_JS_PATH)
-            return True
+    Returns (start, end, func_name) or None.
+    """
+    bridge_idx = code.find('claude-mcp-browser-bridge')
+    while bridge_idx != -1:
+        # Look backwards up to 500 chars for the nearest function declaration
+        search_start = max(0, bridge_idx - 500)
+        chunk_before = code[search_start:bridge_idx]
+        func_matches = list(re.finditer(r'function\s+(\w+)\(\)\{', chunk_before))
 
-        log_error(f"✗ npm install -g failed: {result.stderr}")
-        return False
-    except Exception as e:
-        log_error(f"✗ Failed to install npm global cli.js: {e}")
-        return False
+        if func_matches:
+            last = func_matches[-1]
+            func_start = search_start + last.start()
+            func_name = last.group(1)
+
+            # Find function end via brace counting (limit to 800 chars — function is ~250-350)
+            depth = 0
+            j = func_start
+            while j < len(code) and j < func_start + 800:
+                if code[j] == '{':
+                    depth += 1
+                elif code[j] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+
+            if depth == 0:
+                func_end = j + 1
+                body = code[func_start:func_end]
+                if 'claude-mcp-browser-bridge' in body and 'return A}' in body:
+                    return (func_start, func_end, func_name)
+
+        bridge_idx = code.find('claude-mcp-browser-bridge', bridge_idx + 25)
+    return None
 
 
-# The ORIGINAL unpatched Gc4 function signature (to detect if patch is needed)
-GC4_WIN32_MARKER = 'qCY()==="win32"'
-
-# The patch: adds Windows named pipe to Gc4's search paths
-# Inserted before 'return A}' in function Gc4
-GC4_PATCH = 'if(qCY()==="win32"){let W=`\\\\\\\\.\\\\pipe\\\\${K}`;if(!A.includes(W))A.push(W)}'
-
-
-def is_gc4_patched(cli_js_path: Path = CLI_JS_PATH) -> bool:
-    """Check if Gc4 in cli.js already has the Windows pipe patch."""
+def is_socket_paths_patched(cli_js_path: Path) -> bool:
+    """Check if the getSocketPaths function already has our self-contained pipe patch."""
     if not cli_js_path.exists():
         return False
 
     try:
         code = cli_js_path.read_text(encoding="utf-8")
-        # Find Gc4 function
-        start = code.find("function Gc4(){")
-        if start == -1:
+        result = find_get_socket_paths_function(code)
+        if result is None:
             return False
-        # Check if win32 check exists in the function (within 500 chars)
-        snippet = code[start : start + 800]
-        return GC4_WIN32_MARKER in snippet
+
+        start, end, _ = result
+        snippet = code[start:end]
+        # Check for our self-contained marker (not the old qCY-based one)
+        return PIPE_PATCH_MARKER in snippet
     except Exception:
         return False
 
 
-def patch_gc4(cli_js_path: Path = CLI_JS_PATH) -> bool:
-    r"""Patch Gc4() in cli.js to add Windows named pipe path discovery.
+def patch_socket_paths(cli_js_path: Path) -> bool:
+    r"""Patch getSocketPaths in cli.js to add Windows named pipe path discovery.
 
-    The unpatched Gc4 on Windows only returns os.tmpdir() paths, which can't
-    connect to named pipes. This patch adds \\.\pipe\NAME to the search list.
+    The unpatched function on Windows only returns os.tmpdir() and /tmp paths, which can't
+    connect to named pipes. This patch adds \\.\pipe\claude-mcp-browser-bridge-USERNAME
+    to the search list, matching what the native host creates via tW6().
+
+    Uses content-based pattern matching to find the function regardless of minified name.
+    Uses self-contained process.platform + require("os") to avoid dependency on
+    minified helper function names that change between versions.
     """
     if not cli_js_path.exists():
-        log_error(f"✗ cli.js not found at {cli_js_path}, cannot patch Gc4")
+        log_error(f"✗ cli.js not found at {cli_js_path}")
         return False
-
-    if is_gc4_patched(cli_js_path):
-        return False  # Already patched, no action needed
 
     try:
         code = cli_js_path.read_text(encoding="utf-8")
 
-        # Find the Gc4 function
-        func_start = code.find("function Gc4(){")
-        if func_start == -1:
-            log_error(f"✗ Cannot find Gc4 function in {cli_js_path.name}")
+        result = find_get_socket_paths_function(code)
+        if result is None:
+            log_error(f"✗ Cannot find getSocketPaths function in {cli_js_path.name}")
             return False
 
-        # Find 'return A}' within the function (the last return before closing brace)
-        # Search from func_start to avoid matching other functions
-        search_area = code[func_start : func_start + 500]
-        return_idx = search_area.find("return A}")
+        start, end, func_name = result
+        snippet = code[start:end]
+
+        # Check if already has our exact current patch and no stale patches
+        pipe_count = snippet.count('pipe\\\\claude-mcp')
+        if PIPE_PATCH_MARKER in snippet and pipe_count == 1:
+            return False  # Exactly one patch and it's ours
+
+        # Remove ALL pipe-related patches (old and current) to ensure clean state.
+        # We'll always re-inject the canonical patch.
+        # Match: if(EXPR==="win32"){let W=`...pipe...`;if(!A.includes(W))A.push(W)}
+        pipe_patch_pattern = (
+            r'if\((?:\w+\(\)|process\.platform)==="win32"\)'
+            r'\{let W=`[^`]*pipe[^`]*`;'
+            r'if\(!A\.includes\(W\)\)A\.push\(W\)\}'
+        )
+        snippet_cleaned = re.sub(pipe_patch_pattern, '', snippet)
+
+        # Find 'return A}' — the end of the function
+        return_idx = snippet_cleaned.rfind('return A}')
         if return_idx == -1:
-            log_error(f"✗ Cannot find 'return A}}' in Gc4 at {cli_js_path.name}")
+            log_error(f"✗ Cannot find 'return A}}' in {func_name} at {cli_js_path.name}")
             return False
 
-        # Insert patch before 'return A}'
-        abs_idx = func_start + return_idx
-        patched = code[:abs_idx] + GC4_PATCH + code[abs_idx:]
+        # Insert our self-contained patch before 'return A}'
+        patched_snippet = snippet_cleaned[:return_idx] + PIPE_PATCH + snippet_cleaned[return_idx:]
 
-        cli_js_path.write_text(patched, encoding="utf-8")
-        log_error(f"✓ Patched Gc4 in {cli_js_path.name} with Windows named pipe support")
+        # Replace the original function with patched version
+        patched_code = code[:start] + patched_snippet + code[end:]
+
+        cli_js_path.write_text(patched_code, encoding="utf-8")
+        log_error(f"✓ Patched {func_name}() in {cli_js_path.name} with Windows pipe + username sanitization")
         return True
     except Exception as e:
-        log_error(f"✗ Failed to patch Gc4 in {cli_js_path.name}: {e}")
+        log_error(f"✗ Failed to patch {cli_js_path.name}: {e}")
         return False
 
 
@@ -282,35 +311,31 @@ def main() -> None:
         if fix_bat():
             fixes_applied = True
 
-    # Get claude.exe version for sync checks
-    claude_version = get_claude_exe_version()
+    # Get npm global version as source of truth
+    npm_version = get_npm_global_version()
 
-    # Verify version match between claude.exe and isolated cli.js
+    # Verify version match between npm global and isolated cli.js
     cli_version = get_cli_js_version(PACKAGE_JSON_PATH)
-    if claude_version and cli_version and claude_version != cli_version:
+    if npm_version and cli_version and npm_version != cli_version:
         log_error(
-            f"Version mismatch: claude.exe={claude_version}, isolated cli.js={cli_version}"
+            f"Version mismatch: npm global={npm_version}, isolated cli.js={cli_version}"
         )
-        if sync_cli_js_version(claude_version):
+        if sync_cli_js_version(npm_version):
+            fixes_applied = True
+    elif npm_version and not cli_version:
+        # Isolated install doesn't exist yet
+        log_error(f"Isolated cli.js missing, installing v{npm_version}")
+        if sync_cli_js_version(npm_version):
             fixes_applied = True
 
-    # Ensure Gc4 Windows pipe patch is applied to isolated cli.js
-    if not is_gc4_patched(CLI_JS_PATH):
-        if patch_gc4(CLI_JS_PATH):
+    # Ensure pipe patch is applied to isolated cli.js
+    if CLI_JS_PATH.exists() and not is_socket_paths_patched(CLI_JS_PATH):
+        if patch_socket_paths(CLI_JS_PATH):
             fixes_applied = True
 
-    # Verify version match between claude.exe and npm global cli.js
-    npm_cli_version = get_cli_js_version(NPM_PACKAGE_JSON_PATH)
-    if claude_version and npm_cli_version and claude_version != npm_cli_version:
-        log_error(
-            f"Version mismatch: claude.exe={claude_version}, npm cli.js={npm_cli_version}"
-        )
-        if sync_npm_cli_version(claude_version):
-            fixes_applied = True
-
-    # Ensure Gc4 Windows pipe patch is applied to npm cli.js
-    if NPM_CLI_JS_PATH.exists() and not is_gc4_patched(NPM_CLI_JS_PATH):
-        if patch_gc4(NPM_CLI_JS_PATH):
+    # Ensure pipe patch is applied to npm global cli.js
+    if NPM_CLI_JS_PATH.exists() and not is_socket_paths_patched(NPM_CLI_JS_PATH):
+        if patch_socket_paths(NPM_CLI_JS_PATH):
             fixes_applied = True
 
     # Only log success if we actually did something

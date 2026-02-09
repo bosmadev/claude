@@ -19,6 +19,7 @@ Usage:
   python3 guards.py plan-rename-tracker  # Track plan file renames
   python3 guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
   python3 guards.py quality-deprecation  # PostToolUse: Warn about /quality deprecation
+  python3 guards.py fs-guard             # PreToolUse: Block new file/folder creation and deletion
 """
 
 import json
@@ -1083,6 +1084,116 @@ State file created: {state_path}"""
 
 
 # =============================================================================
+# FS Guard (PreToolUse: Write, Bash)
+# =============================================================================
+
+def fs_guard() -> None:
+    """Prompt user before new file/folder creation or deletion.
+
+    Uses permissionDecision 'ask' to escalate to a TTY prompt when Claude tries to:
+    - Create a new file (Write tool to a path that doesn't exist)
+    - Delete a file or folder (Bash with rm/del/rmdir/Remove-Item)
+    - Create a new folder (Bash with mkdir/New-Item -Type Directory)
+
+    Edits to existing files pass through (handled by auto-allow.py).
+    Works in acceptEdits mode — edits are auto-approved, creates/deletes prompt.
+    """
+    try:
+        hook_input = json.loads(sys.stdin.read())
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_name = hook_input.get("tool_name", "")
+    tool_input = hook_input.get("tool_input", {})
+
+    result = None
+    if tool_name == "Write":
+        result = _fs_guard_write(tool_input)
+    elif tool_name == "Bash":
+        result = _fs_guard_bash(tool_input)
+
+    if result:
+        print(json.dumps(result))
+    sys.exit(0)
+
+
+def _fs_guard_write(tool_input: dict) -> dict | None:
+    """Block Write tool if target file doesn't exist (new file creation)."""
+    file_path = extract_file_path(tool_input)
+    if not file_path:
+        return None
+
+    try:
+        target = Path(file_path)
+        if not target.exists():
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": (
+                        f"New file: {file_path}"
+                    ),
+                }
+            }
+    except Exception:
+        pass
+
+    return None  # File exists — let auto-allow handle it
+
+
+def _fs_guard_bash(tool_input: dict) -> dict | None:
+    """Block Bash commands that create or delete files/folders."""
+    command = tool_input.get("command", "")
+    if not command:
+        return None
+
+    # Deletion patterns — require command position (start of line, after && ; |)
+    # to avoid false positives on filenames like README.md or flags like --format rd
+    _CMD = r'(?:^|(?<=&&)|(?<=;)|(?<=\|))\s*'  # command position anchor
+    delete_patterns = [
+        r'\brm\s',              # Unix rm (must be followed by space)
+        r'\brmdir\b',           # rmdir
+        r'\bdel\s',             # Windows del (must be followed by space)
+        r'\bRemove-Item\b',     # PowerShell
+        _CMD + r'rd\s',         # Windows rd — anchored to avoid "third", ".rd"
+    ]
+
+    # Creation patterns
+    create_patterns = [
+        r'\bmkdir\b',           # mkdir (Unix/Windows)
+        _CMD + r'md\s',         # Windows md — anchored to avoid ".md", "--format md"
+        r'\bNew-Item\b',        # PowerShell
+        r'\btouch\s',           # Unix touch (must be followed by space)
+    ]
+
+    for pattern in delete_patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": (
+                        f"Deletion: {command[:200]}"
+                    ),
+                }
+            }
+
+    for pattern in create_patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": (
+                        f"Creation: {command[:200]}"
+                    ),
+                }
+            }
+
+    return None
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 
@@ -1131,6 +1242,8 @@ def main() -> None:
         auto_ralph_hook()
     elif mode == "quality-deprecation":
         quality_deprecation_hook()
+    elif mode == "fs-guard":
+        fs_guard()
     else:
         # Unknown mode - exit gracefully to avoid hook errors
         sys.exit(0)

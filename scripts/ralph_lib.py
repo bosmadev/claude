@@ -184,7 +184,7 @@ def build_agent_prompt(
         max_iterations: Maximum iterations allowed.
         task: Task description string.
         session_id: Ralph session ID for coordination.
-        complete_signal: Signal string for completion (e.g., "ULTRATHINK_COMPLETE").
+        complete_signal: Signal string for completion (deprecated, use TaskUpdate+SendMessage).
         exit_signal: Signal string for exit (e.g., "EXIT").
         assigned_config: Pre-assigned agent config name. If None, uses round-robin.
 
