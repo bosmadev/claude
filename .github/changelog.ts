@@ -204,14 +204,16 @@ if (githubRepo) {
   badgeUrl = '#';
 }
 
-const badge = `[![${badgeLabel}](https://img.shields.io/badge/${badgeLabel}-${badgeDate}-d9a00a.svg)](${badgeUrl})`;
+const badge = `[![${badgeLabel}](https://img.shields.io/badge/${badgeLabel}-${badgeDate}-333333.svg)](${badgeUrl})`;
 
-let entry = `---\n\n${badge} | Build ${buildId}\n\n`;
+let entry = `---\n\n## ${badge} | Build ${buildId}\n\n`;
 if (summary) {
   entry += `${summary}\n\n`;
 }
 if (changes.length > 0) {
-  entry += changes.join('\n') + '\n';
+  // Use [x] checkbox style for change items
+  const checkboxChanges = changes.map(l => l.replace(/^- /, '- [x] '));
+  entry += checkboxChanges.join('\n') + '\n';
 }
 entry += '\n';
 

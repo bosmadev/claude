@@ -357,7 +357,7 @@ jobs:
 
                 // Remove the --- and badge line, keep content
                 const lines = section.split('\n');
-                const contentLines = lines.filter(l => !l.startsWith('---') && !l.startsWith('[!['));
+                const contentLines = lines.filter(l => !l.startsWith('---') && !l.startsWith('[![') && !l.startsWith('## [!['));
                 releaseNotes = contentLines.join('\n').trim();
 
                 console.log('Extracted release notes from CHANGELOG');
