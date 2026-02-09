@@ -21,6 +21,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Add parent directory to sys.path for hooks.transaction import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 # =============================================================================
 # Stdin Timeout - Prevent hanging on missing stdin
