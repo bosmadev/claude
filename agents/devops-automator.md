@@ -28,7 +28,7 @@ assistant: "I'll use the Task tool to launch the devops-automator agent to analy
 CI optimization involves caching, parallelization, and eliminating unnecessary steps.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: orange
 skills:
   - review

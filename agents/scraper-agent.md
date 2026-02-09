@@ -20,7 +20,7 @@ assistant: "I'll use the Task tool to launch the scraper-agent to handle JavaScr
 Dynamic content requires browser automation rather than simple HTTP requests.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: purple
 tools:
   - Read

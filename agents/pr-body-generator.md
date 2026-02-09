@@ -28,7 +28,7 @@ assistant: "I'll use the Task tool to launch the pr-body-generator agent to anal
 This agent can summarize branch contents even without creating a PR.
 </commentary>
 </example>
-model: opus
+model: sonnet
 color: green
 skills:
   - openpr
