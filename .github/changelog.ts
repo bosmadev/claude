@@ -167,6 +167,22 @@ if (commitsIdx !== -1) {
     });
 }
 
+// Fallback: if no structured sections found, use commit subject + body bullets
+if (!summary && changes.length === 0) {
+  // Use commit subject (strip Build ID and conventional prefix for summary)
+  summary = commitSubject
+    .replace(/Build\s+\d+/i, '')
+    .replace(/\(#\d+\)/, '')
+    .replace(/^[\s:]+|[\s:]+$/g, '')
+    .trim();
+
+  // Extract bullet points from commit body (lines starting with -)
+  const bodyLines = lines.slice(1).filter(l => l.trim().startsWith('-'));
+  if (bodyLines.length > 0) {
+    changes = bodyLines.map(l => l.trim());
+  }
+}
+
 // Build CHANGELOG entry with badge format
 const badgeDate = date.replace(/-/g, '--'); // shields.io escaping
 let badgeLabel: string;
