@@ -3,6 +3,19 @@
 
 ---
 
+## [![v1.1.2](https://img.shields.io/badge/v1.1.2-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/b347e9948b799a1cb80a210af4f8bdddb85d5212) | Build 3
+
+feat(ci): auto Build ID from CHANGELOG.md for *-dev branches
+
+- [x] aggregate-pr.py now reads CHANGELOG.md for highest Build N when branch has no b{N} pattern
+- [x] /commit skill auto-injects Build ID on main branch commits
+- [x] /openpr skill updated for *-dev branching model (claude-dev, pulsona-dev, etc.)
+- [x] CLAUDE.md branching docs updated: *-dev replaces feature/b{N}-* as primary pattern
+- [x] CHANGELOG entry format docs updated to match badge design (## prefix, 333333, [x])
+
+
+---
+
 [![v1.1.1](https://img.shields.io/badge/v1.1.1-2026--02--09-d9a00a.svg)](https://github.com/bosmadev/claude/commit/173b1465c318233d8ddc218798efa5e37b9d7f08) | Build 2
 
 fix(ci): CHANGELOG automation end-to-end validation
