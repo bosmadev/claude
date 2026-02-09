@@ -2,10 +2,10 @@
 // Runs after merge to main/master
 // Single atomic commit with both updates
 
-const fs = require('fs');
-const { execSync, spawnSync } = require('child_process');
+import fs from 'node:fs';
+import { execSync, spawnSync } from 'node:child_process';
 
-function safeExec(cmd, errorMsg) {
+function safeExec(cmd: string, errorMsg: string): string {
   // Validate command is safe (git/find only, no shell expansion)
   const allowedCommands = /^(git|find)\s/;
   if (!allowedCommands.test(cmd)) {
@@ -13,9 +13,10 @@ function safeExec(cmd, errorMsg) {
   }
   try {
     return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-  } catch (error) {
-    console.error(`${errorMsg}: ${error.message}`);
-    throw new Error(`${errorMsg}: ${error.stderr || error.message}`);
+  } catch (error: unknown) {
+    const err = error as Error & { stderr?: string };
+    console.error(`${errorMsg}: ${err.message}`);
+    throw new Error(`${errorMsg}: ${err.stderr || err.message}`);
   }
 }
 
@@ -49,8 +50,8 @@ const githubRepo = process.env.GITHUB_REPOSITORY || '';
 // === PART 1: Version Bump ===
 console.log('[1/3] Detecting version bump type...');
 
-function detectBumpType(commitMsg) {
-  const lowerMsg = commitMsg.toLowerCase();
+function detectBumpType(msg: string): 'major' | 'minor' | 'patch' {
+  const lowerMsg = msg.toLowerCase();
 
   // Check for BREAKING CHANGE
   if (lowerMsg.includes('breaking change:') || lowerMsg.includes('breaking-change:')) {
@@ -63,7 +64,7 @@ function detectBumpType(commitMsg) {
   }
 
   // Check for feat (new feature)
-  if (/^feat(\(.+\))?:/.test(lowerMsg) || commitMsg.includes('### feat')) {
+  if (/^feat(\(.+\))?:/.test(lowerMsg) || msg.includes('### feat')) {
     return 'minor';
   }
 
@@ -72,18 +73,18 @@ function detectBumpType(commitMsg) {
 }
 
 // Find package.json
-let pkgPath = null;
+let pkgPath: string | null = null;
 try {
   const result = safeExec('find . -name "package.json" -not -path "*/node_modules/*" | head -1', 'Failed to find package.json').trim();
   if (result) pkgPath = result;
-} catch (e) {
+} catch {
   console.log('No package.json found, skipping version bump');
 }
 
-let newVersion = null;
+let newVersion: string | null = null;
 if (pkgPath && fs.existsSync(pkgPath)) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  const currentVersion = pkg.version || '0.0.0';
+  const currentVersion: string = pkg.version || '0.0.0';
   console.log(`Current version: ${currentVersion}`);
 
   // Validate semver
@@ -118,7 +119,7 @@ console.log('[2/3] Updating CHANGELOG.md...');
 const date = new Date().toISOString().split('T')[0];
 
 // Extract summary
-function sanitizeMarkdown(text) {
+function sanitizeMarkdown(text: string): string {
   return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
@@ -132,7 +133,20 @@ if (summaryIdx !== -1) {
 }
 
 // Extract changes - FLATTEN categories (no ### feat, ### fix)
-let changes = [];
+const verbs: Record<string, string> = {
+  feat: 'Added',
+  fix: 'Fixed',
+  refactor: 'Refactored',
+  docs: 'Updated',
+  test: 'Added tests for',
+  chore: 'Updated',
+  config: 'Configured',
+  cleanup: 'Cleaned up',
+  perf: 'Improved',
+  style: 'Styled'
+};
+
+let changes: string[] = [];
 const commitsIdx = lines.findIndex(l => l.startsWith('## Commits') || l.startsWith('## Changes'));
 if (commitsIdx !== -1) {
   let endIdx = lines.findIndex((l, i) => i > commitsIdx && l.startsWith('## '));
@@ -147,19 +161,7 @@ if (commitsIdx !== -1) {
     .map(l => {
       // Clean up: "b101-1: feat(scope): add X" → "- Added X"
       return l.replace(/^-\s*b\d+-\d+:\s*/, '- ')
-              .replace(/^-\s*(feat|fix|refactor|docs|test|chore|config|cleanup|perf|style)(\([^)]+\))?:\s*/i, (_, type) => {
-                const verbs = {
-                  feat: 'Added',
-                  fix: 'Fixed',
-                  refactor: 'Refactored',
-                  docs: 'Updated',
-                  test: 'Added tests for',
-                  chore: 'Updated',
-                  config: 'Configured',
-                  cleanup: 'Cleaned up',
-                  perf: 'Improved',
-                  style: 'Styled'
-                };
+              .replace(/^-\s*(feat|fix|refactor|docs|test|chore|config|cleanup|perf|style)(\([^)]+\))?:\s*/i, (_, type: string) => {
                 return `- ${verbs[type.toLowerCase()] || 'Updated'} `;
               });
     });
@@ -167,7 +169,8 @@ if (commitsIdx !== -1) {
 
 // Build CHANGELOG entry with badge format
 const badgeDate = date.replace(/-/g, '--'); // shields.io escaping
-let badgeLabel, badgeUrl;
+let badgeLabel: string;
+let badgeUrl: string;
 
 if (newVersion) {
   badgeLabel = `v${newVersion}`;
@@ -241,11 +244,11 @@ if (pkgPath) {
 }
 
 try {
-  const commitMsg = newVersion
+  const msg = newVersion
     ? `chore: bump to v${newVersion} and update CHANGELOG for Build ${buildId}`
     : `docs: update CHANGELOG for Build ${buildId}`;
 
-  const result = spawnSync('git', ['commit', '-m', commitMsg], { encoding: 'utf8' });
+  const result = spawnSync('git', ['commit', '-m', msg], { encoding: 'utf8' });
   if (result.error) throw new Error(`Commit failed: ${result.error.message}`);
 
   safeExec('git push', 'Push failed');
@@ -254,11 +257,12 @@ try {
     console.log(`✓ Version bumped: v${newVersion}`);
   }
   console.log(`✓ CHANGELOG updated: Build ${buildId}`);
-} catch (commitError) {
+} catch (commitError: unknown) {
+  const err = commitError as Error;
   const status = safeExec('git status --porcelain', 'Failed to get git status');
   if (status.trim() === '') {
     console.log('No changes to commit');
   } else {
-    throw new Error(`Git commit/push failed: ${commitError.message}`);
+    throw new Error(`Git commit/push failed: ${err.message}`);
   }
 }
