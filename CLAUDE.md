@@ -175,22 +175,28 @@ graph TD
 
 ## Build Numbering Convention
 
-Branch names include build IDs to track work across non-linear merges:
+Build IDs are **auto-detected** from CHANGELOG.md — no manual assignment needed.
 
-**Format:** `{type}/b{id}-{description}`
+**Branching Model:**
+
+| Branch | Purpose | Build ID Source |
+|--------|---------|-----------------|
+| `main` | Production | Auto from CHANGELOG.md via `/commit` |
+| `{repo}-dev` | Development (PRs to main) | Auto from CHANGELOG.md via `/openpr` |
+| `feature/b{id}-*` | Legacy feature branches | From branch name (backward compat) |
 
 **Examples:**
 
-- `feature/b101-user-auth` - Feature branch for build 101
-- `fix/b102-login-bug` - Bugfix for build 102
-- `refactor/b103-api-cleanup` - Refactor for build 103
+- `claude-dev` - Development branch for bosmadev/claude
+- `pulsona-dev` - Development branch for bosmadev/pulsona
+- `cwchat-dev` - Development branch for bosmadev/cwchat
 
-**Build ID Assignment:**
+**Build ID Auto-Detection:**
 
-- Build IDs are manually assigned (no auto-generation)
-- Sequential but can have gaps (e.g., 101, 102, 105)
-- Use next available number when creating branches
-- Check existing branches to avoid conflicts
+- `/commit` on `main`: reads CHANGELOG.md → highest Build N → injects `Build N+1`
+- `/openpr` from `*-dev`: reads CHANGELOG.md → highest Build N → PR title: `Build N+1`
+- Legacy `b{N}` branches: extracted from branch name (backward compat)
+- Fallback: `Build 1` if no CHANGELOG.md or no existing builds
 
 **Why Build IDs:**
 
@@ -199,13 +205,12 @@ Branch names include build IDs to track work across non-linear merges:
 - Enable automated CHANGELOG grouping
 - Survive squash merges and rebases
 
-**Branch Types:**
+**Workflow:**
 
-- `feature/` - New functionality
-- `fix/` - Bug fixes
-- `refactor/` - Code restructuring
-- `docs/` - Documentation only
-- `chore/` - Maintenance tasks
+1. Work on `claude-dev` → make commits (no Build ID needed)
+2. Run `/openpr` → auto-detects `Build N+1` → creates PR
+3. Squash merge to main → `changelog.ts` picks up Build ID → CHANGELOG entry
+4. Direct commits to main → `/commit` auto-injects Build ID
 
 ## CHANGELOG Automation
 
@@ -237,18 +242,19 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 5. **CHANGELOG Entry Format:**
 
 ```markdown
-## Build {id} | {version}
+---
 
-**Branch:** {type}/b{id}-{description}
-**Merged:** {timestamp}
+## [![v{version}](https://img.shields.io/badge/v{version}-{date}--{date}-333333.svg)](https://github.com/bosmadev/{repo}/pull/{pr}) | Build {id}
 
-{pr_summary}
+{summary}
 
-### Changes
-- {file_section_1}
-- {file_section_2}
-- ...
+- [x] {change_1}
+- [x] {change_2}
 ```
+
+   - Badge links to PR (if `(#N)` in commit subject) or commit SHA
+   - `333333` dark badge color, `[x]` checkboxes
+   - `---` separator between entries
 
 6. **Release Format:**
 
@@ -265,11 +271,11 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 - All CHANGELOG updates happen via GitHub Actions post-merge
 - Prevents merge conflicts and duplication
 
-**Build ID Extraction:**
+**Build ID Injection:**
 
-- Workflow parses branch name: `feature/b101-auth` → Build 101
-- Used in CHANGELOG header and grouping
-- Enables non-linear merge tracking
+- **Main branch:** `/commit` auto-reads CHANGELOG.md for highest Build N, injects `Build N+1` into commit subject
+- **Feature branches:** Build ID comes from branch name (`feature/b101-auth` → `Build 101`) via `/openpr` squash merge
+- `changelog.ts` requires `Build N` in commit subject to trigger — format: `Build 3: feat: description`
 
 **Version Bumping:**
 

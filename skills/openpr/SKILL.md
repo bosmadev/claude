@@ -110,7 +110,7 @@ This usually happens when:
 - You rebased locally but remote has the old commits
 
 Recommended fix:
-git pull --rebase origin feature/b101
+git pull --rebase origin claude-dev
 # Resolve any conflicts
 /openpr confirm  # Try again
 
@@ -133,14 +133,14 @@ Claude: Checking for commits...
 
 Error: No commits found to include in PR.
 
-Current branch: feature/b101
+Current branch: claude-dev
 Base branch: main
 Commits ahead: 0
 
 Possible causes:
 - All commits have already been merged
 - Branch is up to date with main
-- You're on the main branch (use a feature branch instead)
+- You're on the main branch (use a dev branch instead)
 
 Check your branch: git log main..HEAD
 ```
@@ -162,23 +162,25 @@ BRANCH=$(git branch --show-current)
 echo "$BRANCH"
 ```
 
-If on `main` or `master`, abort with: "Error: Cannot create PR from main/master branch. Switch to a feature branch first."
+If on `main` or `master`, abort with: "Error: Cannot create PR from main/master branch. Switch to a dev branch first (e.g., claude-dev, pulsona-dev)."
 
 ### 3. Extract Build Number
 
-Extract the numeric part from the branch name for the PR title:
-- `b101` -> `101`
-- `feature/b42` -> `42`
-- `b101-feature` -> `101`
+Build ID is auto-detected with this priority:
+1. **Branch name pattern:** `b101`, `feature/b42-auth` → numeric ID from name
+2. **CHANGELOG.md auto-detect:** For `*-dev` branches (e.g., `claude-dev`, `pulsona-dev`), reads `CHANGELOG.md` for highest `Build N`, uses `N+1`
+3. **Fallback:** `Build 1` if no CHANGELOG or no existing builds
 
 ```bash
 BRANCH=$(git branch --show-current)
-BUILD_NUM=$(echo "$BRANCH" | grep -oE 'b[0-9]+' | head -1 | tr -d 'b')
-echo "${BUILD_NUM:-$BRANCH}"
+# aggregate-pr.py handles all detection logic automatically
 ```
 
-PR Title format: `Build {number}` (e.g., "Build 101")
-- If no build number found, use the branch name: `Build: {branch-name}`
+PR Title format: `Build {number}` (e.g., "Build 3")
+
+**Typical workflow:**
+- Work on `claude-dev` → run `/openpr` → auto-detects `Build 3` from CHANGELOG → PR title: `Build 3`
+- Squash merge to main → `changelog.ts` picks up `Build 3` → CHANGELOG entry created
 
 ### 4. Check for Unpushed Commits
 
@@ -530,12 +532,13 @@ User: /openpr
 
 Claude: **SKILL_STARTED:** openpr
 
-Gathering commits from branch b101...
+Gathering commits from branch claude-dev...
 Running aggregate-pr.py to analyze commits...
+Auto-detected Build 3 from CHANGELOG.md (highest: Build 2)
 
 Created: .claude/pending-pr.md
 
-# Pull Request: Build 101
+# Pull Request: Build 3
 
 ## Summary
 This PR includes 2 new features and 1 bug fix.
@@ -543,11 +546,11 @@ This PR includes 2 new features and 1 bug fix.
 ## Commits Included
 
 ### feat
-- b101-1: feat(auth): Add user validation
-- b101-2: feat(api): Add rate limiting
+- b3-1: feat(auth): Add user validation
+- b3-2: feat(api): Add rate limiting
 
 ### fix
-- b101-3: fix(parser): Handle edge case in token parsing
+- b3-3: fix(parser): Handle edge case in token parsing
 
 ## Detailed Changes
 
@@ -570,11 +573,11 @@ Creating pull request...
 
 Pull Request Created Successfully!
 
-Title: Build 101
-URL: https://github.com/user/repo/pull/42
-Branch: b101 -> main
+Title: Build 3
+URL: https://github.com/bosmadev/claude/pull/5
+Branch: claude-dev -> main
 
-The squashed commit now references: https://github.com/user/repo/pull/42
+The squashed commit now references: https://github.com/bosmadev/claude/pull/5
 
 Would you like to delete .claude/pending-pr.md? (yes/no)
 

@@ -14,7 +14,7 @@ Output:
   Generates structured PR body with:
   - Summary paragraph
   - Commits grouped by type (feat, fix, refactor, etc.)
-  - Build ID extracted from branch name
+  - Build ID auto-detected from branch name (b{N}) or CHANGELOG.md
 """
 
 import json
@@ -99,20 +99,56 @@ def get_current_branch() -> str:
     return "unknown"
 
 
+def get_next_build_id_from_changelog() -> str | None:
+    """
+    Read CHANGELOG.md and find the highest Build N, return N+1.
+
+    Used for *-dev branches that don't encode build ID in branch name.
+    Returns None if no CHANGELOG.md or no Build entries found.
+    """
+    repo_root = get_repo_root()
+    if not repo_root:
+        return None
+
+    changelog = repo_root / "CHANGELOG.md"
+    if not changelog.exists():
+        return "1"
+
+    content = changelog.read_text(encoding="utf-8")
+    builds = [int(m) for m in re.findall(r'Build\s+(\d+)', content)]
+    if builds:
+        return str(max(builds) + 1)
+    return "1"
+
+
 def extract_build_id(branch: str) -> str:
     """
-    Extract build ID from branch name.
+    Extract build ID from branch name or auto-detect from CHANGELOG.md.
+
+    Priority:
+        1. Branch name pattern: b101, feature/b42-auth -> numeric ID
+        2. *-dev branches: read CHANGELOG.md for highest Build N, return N+1
+        3. Fallback: "1" (first build)
 
     Examples:
         b101 -> 101
         feature/b42-auth -> 42
-        b101-feature-name -> 101
-        some-branch -> some-branch (no build ID)
+        claude-dev -> (reads CHANGELOG.md, e.g. "3")
+        pulsona-dev -> (reads CHANGELOG.md, e.g. "7")
+        some-branch -> (reads CHANGELOG.md or "1")
     """
+    # 1. Try branch name pattern (backward compat)
     match = re.search(r'b(\d+)', branch)
     if match:
         return match.group(1)
-    return branch
+
+    # 2. Auto-detect from CHANGELOG.md (works for *-dev and any branch)
+    next_id = get_next_build_id_from_changelog()
+    if next_id:
+        return next_id
+
+    # 3. Fallback
+    return "1"
 
 
 def parse_commit_type(subject: str) -> tuple[str, str, str]:
