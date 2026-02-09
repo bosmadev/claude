@@ -51,7 +51,9 @@ const githubRepo = process.env.GITHUB_REPOSITORY || '';
 console.log('[1/3] Detecting version bump type...');
 
 function detectBumpType(msg: string): 'major' | 'minor' | 'patch' {
-  const lowerMsg = msg.toLowerCase();
+  // Strip "Build N: " prefix before checking conventional commit type
+  const stripped = msg.replace(/^Build\s+\d+:\s*/i, '');
+  const lowerMsg = stripped.toLowerCase();
 
   // Check for BREAKING CHANGE
   if (lowerMsg.includes('breaking change:') || lowerMsg.includes('breaking-change:')) {
