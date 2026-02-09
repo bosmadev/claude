@@ -200,25 +200,26 @@ Task(
     subagent_type="general-purpose",
     model="opus",  # or "sonnet" based on modelMode
     team_name="ralph-impl",  # REQUIRED: joins the native team
-    name="agent-1",  # Unique teammate name
-    prompt="""RALPH Agent 1/[N] - Phase 2.1: Implementation
+    name="{role}-1",  # Descriptive name: e.g., "oauth-impl-1", "db-migration-1"
+    prompt="""RALPH Agent 1/[N] ({role}-1) - Phase 2.1: Implementation
 
 **Plan file:** [PLAN_FILE_PATH]
 
 **Your task:** [SPECIFIC_TASK]
 
+**Capability:** [WHAT_THIS_AGENT_SPECIALIZES_IN]
+
 **Ralph protocol:**
 - Read plan file for context
 - Check TaskList for available work
-- Claim tasks with TaskUpdate(owner="agent-1")
+- Claim tasks with TaskUpdate(owner="{role}-1")
 - Use SendMessage to report progress to team lead
-- Mark tasks completed when done
+- Mark tasks completed via TaskUpdate(status="completed")
+- Signal team-lead: SendMessage(recipient="team-lead", content="Task X completed: [summary]")
 - When you receive a shutdown_request message (JSON with type "shutdown_request"), you MUST respond by calling SendMessage with type="shutdown_response", request_id=(from the message), approve=true. This terminates your process gracefully. Do NOT just say "I can't exit" — use the tool.
 
 **Success criteria:**
 [WHAT_DEFINES_COMPLETION]
-
-When complete, output: ULTRATHINK_COMPLETE
 """
 )
 ```
@@ -228,7 +229,7 @@ When complete, output: ULTRATHINK_COMPLETE
 As team lead, monitor agent progress:
 - Agents send status updates via `SendMessage(type="message", recipient="team-lead")`
 - Use `TaskList` to track overall progress
-- Use `SendMessage(type="message", recipient="agent-X")` to redirect stuck agents
+- Use `SendMessage(type="message", recipient="{agent-name}")` to redirect stuck agents
 - When all IMPL tasks complete, spawn VERIFY+FIX agents
 - When VERIFY+FIX completes, run PLAN VERIFICATION (checks plan + artifacts)
 - If plan verification finds gaps: read `.claude/ralph/gap-fill-prompts.json` and spawn gap-fill agents

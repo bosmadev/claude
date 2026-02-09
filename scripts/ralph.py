@@ -5151,7 +5151,8 @@ SPECIALTY FOCUS ({specialty}):
                             f"**Missing task:** {missing_task}\n\n"
                             f"**Plan file:** {plan_file}\n\n"
                             f"Read the plan for full context. Implement ONLY this specific "
-                            f"missing task. When complete, output: ULTRATHINK_COMPLETE"
+                            f"missing task. When complete, mark your task as completed via "
+                            f"TaskUpdate(status='completed') and SendMessage to team-lead."
                         )
                         gap_fill_prompts.append(gap_prompt)
 

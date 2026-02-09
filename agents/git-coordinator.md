@@ -194,7 +194,8 @@ Task(
 - Push successful (if authorized)
 - Team-lead notified of completion
 
-When complete, output: GIT_COORDINATOR_COMPLETE
+When complete, mark your task as completed via TaskUpdate(status="completed") and send:
+SendMessage(recipient="team-lead", content="Git operations complete: [commit hash], [N] files, pushed=[yes/no]")
 """
 )
 ```
@@ -259,7 +260,7 @@ SendMessage({
 **Step 3: Team-lead triggers commit**
 
 ```typescript
-// After all agents emit ULTRATHINK_COMPLETE:
+// After all agent tasks show completed in TaskList:
 SendMessage({
   recipient: "git-coordinator",
   type: "create_commit",

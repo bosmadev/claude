@@ -368,7 +368,7 @@ graph TD
     A["Agent: Work Complete"] --> B(["Has Commits?"])
     B -->|No| C["Skip Push Gate"]
     B -->|Yes| D(["Pushed to Remote?"])
-    D -->|Yes| E["Allow ULTRATHINK_COMPLETE"]
+    D -->|Yes| E["Allow TaskUpdate(completed)"]
     D -->|No| F["BLOCK: Must Push First"]
     F --> G["Agent: git push"]
     G --> D
@@ -385,7 +385,7 @@ graph TD
 
 **Agent Requirements:**
 
-1. Before emitting `ULTRATHINK_COMPLETE`, verify:
+1. Before marking task as completed via `TaskUpdate(status="completed")`, verify:
 
    - All changes are committed
    - All commits are pushed to remote branch

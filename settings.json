@@ -394,6 +394,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\guards.py fs-guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "python C:\\Users\\Dennis\\.claude\\hooks\\sandbox-boundary.py pretool",
             "timeout": 5
           },
@@ -412,6 +417,11 @@
       {
         "matcher": "MultiEdit|Edit|Write",
         "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\Dennis\\.claude\\hooks\\guards.py fs-guard",
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "python C:\\Users\\Dennis\\.claude\\hooks\\auto-allow.py",

@@ -1,40 +1,40 @@
 {
-  "numStartups": 174,
-  "installMethod": "native",
+  "numStartups": 187,
+  "installMethod": "global",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
   "hasUsedStash": true,
   "tipsHistory": {
     "new-user-warmup": 7,
     "plan-mode-for-complex-tasks": 45,
-    "terminal-setup": 174,
-    "memory-command": 172,
-    "shift-enter-setup": 126,
+    "terminal-setup": 184,
+    "memory-command": 187,
+    "shift-enter-setup": 185,
     "theme-command": 168,
     "prompt-queue": 50,
     "enter-to-steer-in-relatime": 168,
     "todo-list": 168,
-    "install-github-app": 172,
-    "install-slack-app": 172,
-    "drag-and-drop-images": 174,
-    "double-esc-code-restore": 164,
-    "continue": 164,
-    "shift-tab": 168,
+    "install-github-app": 182,
+    "install-slack-app": 182,
+    "drag-and-drop-images": 184,
+    "double-esc-code-restore": 184,
+    "continue": 184,
+    "shift-tab": 181,
     "image-paste": 170,
-    "desktop-app": 172,
+    "desktop-app": 187,
     "web-app": 174,
-    "custom-agents": 172,
-    "agent-flag": 172,
+    "custom-agents": 187,
+    "agent-flag": 187,
     "mobile-app": 174,
-    "guest-passes": 171,
-    "permissions": 172,
-    "rename-conversation": 162,
-    "custom-commands": 162,
-    "git-worktrees": 168,
+    "guest-passes": 187,
+    "permissions": 182,
+    "rename-conversation": 181,
+    "custom-commands": 181,
+    "git-worktrees": 181,
     "frontend-design-plugin": 128,
-    "overage-promo": 171
+    "overage-promo": 174
   },
-  "promptQueueUseCount": 268,
+  "promptQueueUseCount": 286,
   "showExpandedTodos": true,
   "autoConnectIde": true,
   "cachedGrowthBookFeatures": {
@@ -44,7 +44,7 @@
       "maxQueueSize": 8192
     },
     "tengu_mcp_tool_search": true,
-    "tengu_scratch": true,
+    "tengu_scratch": false,
     "tengu_brass_pebble": false,
     "tengu_disable_bypass_permissions_mode": false,
     "tengu_event_sampling_config": {},
@@ -115,17 +115,7 @@
   "opusProMigrationComplete": true,
   "thinkingMigrationComplete": true,
   "cachedChromeExtensionInstalled": true,
-  "changelogLastFetched": 1770507238408,
-  "oauthAccount": {
-    "accountUuid": "d944b29f-4832-4a63-b293-6eceae956e45",
-    "emailAddress": "dennis@bosma.dev",
-    "organizationUuid": "18a6ba0d-8927-47b6-9571-0f549ada2369",
-    "hasExtraUsageEnabled": false,
-    "billingType": "stripe_subscription",
-    "accountCreatedAt": "2025-12-29T23:46:05.033447Z",
-    "subscriptionCreatedAt": "2026-01-19T07:39:31.010175Z",
-    "displayName": "Dennis"
-  },
+  "changelogLastFetched": 1770596980600,
   "claudeCodeFirstTokenDate": "2026-01-19T07:42:14.958502Z",
   "hasCompletedOnboarding": true,
   "lastOnboardingVersion": "2.1.27",
@@ -148,31 +138,47 @@
         "packageManager": null
       },
       "hasCompletedProjectOnboarding": true,
-      "lastCost": 0.00076,
-      "lastAPIDuration": 1548,
-      "lastAPIDurationWithoutRetries": 1540,
-      "lastToolDuration": 0,
-      "lastDuration": 1666507,
-      "lastLinesAdded": 0,
-      "lastLinesRemoved": 0,
-      "lastTotalInputTokens": 580,
-      "lastTotalOutputTokens": 36,
-      "lastTotalCacheCreationInputTokens": 0,
-      "lastTotalCacheReadInputTokens": 0,
-      "lastTotalWebSearchRequests": 0,
+      "lastCost": 7.941554000000003,
+      "lastAPIDuration": 634090,
+      "lastAPIDurationWithoutRetries": 633879,
+      "lastToolDuration": 287373,
+      "lastDuration": 1268242,
+      "lastLinesAdded": 17,
+      "lastLinesRemoved": 20,
+      "lastTotalInputTokens": 262743,
+      "lastTotalOutputTokens": 28197,
+      "lastTotalCacheCreationInputTokens": 422116,
+      "lastTotalCacheReadInputTokens": 9404390,
+      "lastTotalWebSearchRequests": 3,
       "lastModelUsage": {
         "claude-haiku-4-5-20251001": {
-          "inputTokens": 580,
-          "outputTokens": 36,
+          "inputTokens": 262624,
+          "outputTokens": 9186,
           "cacheReadInputTokens": 0,
-          "cacheCreationInputTokens": 0,
+          "cacheCreationInputTokens": 42658,
+          "webSearchRequests": 3,
+          "costUSD": 0.39187649999999996
+        },
+        "claude-opus-4-6": {
+          "inputTokens": 86,
+          "outputTokens": 15103,
+          "cacheReadInputTokens": 9202140,
+          "cacheCreationInputTokens": 293855,
           "webSearchRequests": 0,
-          "costUSD": 0.00076
+          "costUSD": 6.81566875
+        },
+        "claude-sonnet-4-5-20250929": {
+          "inputTokens": 33,
+          "outputTokens": 3908,
+          "cacheReadInputTokens": 202250,
+          "cacheCreationInputTokens": 85603,
+          "webSearchRequests": 0,
+          "costUSD": 0.73400875
         }
       },
-      "lastSessionId": "5426722a-63a8-4ee1-b6fb-0490958dd8a7",
-      "lastFpsAverage": 0.28,
-      "lastFpsLow1Pct": 61.17
+      "lastSessionId": "c43a0621-f6c3-46ee-8fd4-c56a95a08c35",
+      "lastFpsAverage": 8.1,
+      "lastFpsLow1Pct": 8.12
     },
     "D:/source/cwchat": {
       "allowedTools": [],
@@ -226,47 +232,31 @@
         "version": null,
         "packageManager": null
       },
-      "lastCost": 102.65153505,
-      "lastAPIDuration": 14678651,
-      "lastAPIDurationWithoutRetries": 14672404,
-      "lastToolDuration": 8380773,
-      "lastDuration": 15440172,
-      "lastLinesAdded": 14547,
-      "lastLinesRemoved": 520,
-      "lastTotalInputTokens": 3306513,
-      "lastTotalOutputTokens": 667329,
-      "lastTotalCacheCreationInputTokens": 8027621,
-      "lastTotalCacheReadInputTokens": 89362960,
-      "lastTotalWebSearchRequests": 170,
-      "lastFpsAverage": 14.64,
-      "lastFpsLow1Pct": 13.53,
+      "lastCost": 0.000382,
+      "lastAPIDuration": 792,
+      "lastAPIDurationWithoutRetries": 786,
+      "lastToolDuration": 0,
+      "lastDuration": 3374133,
+      "lastLinesAdded": 0,
+      "lastLinesRemoved": 0,
+      "lastTotalInputTokens": 292,
+      "lastTotalOutputTokens": 18,
+      "lastTotalCacheCreationInputTokens": 0,
+      "lastTotalCacheReadInputTokens": 0,
+      "lastTotalWebSearchRequests": 0,
+      "lastFpsAverage": 0.03,
+      "lastFpsLow1Pct": 52.3,
       "lastModelUsage": {
         "claude-haiku-4-5-20251001": {
-          "inputTokens": 3206808,
-          "outputTokens": 131570,
-          "cacheReadInputTokens": 44623,
-          "cacheCreationInputTokens": 2328377,
-          "webSearchRequests": 170,
-          "costUSD": 8.479591550000002
-        },
-        "claude-opus-4-6": {
-          "inputTokens": 4325,
-          "outputTokens": 239541,
-          "cacheReadInputTokens": 51549882,
-          "cacheCreationInputTokens": 2010057,
+          "inputTokens": 292,
+          "outputTokens": 18,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
           "webSearchRequests": 0,
-          "costUSD": 44.347947250000054
-        },
-        "claude-sonnet-4-5-20250929": {
-          "inputTokens": 95380,
-          "outputTokens": 296218,
-          "cacheReadInputTokens": 37768455,
-          "cacheCreationInputTokens": 3689187,
-          "webSearchRequests": 0,
-          "costUSD": 49.82399625
+          "costUSD": 0.000382
         }
       },
-      "lastSessionId": "1abacb1e-9df0-40be-b0cc-554bc23c3f0c"
+      "lastSessionId": "f651fcf7-7fbb-45e6-926a-913907a154a7"
     },
     "D:/source/gswarm-api/main": {
       "allowedTools": [],
@@ -336,13 +326,13 @@
     "18a6ba0d-8927-47b6-9571-0f549ada2369": {
       "hasAccess": false,
       "hasAccessNotAsDefault": false,
-      "timestamp": 1770507329801
+      "timestamp": 1770665120606
     }
   },
   "groveConfigCache": {
     "d944b29f-4832-4a63-b293-6eceae956e45": {
       "grove_enabled": true,
-      "timestamp": 1770464579165
+      "timestamp": 1770665120295
     }
   },
   "passesEligibilityCache": {
@@ -355,7 +345,7 @@
       },
       "referrer_reward": null,
       "remaining_passes": 3,
-      "timestamp": 1770506611701
+      "timestamp": 1770669469016
     }
   },
   "lastReleaseNotesSeen": "2.1.37",
@@ -409,43 +399,43 @@
   "hasIdeAutoConnectDialogBeenShown": true,
   "claudeInChromeDefaultEnabled": true,
   "hasCompletedClaudeInChromeOnboarding": true,
-  "lastPlanModeUse": 1770488160974,
+  "lastPlanModeUse": 1770667798999,
   "skillUsage": {
     "start": {
-      "usageCount": 48,
-      "lastUsedAt": 1770498306314
+      "usageCount": 53,
+      "lastUsedAt": 1770667812992
     },
     "reviewplan": {
-      "usageCount": 22,
-      "lastUsedAt": 1770488680696
+      "usageCount": 23,
+      "lastUsedAt": 1770668734553
     },
     "commit": {
-      "usageCount": 34,
-      "lastUsedAt": 1770508185559
+      "usageCount": 36,
+      "lastUsedAt": 1770557095778
     },
     "screen": {
       "usageCount": 2,
       "lastUsedAt": 1770056150434
     },
     "chats": {
-      "usageCount": 14,
-      "lastUsedAt": 1770498944066
+      "usageCount": 16,
+      "lastUsedAt": 1770667421569
     },
     "repotodo": {
-      "usageCount": 5,
-      "lastUsedAt": 1770403114776
+      "usageCount": 6,
+      "lastUsedAt": 1770554280946
     },
     "review": {
-      "usageCount": 3,
-      "lastUsedAt": 1770402495359
+      "usageCount": 5,
+      "lastUsedAt": 1770599583431
     },
     "launch": {
-      "usageCount": 1,
-      "lastUsedAt": 1770401674957
+      "usageCount": 4,
+      "lastUsedAt": 1770595435230
     },
     "youtube": {
-      "usageCount": 1,
-      "lastUsedAt": 1770472292483
+      "usageCount": 2,
+      "lastUsedAt": 1770669472661
     }
   },
   "hasVisitedPasses": false,
@@ -467,5 +457,16 @@
   },
   "teammateMode": "auto",
   "penguinModeOrgEnabled": false,
-  "opus46FeedSeenCount": 635
+  "opus46FeedSeenCount": 665,
+  "hasVisitedExtraUsage": true,
+  "oauthAccount": {
+    "accountUuid": "d944b29f-4832-4a63-b293-6eceae956e45",
+    "emailAddress": "dennis@bosma.dev",
+    "organizationUuid": "18a6ba0d-8927-47b6-9571-0f549ada2369",
+    "hasExtraUsageEnabled": false,
+    "billingType": "stripe_subscription",
+    "accountCreatedAt": "2025-12-29T23:46:05.033447Z",
+    "subscriptionCreatedAt": "2026-01-19T07:39:31.010175Z",
+    "displayName": "Dennis"
+  }
 }

@@ -836,8 +836,8 @@ After parsing arguments and creating/validating the plan, you MUST create a nati
 4. **Initialize Ralph state** via `ralph.py setup` (state files only, no spawning)
 5. **Create native team** via `TeamCreate(team_name="ralph-impl")`
 6. **Create tasks** via TaskCreate for each work unit
-7. **Spawn ALL agents in PARALLEL** via multiple Task() calls with `team_name="ralph-impl"`
-8. Each agent:
+7. **Spawn ALL agents in PARALLEL** via multiple Task() calls with `team_name="ralph-impl"` (includes implementation agents + git-coordinator)
+8. Each implementation agent:
    - Joins the native team as a teammate
    - Receives agent number and total count in prompt
    - Gets phase name and specific task assignment
@@ -845,8 +845,8 @@ After parsing arguments and creating/validating the plan, you MUST create a nati
    - Loads plan file for context
    - Coordinates via SendMessage and shared TaskList
    - Follows anti-hallucination standard
-   - Pushes commits before completion (Push Gate)
-   - Emits `ULTRATHINK_COMPLETE` when done
+   - **NO git operations** - git-coordinator handles ALL commits/pushes
+   - Signals completion via `TaskUpdate(status="completed")` + `SendMessage(recipient="team-lead")`
 9. **Monitor progress** — As team lead, watch for idle notifications and completed tasks
 10. After all agents complete: Check `.claude/ralph/retry-queue.json` for failed tasks
 11. If retry queue has entries: Spawn additional agents for retries
@@ -876,18 +876,22 @@ Task(
     model="opus",  # or "sonnet" based on modelMode
     mode="acceptEdits",  # if auto-accept enabled
     team_name="ralph-impl",  # REQUIRED: joins native team
-    name="agent-1",  # REQUIRED: unique teammate name
-    prompt="""RALPH Agent 1/3 - Phase 2.1: Implementation
+    name="oauth-impl-1",  # REQUIRED: descriptive {role}-{N} name
+    prompt="""RALPH Agent 1/3 (oauth-impl-1) - Phase 2.1: Implementation
 
 **Plan file:** C:\\Users\\Dennis\\.claude\\plans\\feature-auth.md
 
 **Your task:** Implement OAuth flow with PKCE
 
+**Capability:** Backend auth token exchange, PKCE challenge generation
+
 **Ralph protocol:**
 - Check TaskList for available work
-- Claim tasks with TaskUpdate(owner="agent-1")
+- Claim tasks with TaskUpdate(owner="oauth-impl-1")
 - Use SendMessage(recipient="team-lead") to report progress
-- Mark tasks completed when done
+- Mark tasks completed via TaskUpdate(status="completed")
+- Signal team-lead: SendMessage(recipient="team-lead", content="Task X completed: [summary]")
+- When you receive a shutdown_request message (JSON with type "shutdown_request"), respond by calling SendMessage with type="shutdown_response", request_id=(from the message), approve=true
 
 **Specifically:**
 1. Read plan file for architectural context
@@ -900,8 +904,6 @@ Task(
 - Tests passing
 - Types correct
 - Push commits to remote before completion
-
-When complete, output: ULTRATHINK_COMPLETE
 """
 )
 
@@ -910,18 +912,22 @@ Task(
     model="opus",
     mode="acceptEdits",
     team_name="ralph-impl",
-    name="agent-2",
-    prompt="""RALPH Agent 2/3 - Phase 2.1: Implementation
+    name="login-ui-1",  # Descriptive: what this agent does
+    prompt="""RALPH Agent 2/3 (login-ui-1) - Phase 2.1: Implementation
 
 **Plan file:** C:\\Users\\Dennis\\.claude\\plans\\feature-auth.md
 
 **Your task:** Add frontend login UI
 
+**Capability:** Frontend React components, OAuth redirect flow, UX states
+
 **Ralph protocol:**
 - Check TaskList for available work
-- Claim tasks with TaskUpdate(owner="agent-2")
+- Claim tasks with TaskUpdate(owner="login-ui-1")
 - Use SendMessage(recipient="team-lead") to report progress
-- Mark tasks completed when done
+- Mark tasks completed via TaskUpdate(status="completed")
+- Signal team-lead: SendMessage(recipient="team-lead", content="Task X completed: [summary]")
+- When you receive a shutdown_request message (JSON with type "shutdown_request"), respond by calling SendMessage with type="shutdown_response", request_id=(from the message), approve=true
 
 **Specifically:**
 1. Create login form component
@@ -933,8 +939,6 @@ Task(
 - UI matches design
 - Accessibility checked
 - Push commits to remote before completion
-
-When complete, output: ULTRATHINK_COMPLETE
 """
 )
 
@@ -943,18 +947,22 @@ Task(
     model="opus",
     mode="acceptEdits",
     team_name="ralph-impl",
-    name="agent-3",
-    prompt="""RALPH Agent 3/3 - Phase 2.1: Implementation
+    name="api-middleware-1",  # Descriptive: what this agent does
+    prompt="""RALPH Agent 3/3 (api-middleware-1) - Phase 2.1: Implementation
 
 **Plan file:** C:\\Users\\Dennis\\.claude\\plans\\feature-auth.md
 
 **Your task:** Update API middleware for auth
 
+**Capability:** Express/Fastify middleware, JWT validation, rate limiting
+
 **Ralph protocol:**
 - Check TaskList for available work
-- Claim tasks with TaskUpdate(owner="agent-3")
+- Claim tasks with TaskUpdate(owner="api-middleware-1")
 - Use SendMessage(recipient="team-lead") to report progress
-- Mark tasks completed when done
+- Mark tasks completed via TaskUpdate(status="completed")
+- Signal team-lead: SendMessage(recipient="team-lead", content="Task X completed: [summary]")
+- When you receive a shutdown_request message (JSON with type "shutdown_request"), respond by calling SendMessage with type="shutdown_response", request_id=(from the message), approve=true
 
 **Specifically:**
 1. Add JWT validation middleware
@@ -966,8 +974,6 @@ Task(
 - Middleware tests passing
 - Security review passed
 - Push commits to remote before completion
-
-When complete, output: ULTRATHINK_COMPLETE
 """
 )
 ```
@@ -1001,17 +1007,21 @@ Check for auto-accept before spawning:
 Each agent prompt MUST include:
 
 ```
-RALPH Agent {X}/{N} - Phase {phase_number}: {phase_name}
+RALPH Agent {X}/{N} ({agent_name}) - Phase {phase_number}: {phase_name}
 
 **Plan file:** {absolute_path_to_plan}
 
 **Your task:** {specific_task_description}
 
+**Capability:** {what_this_agent_specializes_in}
+
 **Ralph protocol:**
 - Check TaskList for available work
 - Claim tasks with TaskUpdate(owner="{agent_name}")
 - Use SendMessage(recipient="team-lead") to report progress
-- Mark tasks completed when done
+- Mark tasks completed via TaskUpdate(status="completed")
+- Signal team-lead: SendMessage(recipient="team-lead", content="Task X completed: [summary]")
+- When you receive a shutdown_request message (JSON with type "shutdown_request"), respond by calling SendMessage with type="shutdown_response", request_id=(from the message), approve=true
 
 **Specifically:**
 {detailed_steps_or_requirements}
@@ -1019,28 +1029,123 @@ RALPH Agent {X}/{N} - Phase {phase_number}: {phase_name}
 **Success criteria:**
 {what_defines_completion}
 - Push commits to remote before completion
-
-When complete, output: ULTRATHINK_COMPLETE
 ```
 
 **Required fields:**
 - `{X}/{N}` - Agent number and total (e.g., "3/10")
+- `{agent_name}` - Descriptive name matching the Task `name` param (e.g., "oauth-impl-1")
 - `{phase_number}` - Current phase (e.g., "2.1")
 - `{phase_name}` - Phase description (e.g., "Implementation")
 - `{absolute_path_to_plan}` - Full path to plan file
 - `{specific_task_description}` - What this agent should do
+- `{what_this_agent_specializes_in}` - Capability hint for team lead routing (1 line)
 - `{detailed_steps_or_requirements}` - Breakdown of work
 - `{what_defines_completion}` - Clear completion criteria
 
+**Agent naming convention (MANDATORY):**
+- Format: `{role}-{N}` where role describes what the agent does
+- Examples: `oauth-impl-1`, `login-ui-2`, `api-middleware-1`, `db-migration-1`
+- For research: `{topic}-researcher-1` (e.g., `maestro-researcher-1`)
+- For review: `{scope}-reviewer-1` (e.g., `auth-reviewer-1`)
+- git-coordinator keeps its name as-is
+
 **Required Task() parameters:**
 - `team_name="ralph-impl"` - Joins the native team
-- `name="agent-{X}"` - Unique teammate identifier
+- `name="{role}-{N}"` - Descriptive teammate name (NOT "agent-{X}")
 - `model="opus"` or `"sonnet"` - Based on modelMode
 - `mode="acceptEdits"` - If auto-accept enabled
 
+### Git Coordinator Pattern (MANDATORY for Multi-Agent Sessions)
+
+When spawning >1 implementation agent, ALWAYS include a git-coordinator agent to prevent git conflicts.
+
+**Why needed:** Multiple agents cannot safely execute concurrent git operations (add, commit, push, rebase). The git-coordinator is the single write point for all git operations.
+
+**Spawning:**
+
+```python
+# Spawn AFTER implementation agents, before monitoring
+Task(
+  subagent_type="general-purpose",
+  model="haiku",  # Lightweight, low cost
+  team_name="ralph-impl",
+  name="git-coordinator",
+  prompt="""Git Coordinator Agent
+
+**Role:** Handle ALL git operations for this Ralph session
+
+**Protocol:**
+1. Monitor SendMessage from implementation agents (type="work_complete")
+2. Collect change summaries as agents complete work
+3. Wait for team-lead signal: type="create_commit"
+4. Execute atomic commit with aggregated message
+5. Push if autoPush=true
+6. Report status back to team-lead via SendMessage
+
+**Git Operations (ONLY git-coordinator may execute):**
+- git add <files>
+- git commit -m "message"
+- git push --force-with-lease origin <branch>
+
+**Prohibited for implementation agents:**
+- NO Bash tool usage for git commands
+- Agents make code changes via Edit/Write ONLY
+- Agents signal completion via SendMessage to git-coordinator
+
+**Success criteria:**
+- Single atomic commit created
+- All changes from agents included
+- Push successful (if authorized)
+- Team-lead notified via SendMessage
+
+When complete, mark your task as completed via TaskUpdate(status="completed") and send:
+SendMessage(recipient="team-lead", content="Git operations complete: [commit hash], [N] files, pushed=[yes/no]")
+"""
+)
+```
+
+**Communication protocol:**
+
+```typescript
+// Implementation agent → Git-coordinator (after completing work)
+SendMessage({
+  recipient: "git-coordinator",
+  type: "work_complete",
+  summary: "Implemented feature X in files Y, Z",
+  files: ["lib/auth.ts", "lib/oauth.ts"]
+})
+
+// Team-lead → Git-coordinator (after all agents complete)
+SendMessage({
+  recipient: "git-coordinator",
+  type: "create_commit",
+  message: "feat(auth): implement OAuth2 flow\n\n- Added PKCE\n- Token rotation\n- Refresh mechanism",
+  autoPush: true
+})
+
+// Git-coordinator → Team-lead (after commit/push)
+SendMessage({
+  recipient: "team-lead",
+  type: "commit_created",
+  commitHash: "a1b2c3d4",
+  filesChanged: 2,
+  pushed: true
+})
+```
+
+**Benefits:**
+- ✅ No git lock conflicts
+- ✅ Single atomic commit (clean history)
+- ✅ Safe push with --force-with-lease
+- ✅ Easy rollback (single commit = single revert)
+
+**Reference:** See `agents/git-coordinator.md` for full protocol documentation.
+
+---
+
 ### Retry Queue Check (MANDATORY)
 
-After all agents emit `ULTRATHINK_COMPLETE`, check for retries:
+After all agent tasks show `status: "completed"` in TaskList, check for retries:
 
 ```bash
 # Check if retry queue exists
