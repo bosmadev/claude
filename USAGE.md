@@ -207,7 +207,7 @@ Complete routing matrix for all Claude Code components. See CLAUDE.md "3-Layer M
 | `/screen` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, screenshots |
 | `/youtube` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, transcription |
 | `/launch` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, browser |
-| `/token` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, token mgmt |
+| `/token` | Haiku 4.5 | N/A | 200K | Haiku | L2 | Fork, token mgmt |
 | `/rule` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, settings |
 | `/init-repo` | Sonnet 4.5 | N/A | 200K | Sonnet | L2 | Fork, templates |
 | VERIFY+FIX scoped | Opus 4.6 | → Med | 200K | Opus | — | Per-task checks |

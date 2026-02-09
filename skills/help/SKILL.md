@@ -4,6 +4,7 @@ description: Context-aware Claude Code advisor. Provides guidance based on curre
 argument-hint: "[query]"
 user-invocable: true
 context: fork
+model: haiku
 ---
 # Claude Help Skill
 

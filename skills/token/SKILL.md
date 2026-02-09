@@ -4,6 +4,7 @@ description: Manage Claude OAuth tokens and GitHub secrets
 argument-hint: "[status] | refresh [--force] | sync [all] | help"
 user-invocable: true
 context: fork
+model: haiku
 ---
 # Token Management Skill
 
