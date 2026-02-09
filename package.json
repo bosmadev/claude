@@ -1,6 +1,6 @@
 {
 	"name": "claude",
-	"version": "1.1.3",
+	"version": "1.1.4",
 	"type": "module",
 	"private": true,
 	"description": "Claude Code configuration, hooks, agents, and CI tooling"
