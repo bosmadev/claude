@@ -3,6 +3,20 @@
 
 ---
 
+## [![v1.2.0](https://img.shields.io/badge/v1.2.0-2026--02--10-333333.svg)](https://github.com/bosmadev/claude/commit/73425bcca92cc9394a173037b3b73a2430f74894) | Build 8
+
+feat: add worktree memory unification and session auto-naming
+
+- [x] **Worktree Memory Unification (2 files):** Added hooks/memory-unify.py for NTFS junction-based memory sharing across git worktrees (D:/source/{repo}/{branch} pattern), scripts/setup-memory-junctions.py for one-time setup across known repos (cwchat, pulsona, gswarm-api), enabling shared memory state in dev branches without duplication
+- [x] **Session Auto-Naming (1 file):** Enhanced hooks/utils.py with auto_rename_session() to automatically name sessions using plan slugs when no /rename exists, find_session_jsonl() for JSONL file discovery, get_session_custom_title_from_jsonl() for reading custom-title events, and updated get_session_name() priority chain (customTitle from index → custom-title from JSONL → summary)
+- [x] **Start Skill Enhancement (1 file):** Updated skills/start/SKILL.md with Step 1: Auto-Naming workflow to call utils.py auto-rename after plan creation, 3-tier session name priority documentation (custom /rename → auto-rename → empty), table design convention banning <br> tags except in Decision Matrix cells
+- [x] **Hook Registration (1 file):** Added memory-unify.py SessionStart hook to settings.json for automatic worktree memory setup on session start
+- [x] **Security Allowlist (1 file):** Added git diff-tree, git ls-tree, git check-ignore, gh workflow view, gh release list/view, gh issue comment, certutil to settings.json bash-allow list for expanded CI and release workflow support
+- [x] **Config Updates (1 file):** Updated .claude.json with numStartups counter increment (187→191), dismissed hints tracking, cached GrowthBook features (copper_bridge, snippet_save flags)
+
+
+---
+
 ## [![v1.1.7](https://img.shields.io/badge/v1.1.7-2026--02--10-333333.svg)](https://github.com/bosmadev/claude/commit/58682f1425d7c7111f57538b8ebff19bb2f2b218) | Build 7
 
 fix: prevent double [x] checkbox in CHANGELOG entries
