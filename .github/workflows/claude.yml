@@ -339,30 +339,35 @@ jobs:
             let releaseNotes = '';
             const changelogPath = 'CHANGELOG.md';
 
-            if (fs.existsSync(changelogPath) && buildId) {
+            if (fs.existsSync(changelogPath)) {
               const changelog = fs.readFileSync(changelogPath, 'utf8');
-              // Match new badge format: "| Build {id}" or old "## Build {id}"
-              const buildRegex = new RegExp(`Build ${buildId}(\\s|\\||$)`, 'm');
-              const match = changelog.match(buildRegex);
 
+              // Try Build ID first, then version-based fallback
+              let searchPattern = null;
+              if (buildId) {
+                searchPattern = new RegExp(`Build ${buildId}(\\s|\\||$)`, 'm');
+              }
+              if (!searchPattern || !changelog.match(searchPattern)) {
+                // Fallback: search by version in badge
+                searchPattern = new RegExp(`v${version.replace(/\./g, '\\.')}`, 'm');
+              }
+
+              const match = changelog.match(searchPattern);
               if (match) {
                 const matchIdx = changelog.indexOf(match[0]);
-                // Find the --- separator before this entry
                 const prevSep = changelog.lastIndexOf('\n---', matchIdx);
                 const startIdx = prevSep !== -1 ? prevSep + 1 : matchIdx;
-                // Find the next --- separator after this entry
                 const nextSep = changelog.indexOf('\n---', matchIdx + 1);
                 const endIdx = nextSep !== -1 ? nextSep : changelog.length;
                 const section = changelog.slice(startIdx, endIdx).trim();
 
-                // Remove the --- and badge line, keep content
                 const lines = section.split('\n');
                 const contentLines = lines.filter(l => !l.startsWith('---') && !l.startsWith('[![') && !l.startsWith('## [!['));
                 releaseNotes = contentLines.join('\n').trim();
 
                 console.log('Extracted release notes from CHANGELOG');
               } else {
-                console.log(`No CHANGELOG entry found for Build ${buildId}`);
+                console.log(`No CHANGELOG entry found for ${buildId ? 'Build ' + buildId : 'v' + version}`);
               }
             }
 
