@@ -3,25 +3,13 @@
 
 ---
 
-## [![v1.1.5](https://img.shields.io/badge/v1.1.5-2026--02--10-333333.svg)](https://github.com/bosmadev/claude/commit/23aad8e438afed4d87ba62c7bf64a0b9db5d9419) | Build 6
-
-fix: normalize CHANGELOG Build 1-2 entries to current format
-
-- [x] [x] Fixed Build 1-2 badge color from d9a00a (yellow) to 333333 (grey)
-- [x] [x] Added ## H2 prefix to Build 1-2 entries
-- [x] [x] Converted Build 2 bullets to [x] checkbox format
-- [x] [x] Reconstructed Build 1 body from commit history
-
-
----
-
 ## [![v1.1.4](https://img.shields.io/badge/v1.1.4-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/bda415730bf53aa417cddfb9b203a1cc63accbff) | Build 5
 
 fix(ci): anchor regex patterns to prevent false positives
 
 - [x] Fixed changelog.ts dedup regex to match only ## headers, not prose
 - [x] Fixed aggregate-pr.py CHANGELOG regex with MULTILINE ^ anchor
-- [x] Fixed aggregate-pr.py branch regex with word boundaries (no cab123→b123)
+- [x] Fixed aggregate-pr.py branch regex with word boundaries (no cab123->b123)
 - [x] Fixed /commit SKILL.md Phase 2 to preserve Build ID prefix verbatim
 - [x] Added Build ID validation warning step for main branch commits
 
@@ -58,7 +46,7 @@ fix(ci): CHANGELOG automation end-to-end validation
 
 - [x] Fixed badge+PR format with body fallback extraction
 - [x] Fixed create-release regex for new --- separator format
-- [x] Converted changelog.js → changelog.ts (native Node 25 TypeScript)
+- [x] Converted changelog.js -> changelog.ts (native Node 25 TypeScript)
 - [x] Added "type": "module" to package.json
 - [x] Synced CI updates across all 5 repos
 
