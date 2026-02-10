@@ -549,7 +549,7 @@ def get_session_name(session_id: str) -> str:
     """Look up the display name for a session from sessions-index.json.
 
     Searches all project session indices for the given session ID.
-    Returns customTitle (from /rename) if present, else summary, else empty string.
+    Priority: customTitle from index > custom-title from JSONL > summary from index
     Return value is sanitized to prevent shell injection if used in commands.
 
     Security notes:
@@ -572,6 +572,9 @@ def get_session_name(session_id: str) -> str:
             sanitized = sanitized.replace(char, '')
         return sanitized.strip()
 
+    # First, check sessions-index.json for customTitle
+    index_custom_title = ""
+    index_summary = ""
     try:
         claude_dir = Path.home() / ".claude" / "projects"
         for idx_path in claude_dir.glob("*/sessions-index.json"):
@@ -579,13 +582,169 @@ def get_session_name(session_id: str) -> str:
                 data = json.loads(idx_path.read_text(encoding="utf-8"))
                 for entry in data.get("entries", []):
                     if entry.get("sessionId") == session_id:
-                        raw_name = entry.get("customTitle") or entry.get("summary") or ""
-                        return _sanitize_session_name(raw_name)
+                        index_custom_title = entry.get("customTitle") or ""
+                        index_summary = entry.get("summary") or ""
+                        break
             except (json.JSONDecodeError, OSError):
                 continue
     except Exception:
         pass
+    
+    # Priority 1: customTitle from sessions-index.json (user used /rename)
+    if index_custom_title:
+        return _sanitize_session_name(index_custom_title)
+    
+    # Priority 2: custom-title from JSONL (auto-renamed or not yet indexed)
+    jsonl_title = get_session_custom_title_from_jsonl(session_id)
+    if jsonl_title:
+        return _sanitize_session_name(jsonl_title)
+    
+    # Priority 3: summary from sessions-index.json (fallback)
+    if index_summary:
+        return _sanitize_session_name(index_summary)
+    
     return ""
+
+
+def find_session_jsonl(session_id: str) -> Path | None:
+    """Find the JSONL file for a given session ID.
+    
+    Scans ~/.claude/projects/*/ directories for session JSONL files.
+    Returns the Path to the session file, or None if not found.
+    
+    Args:
+        session_id: The session UUID to search for
+        
+    Returns:
+        Path to the session JSONL file, or None if not found
+    """
+    if not session_id:
+        return None
+        
+    try:
+        claude_dir = Path.home() / ".claude" / "projects"
+        # Session files are named {session_id}.jsonl
+        for project_dir in claude_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            session_file = project_dir / f"{session_id}.jsonl"
+            if session_file.exists():
+                return session_file
+    except (OSError, PermissionError):
+        pass
+    
+    return None
+
+
+def get_session_custom_title_from_jsonl(session_id: str) -> str:
+    """Read custom-title from session JSONL file.
+    
+    Scans the session JSONL file line by line for custom-title events.
+    Returns the last customTitle found (user may have renamed multiple times).
+    
+    Args:
+        session_id: The session UUID to search for
+        
+    Returns:
+        Custom title string if found, empty string otherwise
+    """
+    session_file = find_session_jsonl(session_id)
+    if not session_file:
+        return ""
+        
+    try:
+        # Read file line by line to find custom-title events
+        custom_title = ""
+        with session_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    event = json.loads(line.strip())
+                    if event.get("type") == "custom-title":
+                        # Keep the last custom-title we find
+                        custom_title = event.get("customTitle", "")
+                except (json.JSONDecodeError, ValueError):
+                    continue
+        return custom_title
+    except (OSError, PermissionError):
+        return ""
+
+
+def auto_rename_session(session_id: str, plan_slug: str) -> str:
+    """Auto-rename a session to the plan slug if no custom title exists.
+    
+    CRITICAL: Never overwrites existing /rename titles. Only adds a custom-title
+    event if the session has never been renamed by the user.
+    
+    Process:
+    1. Check session JSONL for existing custom-title events
+    2. If custom-title exists -> return it (NEVER overwrite user's /rename)
+    3. If NO custom-title -> append new custom-title event to JSONL
+    4. Update ~/.claude/.session-info with the resolved name
+    5. Return the resolved name
+    
+    Args:
+        session_id: The session UUID
+        plan_slug: The plan slug to use as session name (if no custom title exists)
+        
+    Returns:
+        The session name (existing custom title or newly set plan slug)
+    """
+    if not session_id or not plan_slug:
+        return ""
+    
+    # Check for existing custom-title
+    existing_title = get_session_custom_title_from_jsonl(session_id)
+    if existing_title:
+        # User has already renamed this session - NEVER overwrite
+        resolved_name = existing_title
+    else:
+        # No custom-title exists - safe to add one
+        session_file = find_session_jsonl(session_id)
+        if not session_file:
+            # Session file doesn't exist - can't rename
+            return ""
+            
+        try:
+            # Append custom-title event using atomic append
+            custom_title_event = {
+                "type": "custom-title",
+                "customTitle": plan_slug,
+                "sessionId": session_id
+            }
+            
+            # Safe file append (open with 'a', write, flush, fsync)
+            with session_file.open("a", encoding="utf-8") as f:
+                json.dump(custom_title_event, f)
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+                
+            resolved_name = plan_slug
+        except (OSError, PermissionError):
+            # Failed to append - return empty string
+            return ""
+    
+    # Update ~/.claude/.session-info with the resolved name
+    try:
+        session_info_path = Path.home() / ".claude" / ".session-info"
+        session_info = {
+            "session_id": session_id,
+            "session_name": resolved_name,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        _txn_atomic_write_json(session_info_path, session_info, fsync=True)
+        
+        # Set permissions to 600 (owner read/write only) on Unix systems
+        if not IS_WIN:
+            try:
+                os.chmod(session_info_path, 0o600)
+            except OSError:
+                pass
+    except (OSError, PermissionError):
+        # Failed to update .session-info - not critical, continue
+        pass
+    
+    return resolved_name
 
 
 def do_model_capture() -> None:
@@ -659,6 +818,20 @@ def main() -> None:
         do_notify()
     elif mode == "model-capture":
         do_model_capture()
+    elif mode == "auto-rename":
+        # CLI: python hooks/utils.py auto-rename <session_id> <plan_slug>
+        if len(sys.argv) < 4:
+            print("Usage: utils.py auto-rename <session_id> <plan_slug>", file=sys.stderr)
+            sys.exit(1)
+        session_id = sys.argv[2]
+        plan_slug = sys.argv[3]
+        result = auto_rename_session(session_id, plan_slug)
+        if result:
+            print(result)
+            sys.exit(0)
+        else:
+            print("Failed to rename session", file=sys.stderr)
+            sys.exit(1)
     else:
         # Unknown mode - exit gracefully to avoid hook errors
         sys.exit(0)

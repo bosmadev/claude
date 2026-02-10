@@ -59,6 +59,9 @@
       "Bash(git fetch:*)",
       "Bash(git show:*)",
       "Bash(git archive:*)",
+      "Bash(git diff-tree:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git check-ignore:*)",
       "Bash(git add:*)",
       "Bash(gh auth login:*)",
       "Bash(gh issue list:*)",
@@ -71,6 +74,11 @@
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
       "Bash(gh workflow list:*)",
+      "Bash(gh workflow view:*)",
+      "Bash(gh release list:*)",
+      "Bash(gh release view:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(certutil:*)",
       "Bash(gh browse:*)",
       "Bash(gh api:*)",
       "Bash(pip show:*)",
@@ -345,6 +353,15 @@
             "type": "command",
             "command": "python ~/.claude\\hooks\\ralph.py session-start",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude\\hooks\\memory-unify.py",
+            "timeout": 5
           }
         ]
       },

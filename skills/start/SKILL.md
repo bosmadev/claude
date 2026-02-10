@@ -308,27 +308,45 @@ When creating or updating a plan file, ALWAYS include:
 
 When creating plan files, populate the `**Session:**` field as follows:
 
-1. **Read** `~/.claude/.session-info` JSON file
-2. **Extract** the `session_name` field from the JSON
-3. **Fallback** to the plan slug (plan file name without extension) if:
-   - `.session-info` file is missing
-   - File is empty or malformed JSON
-   - `session_name` field is null, empty string `""`, or missing
+#### Step 1: Auto-Naming (After Plan File Creation)
 
-**Note:** The `.session-info` file is overwritten on every session start. Do NOT validate the `session_id` field - trust the `session_name` value directly. If the session hasn't been renamed yet, `session_name` may be an empty string.
+After creating the plan file, automatically rename the session with the plan slug:
 
-**Security:** `session_name` is unsanitized user input from the `/rename` command. Safe for markdown context, but NEVER use in shell commands or file paths without validation (risks: newlines, backticks, special chars).
+1. **Read** `session_id` from `~/.claude/.session-info` JSON file
+2. **Derive** `plan_slug` from plan filename (e.g., "feature-oauth2-authentication" from `feature-oauth2-authentication.md`)
+3. **Run** auto-rename utility:
+   ```bash
+   python ~/.claude\hooks\utils.py auto-rename <session_id> <plan_slug>
+   ```
+4. **Re-read** `~/.claude/.session-info` to get the updated `session_name`
+5. **Use** this name for the plan `**Session:**` field
+
+**Why:** This ensures every session gets a meaningful name derived from the plan, making sessions discoverable via `/resume` command (which matches `customTitle` field in `sessions-index.json`).
+
+#### Step 2: Session Name Priority Chain
+
+The `session_name` field will now contain (in priority order):
+
+1. **Custom title** from `/rename` command (if user renamed session)
+2. **Auto-renamed title** from plan slug (set by Step 1 above)
+3. **Empty string** `""` if auto-rename failed
+
+**Fallback:** If `.session-info` is missing/malformed/empty, use the plan slug directly in the plan frontmatter.
+
+**Note:** The `.session-info` file is updated during auto-rename. Do NOT validate the `session_id` field - trust the `session_name` value directly.
+
+**Security:** `session_name` is unsanitized user input. Safe for markdown context, but NEVER use in shell commands or file paths without validation (risks: newlines, backticks, special chars).
 
 **Example:**
 ```json
-// ~/.claude/.session-info
+// ~/.claude/.session-info (after auto-rename)
 {
   "session_id": "abc-123",
-  "session_name": "CLAUDE 1",
-  "timestamp": "2026-02-06T14:30:00.000Z"
+  "session_name": "feature-oauth2-authentication",
+  "timestamp": "2026-02-10T10:15:00.000Z"
 }
 ```
-→ Use `"CLAUDE 1"` in plan frontmatter
+→ Use `"feature-oauth2-authentication"` in plan frontmatter
 
 **Template:**
 
@@ -515,6 +533,12 @@ Create a structured plan following the **Decision Matrix Format** with emoji-pre
 - **Use `<br>` to stack multiple items in Pros/Cons cells**
 - **Add ⭐ emoji in 🎯 column for recommended option**
 - **Number options sequentially within each matrix**
+
+**Table Design Convention:**
+- Use `| Aspect | Detail |` two-column layout for option comparison tables
+- **NEVER use `<br>` tags inside table cells for plan files** — create separate rows instead
+- `<br>` is ONLY allowed in Decision Matrix Pros/Cons cells (above)
+- For multi-line content in regular tables, use separate rows with empty first column
 
 **Emoji Section Headers (MANDATORY):**
 
