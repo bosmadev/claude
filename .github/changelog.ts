@@ -213,8 +213,8 @@ if (summary) {
   entry += `${summary}\n\n`;
 }
 if (changes.length > 0) {
-  // Use [x] checkbox style for change items
-  const checkboxChanges = changes.map(l => l.replace(/^- /, '- [x] '));
+  // Use [x] checkbox style for change items (skip if already has [x])
+  const checkboxChanges = changes.map(l => /^- \[x\]/.test(l) ? l : l.replace(/^- /, '- [x] '));
   entry += checkboxChanges.join('\n') + '\n';
 }
 entry += '\n';

@@ -7,10 +7,10 @@
 
 fix: normalize CHANGELOG Build 1-2 entries to current format
 
-- [x] [x] Fixed Build 1-2 badge color from d9a00a (yellow) to 333333 (grey)
-- [x] [x] Added ## H2 prefix to Build 1-2 entries
-- [x] [x] Converted Build 2 bullets to [x] checkbox format
-- [x] [x] Reconstructed Build 1 body from commit history
+- [x] Fixed Build 1-2 badge color from d9a00a (yellow) to 333333 (grey)
+- [x] Added ## H2 prefix to Build 1-2 entries
+- [x] Converted Build 2 bullets to [x] checkbox format
+- [x] Reconstructed Build 1 body from commit history
 
 
 ---
