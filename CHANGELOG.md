@@ -40,20 +40,22 @@ feat(ci): auto Build ID from CHANGELOG.md for *-dev branches
 
 ---
 
-[![v1.1.1](https://img.shields.io/badge/v1.1.1-2026--02--09-d9a00a.svg)](https://github.com/bosmadev/claude/commit/173b1465c318233d8ddc218798efa5e37b9d7f08) | Build 2
+## [![v1.1.1](https://img.shields.io/badge/v1.1.1-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/173b1465c318233d8ddc218798efa5e37b9d7f08) | Build 2
 
 fix(ci): CHANGELOG automation end-to-end validation
 
-- Fixed badge+PR format with body fallback extraction
-- Fixed create-release regex for new --- separator format
-- Converted changelog.js → changelog.ts (native Node 25 TypeScript)
-- Added "type": "module" to package.json
-- Synced CI updates across all 5 repos
+- [x] Fixed badge+PR format with body fallback extraction
+- [x] Fixed create-release regex for new --- separator format
+- [x] Converted changelog.js → changelog.ts (native Node 25 TypeScript)
+- [x] Added "type": "module" to package.json
+- [x] Synced CI updates across all 5 repos
 
 
 ---
 
-[![v1.1.0](https://img.shields.io/badge/v1.1.0-2026--02--09-d9a00a.svg)](https://github.com/bosmadev/claude/commit/90dd534643f646c5bb280edf665b65d84e59f196) | Build 1
+## [![v1.1.0](https://img.shields.io/badge/v1.1.0-2026--02--09-333333.svg)](https://github.com/bosmadev/claude/commit/90dd534643f646c5bb280edf665b65d84e59f196) | Build 1
 
+feat(ci): add ESM type to package.json Build 1
 
-
+- [x] Add "type": "module" to eliminate MODULE_TYPELESS_PACKAGE_JSON warning
+- [x] CHANGELOG automation + badge format + native TypeScript CI
