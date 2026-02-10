@@ -3,6 +3,16 @@
 
 ---
 
+## [![v1.1.7](https://img.shields.io/badge/v1.1.7-2026--02--10-333333.svg)](https://github.com/bosmadev/claude/commit/58682f1425d7c7111f57538b8ebff19bb2f2b218) | Build 7
+
+fix: prevent double [x] checkbox in CHANGELOG entries
+
+- [x] Added regex guard to skip lines already containing [x] in changelog.ts
+- [x] Fixed Build 6 CHANGELOG entry that had double [x] [x] checkboxes
+
+
+---
+
 ## [![v1.1.6](https://img.shields.io/badge/v1.1.6-2026--02--10-333333.svg)](https://github.com/bosmadev/claude/commit/7cc1ad622272c6a73154350ecdd7f87688235130) | Build 6
 
 fix: normalize CHANGELOG Build 1-2 entries to current format
