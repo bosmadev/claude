@@ -3,6 +3,24 @@
 
 ---
 
+## [![v1.2.1](https://img.shields.io/badge/v1.2.1-2026--02--11-333333.svg)](https://github.com/bosmadev/claude/commit/b7cc58ec773a3afe35f12b97c713c6d25880bb83) | Build 10
+
+sanitize repo for public release
+
+- [x] Remove .claude.json from tracking (contains user IDs, account UUIDs)
+- [x] Create .claude.json.example with sanitized template
+- [x] Replace all hardcoded C:\Users\Dennis paths with portable alternatives
+- [x] Python: Path.home() / ".claude"
+- [x] PowerShell: $env:USERPROFILE/.claude
+- [x] settings.json: %USERPROFILE%/.claude
+- [x] Documentation: ~/.claude
+- [x] Add .github/CODEOWNERS requiring owner approval
+- [x] Create git-filter-repo scripts for history sanitization
+- [x] Create sanitize-settings.py for on-demand path replacement
+
+
+---
+
 ## [![v1.2.0](https://img.shields.io/badge/v1.2.0-2026--02--10-333333.svg)](https://github.com/bosmadev/claude/commit/73425bcca92cc9394a173037b3b73a2430f74894) | Build 8
 
 feat: add worktree memory unification and session auto-naming
