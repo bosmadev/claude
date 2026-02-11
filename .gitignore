@@ -45,12 +45,14 @@ image-cache/
 *-lock.json
 *-lock.yaml
 .credentials.json
+.claude.json
 .env*
 command-history.log
 history.jsonl
 stats-cache.json
 security_*.json
 .claude.json.*
+!.claude.json.example
 .usage-cache
 .usage-cache.tmp
 settings.json.*

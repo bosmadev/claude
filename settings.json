@@ -301,7 +301,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\token-guard.py check --quiet",
+            "command": "python %USERPROFILE%/.claude/scripts/token-guard.py check --quiet",
             "timeout": 60
           }
         ]
@@ -310,7 +310,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\setup.py validate-symlinks",
+            "command": "python %USERPROFILE%/.claude/hooks/setup.py validate-symlinks",
             "timeout": 30
           }
         ]
@@ -321,7 +321,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\ralph.py stop",
+            "command": "python %USERPROFILE%/.claude/hooks/ralph.py stop",
             "timeout": 30
           }
         ]
@@ -330,7 +330,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claudeCodeChange\\tools\\claudeChangeStop.js",
+            "command": "node %USERPROFILE%/.claudeCodeChange/tools/claudeChangeStop.js",
             "timeout": 5
           }
         ]
@@ -342,7 +342,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\utils.py model-capture",
+            "command": "python %USERPROFILE%/.claude/hooks/utils.py model-capture",
             "timeout": 5
           }
         ]
@@ -351,7 +351,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\ralph.py session-start",
+            "command": "python %USERPROFILE%/.claude/hooks/ralph.py session-start",
             "timeout": 10
           }
         ]
@@ -360,7 +360,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\memory-unify.py",
+            "command": "python %USERPROFILE%/.claude/hooks/memory-unify.py",
             "timeout": 5
           }
         ]
@@ -369,7 +369,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\repair-sessions-index.py --hook",
+            "command": "python %USERPROFILE%/.claude/scripts/repair-sessions-index.py --hook",
             "timeout": 15
           }
         ]
@@ -378,7 +378,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\fix-chrome-native-host.py",
+            "command": "python %USERPROFILE%/.claude/scripts/fix-chrome-native-host.py",
             "timeout": 30
           }
         ]
@@ -389,7 +389,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\ralph.py pre-compact",
+            "command": "python %USERPROFILE%/.claude/hooks/ralph.py pre-compact",
             "timeout": 10
           }
         ]
@@ -401,7 +401,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\auto-allow.py",
+            "command": "python %USERPROFILE%/.claude/hooks/auto-allow.py",
             "timeout": 5
           }
         ]
@@ -411,22 +411,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\guards.py fs-guard",
+            "command": "python %USERPROFILE%/.claude/hooks/guards.py fs-guard",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\sandbox-boundary.py pretool",
+            "command": "python %USERPROFILE%/.claude/hooks/sandbox-boundary.py pretool",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\security-gate.py pre-bash",
+            "command": "python %USERPROFILE%/.claude/hooks/security-gate.py pre-bash",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\git.py pre-commit-checks",
+            "command": "python %USERPROFILE%/.claude/hooks/git.py pre-commit-checks",
             "timeout": 5
           }
         ]
@@ -436,17 +436,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\guards.py fs-guard",
+            "command": "python %USERPROFILE%/.claude/hooks/guards.py fs-guard",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\auto-allow.py",
+            "command": "python %USERPROFILE%/.claude/hooks/auto-allow.py",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "node ~/.claudeCodeChange\\tools\\claudeChangePreToolUse.js",
+            "command": "node %USERPROFILE%/.claudeCodeChange/tools/claudeChangePreToolUse.js",
             "timeout": 5
           }
         ]
@@ -456,7 +456,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\ralph.py hook-pretool",
+            "command": "python %USERPROFILE%/.claude/scripts/ralph.py hook-pretool",
             "timeout": 10
           }
         ]
@@ -468,12 +468,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\git.py command-history",
+            "command": "python %USERPROFILE%/.claude/hooks/git.py command-history",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\build-intelligence.py hook",
+            "command": "python %USERPROFILE%/.claude/hooks/build-intelligence.py hook",
             "timeout": 5
           }
         ]
@@ -483,32 +483,32 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\security-gate.py post-edit",
+            "command": "python %USERPROFILE%/.claude/hooks/security-gate.py post-edit",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\git.py change-tracker",
+            "command": "python %USERPROFILE%/.claude/hooks/git.py change-tracker",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\git.py frontend-verification",
+            "command": "python %USERPROFILE%/.claude/hooks/git.py frontend-verification",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py guardian",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py guardian",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py plan-write-check",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py plan-write-check",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py insights-reminder",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py insights-reminder",
             "timeout": 5
           }
         ]
@@ -518,7 +518,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py ralph-enforcer",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py ralph-enforcer",
             "timeout": 10
           }
         ]
@@ -528,7 +528,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\ralph.py agent-tracker",
+            "command": "python %USERPROFILE%/.claude/scripts/ralph.py agent-tracker",
             "timeout": 10
           }
         ]
@@ -538,12 +538,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py skill-validator",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py skill-validator",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py quality-deprecation",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py quality-deprecation",
             "timeout": 5
           }
         ]
@@ -553,7 +553,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\post-review.py hook",
+            "command": "python %USERPROFILE%/.claude/scripts/post-review.py hook",
             "timeout": 30
           }
         ]
@@ -565,7 +565,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py skill-interceptor",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py skill-interceptor",
             "timeout": 5
           }
         ]
@@ -575,7 +575,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py skill-parser",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py skill-parser",
             "timeout": 5
           }
         ]
@@ -584,12 +584,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py plan-comments",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py plan-comments",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py auto-ralph",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py auto-ralph",
             "timeout": 5
           }
         ]
@@ -600,12 +600,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\ralph.py hook-subagent-start",
+            "command": "python %USERPROFILE%/.claude/scripts/ralph.py hook-subagent-start",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\context-injection.py",
+            "command": "python %USERPROFILE%/.claude/hooks/context-injection.py",
             "timeout": 5
           }
         ]
@@ -616,7 +616,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\ralph.py hook-subagent-stop",
+            "command": "python %USERPROFILE%/.claude/scripts/ralph.py hook-subagent-stop",
             "timeout": 10
           }
         ]
@@ -628,7 +628,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\hooks\\utils.py notify",
+            "command": "python %USERPROFILE%/.claude/hooks/utils.py notify",
             "timeout": 10
           }
         ]
@@ -637,7 +637,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "python ~/.claude\\scripts\\statusline.py"
+    "command": "python %USERPROFILE%/.claude/scripts/statusline.py"
   },
   "enabledPlugins": {},
   "outputStyle": "Engineer",

@@ -168,7 +168,7 @@ STATE_EOF
 #### 4a. Initialize Ralph State (utility only)
 
 ```bash
-python C:/Users/Dennis/.claude/scripts/ralph.py setup [AGENTS] [ITERATIONS] \
+python ~/.claude/scripts/ralph.py setup [AGENTS] [ITERATIONS] \
     --review-agents [REVIEW_AGENTS] \
     --review-iterations [REVIEW_ITERATIONS] \
     [--skip-review] \
@@ -241,7 +241,7 @@ As team lead, monitor agent progress:
 After all agents complete:
 
 ```bash
-python C:/Users/Dennis/.claude/scripts/ralph.py teardown
+python ~/.claude/scripts/ralph.py teardown
 ```
 
 Then clean up the team:

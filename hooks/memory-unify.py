@@ -417,12 +417,16 @@ def setup_all_repos() -> None:
 
 def test_path_hash() -> None:
     """Test path hash computation with sample paths."""
+    # Generate expected hash for user's home .claude directory
+    home_claude = str(Path.home() / ".claude")
+    home_claude_hash = compute_path_hash(home_claude)
+    
     test_cases = [
         ("D:\\source\\cwchat\\main", "D--source-cwchat-main"),
         ("D:/source/cwchat/main", "D--source-cwchat-main"),
         ("D:\\source\\cwchat\\cwchat-dev", "D--source-cwchat-cwchat-dev"),
         ("D:/source/pulsona/main", "D--source-pulsona-main"),
-        ("~/.claude", "C--Users-Dennis-.claude"),
+        (home_claude, home_claude_hash),
     ]
 
     print("Path Hash Test:")

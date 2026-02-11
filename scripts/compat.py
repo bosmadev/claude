@@ -37,7 +37,7 @@ def get_claude_home() -> Path:
     if env:
         return Path(env)
     if IS_WINDOWS:
-        return Path("C:/Users/Dennis/.claude")
+        return Path.home() / ".claude"
     return Path("/usr/share/claude")
 
 

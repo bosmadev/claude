@@ -105,7 +105,7 @@ In `settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py plan-comments",
+            "command": "python ~/.claude/scripts/guards.py plan-comments",
             "timeout": 5
           }
         ]
@@ -117,7 +117,7 @@ In `settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude\\scripts\\guards.py plan-write-check",
+            "command": "python ~/.claude/scripts/guards.py plan-write-check",
             "timeout": 5
           }
         ]

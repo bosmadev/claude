@@ -468,11 +468,10 @@ _MODEL_PATTERN_SHORT_NO_DATE = re.compile(
 )
 
 # Fallback for short names: "opus", "sonnet", "haiku"
-# Versionless — bare name without version = regex didn't match, investigate why.
 _SHORT_NAMES = {
-    "opus": {"family": "Opus", "version": ""},
-    "sonnet": {"family": "Sonnet", "version": ""},
-    "haiku": {"family": "Haiku", "version": ""},
+    "opus": {"family": "Opus", "version": "4.6"},
+    "sonnet": {"family": "Sonnet", "version": "4.5"},
+    "haiku": {"family": "Haiku", "version": "4.5"},
 }
 
 

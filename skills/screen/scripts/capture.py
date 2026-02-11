@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Dynamic screenshots directory
-CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude"))
+CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude"))
 SCREENSHOTS_DIR = CLAUDE_HOME / "skills" / "screen" / "screenshots"
 
 def capture_screenshot(output_path: str) -> bool:

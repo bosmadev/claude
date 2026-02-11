@@ -697,7 +697,7 @@ RALPH CONFIGURATION (COPY TO PLAN FILE):
 # Skill Interceptor (UserPromptSubmit)
 # =============================================================================
 
-_claude_home = Path(os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude"))
+_claude_home = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude"))
 SKILLS_DIR = _claude_home / "skills"
 
 # Cache discovered skill names at module level (populated once per process)

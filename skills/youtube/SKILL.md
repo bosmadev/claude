@@ -49,7 +49,7 @@ When user provides a video ID or URL:
 ### 1. Run Transcription Script
 
 ```bash
-export YOUTUBE_PROJECT_DIR="$PWD" && cd C:/Users/Dennis/.claude/skills/youtube/scripts && uv run transcribe.py "$VIDEO_ID_OR_URL"
+export YOUTUBE_PROJECT_DIR="$PWD" && cd ~/.claude/skills/youtube/scripts && uv run transcribe.py "$VIDEO_ID_OR_URL"
 ```
 
 **Error handling for failed transcriptions:**

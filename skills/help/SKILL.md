@@ -119,7 +119,7 @@ Based on your current context:
 
 Your Ralph agents are still working. Monitor with:
 ```
-python C:/Users/Dennis/.claude/scripts/ralph.py status
+python ~/.claude/scripts/ralph.py status
 ```
 
 When complete, run `/commit` to stage the changes.

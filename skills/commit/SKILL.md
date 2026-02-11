@@ -716,7 +716,7 @@ To skip automatic encryption:
 - Or use `.env.example` files (ignored by encryption check)
 
 ### Verification
-Check encryption status: `python C:/Users/Dennis/.claude/skills/commit/scripts/commit-helper.py check-env .`
+Check encryption status: `python ~/.claude/skills/commit/scripts/commit-helper.py check-env .`
 
 ---
 

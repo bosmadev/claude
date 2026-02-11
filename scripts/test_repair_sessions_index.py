@@ -66,9 +66,9 @@ def test_project_path_is_parent_not_grandparent(tmp_path: Path) -> None:
     This is the regression guard for the bug where projectPath was incorrectly
     set to ~/.claude/projects instead of the specific project directory.
     """
-    # Simulate: ~/.claude/projects/C--Users-Dennis--claude/
+    # Simulate: ~/.claude/projects/test-project/
     claude_projects = tmp_path / "projects"
-    project_dir = claude_projects / "C--Users-Dennis--claude"
+    project_dir = claude_projects / "test-project"
     project_dir.mkdir(parents=True)
 
     # Create a session file

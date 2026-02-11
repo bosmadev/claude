@@ -1,10 +1,4 @@
-# Claude Code Configuration
-
-#### Based on claude-code: 2.1.34
-
-**Stack:** Next.js 16.1+, React 19+, Node.js 25+, Python 3.14+, FastAPI, TypeScript 5.9.3+, Tailwind CSS v4+, Shadcn UI, Radix, Playwright, Vitest, Biome 2.3.10+, Knip 5.77.1+, uv 0.9.18+, pnpm 10.26.2+.
-
-**Build:** `pnpm build` | **Validate:** `pnpm validate`
+# Claude Code Configuration (Based on 2.1.34)
 
 ## Directory Structure
 
@@ -41,15 +35,16 @@ This keeps repo root clean and prevents accidental commits of temporary files.
 
 All state files use transactional primitives from `hooks/transaction.py`:
 
-| File | Pattern | Timeout | Why |
-|------|---------|---------|-----|
-| `sessions-index.json` | OCC (lockless) | N/A | Low write contention |
-| `ralph/progress.json` | Locked R/W | 5s | High-conflict agent updates |
-| `commit.md` | Atomic write | N/A | Sequential hooks, crash safety |
-| `receipts.json` | Locked append | 5s | Audit trail integrity |
-| `emergency-state.json` | Locked R/W | 5s | Cross-platform safety |
+| File                     | Pattern        | Timeout | Why                            |
+| ------------------------ | -------------- | ------- | ------------------------------ |
+| `sessions-index.json`  | OCC (lockless) | N/A     | Low write contention           |
+| `ralph/progress.json`  | Locked R/W     | 5s      | High-conflict agent updates    |
+| `commit.md`            | Atomic write   | N/A     | Sequential hooks, crash safety |
+| `receipts.json`        | Locked append  | 5s      | Audit trail integrity          |
+| `emergency-state.json` | Locked R/W     | 5s      | Cross-platform safety          |
 
 **Import pattern:**
+
 ```python
 from hooks.transaction import atomic_write_json, transactional_update, locked_read_json
 ```
@@ -63,18 +58,21 @@ from hooks.transaction import atomic_write_json, transactional_update, locked_re
 When editing frontend files (pages, components, styles), verify changes visually:
 
 **Files requiring verification:**
+
 - `app/**/*.tsx` - Next.js pages and layouts
 - `components/**/*.tsx` - React components
 - `styles/**/*.css` - Stylesheets
 - `public/**/*` - Static assets
 
 **Verification workflow:**
+
 1. PostToolUse hook detects frontend edit → outputs suggestion
 2. Run `/launch` to start dev server and open browsers
 3. Check for visual regressions, console errors, network issues
 4. Document findings in response
 
 **Exceptions (skip verification):**
+
 - README/documentation changes
 - Test file edits (`*.test.tsx`, `*.spec.tsx`)
 - Type definition changes (`*.d.ts`)
@@ -179,11 +177,11 @@ Build IDs are **auto-detected** from CHANGELOG.md — no manual assignment neede
 
 **Branching Model:**
 
-| Branch | Purpose | Build ID Source |
-|--------|---------|-----------------|
-| `main` | Production | Auto from CHANGELOG.md via `/commit` |
-| `{repo}-dev` | Development (PRs to main) | Auto from CHANGELOG.md via `/openpr` |
-| `feature/b{id}-*` | Legacy feature branches | From branch name (backward compat) |
+| Branch              | Purpose                   | Build ID Source                        |
+| ------------------- | ------------------------- | -------------------------------------- |
+| `main`            | Production                | Auto from CHANGELOG.md via `/commit` |
+| `{repo}-dev`      | Development (PRs to main) | Auto from CHANGELOG.md via `/openpr` |
+| `feature/b{id}-*` | Legacy feature branches   | From branch name (backward compat)     |
 
 **Examples:**
 
@@ -252,9 +250,9 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 - [x] {change_2}
 ```
 
-   - Badge links to PR (if `(#N)` in commit subject) or commit SHA
-   - `333333` dark badge color, `[x]` checkboxes
-   - `---` separator between entries
+- Badge links to PR (if `(#N)` in commit subject) or commit SHA
+- `333333` dark badge color, `[x]` checkboxes
+- `---` separator between entries
 
 6. **Release Format:**
 

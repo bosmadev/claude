@@ -33,9 +33,10 @@ class OrphanAuditor:
     def __init__(self, dry_run: bool = True, auto_confirm: bool = False):
         self.dry_run = dry_run
         self.auto_confirm = auto_confirm
-        self.claude_root = Path(os.path.expanduser("~/.claude"))
-        self.project_root = self.claude_root / "projects" / "C--Users-Dennis--claude"
-        self.temp_scratchpad = Path(os.path.expanduser("~/AppData/Local/Temp/claude/C--Users-Dennis--claude"))
+        self.claude_root = Path.home() / ".claude"
+        # Note: project_root must be set per-project by user or via CLI arg
+        self.project_root = self.claude_root / "projects"  # Generic - may need override
+        self.temp_scratchpad = Path(os.environ.get("CLAUDE_CODE_TMPDIR", str(Path.home() / "AppData" / "Local" / "Temp" / "claude")))
         self.plans_dir = self.claude_root / "plans"
         self.teams_dir = self.claude_root / "teams"
         self.tasks_dir = self.claude_root / "tasks"

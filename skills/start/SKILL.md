@@ -316,7 +316,7 @@ After creating the plan file, automatically rename the session with the plan slu
 2. **Derive** `plan_slug` from plan filename (e.g., "feature-oauth2-authentication" from `feature-oauth2-authentication.md`)
 3. **Run** auto-rename utility:
    ```bash
-   python ~/.claude\hooks\utils.py auto-rename <session_id> <plan_slug>
+   python ~/.claude/hooks/utils.py auto-rename <session_id> <plan_slug>
    ```
 4. **Re-read** `~/.claude/.session-info` to get the updated `session_name`
 5. **Use** this name for the plan `**Session:**` field
@@ -903,7 +903,7 @@ Task(
     name="oauth-impl-1",  # REQUIRED: descriptive {role}-{N} name
     prompt="""RALPH Agent 1/3 (oauth-impl-1) - Phase 2.1: Implementation
 
-**Plan file:** ~/.claude\\plans\\feature-auth.md
+**Plan file:** ~/.claude/plans/feature-auth.md
 
 **Your task:** Implement OAuth flow with PKCE
 
@@ -939,7 +939,7 @@ Task(
     name="login-ui-1",  # Descriptive: what this agent does
     prompt="""RALPH Agent 2/3 (login-ui-1) - Phase 2.1: Implementation
 
-**Plan file:** ~/.claude\\plans\\feature-auth.md
+**Plan file:** ~/.claude/plans/feature-auth.md
 
 **Your task:** Add frontend login UI
 
@@ -974,7 +974,7 @@ Task(
     name="api-middleware-1",  # Descriptive: what this agent does
     prompt="""RALPH Agent 3/3 (api-middleware-1) - Phase 2.1: Implementation
 
-**Plan file:** ~/.claude\\plans\\feature-auth.md
+**Plan file:** ~/.claude/plans/feature-auth.md
 
 **Your task:** Update API middleware for auth
 

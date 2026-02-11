@@ -4,7 +4,7 @@ This module provides atomic file operations with proper locking, integrity valid
 and rollback guarantees. Designed for safe concurrent access to shared state files
 across multiple hook invocations and agent processes.
 
-**Plan:** ~/.claude\plans\steady-kindling-candy.md
+**Plan:** ~/.claude/plans/steady-kindling-candy.md
 
 **Core primitives:**
 - atomic_write_json/text: Atomic write-or-fail using temp files + rename

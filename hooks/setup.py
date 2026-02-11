@@ -48,7 +48,7 @@ else:
 
 CLAUDE_CONFIG_DIR = Path(os.environ.get(
     "CLAUDE_HOME",
-    "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude"
+    str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude"
 ))
 HOME_CLAUDE_SYMLINK = Path.home() / ".claude"
 ROOT_CLAUDE_SYMLINK = None if sys.platform == "win32" else Path("/root/.claude")

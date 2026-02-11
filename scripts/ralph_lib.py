@@ -46,7 +46,7 @@ def _get_agents_dir() -> str:
     Returns:
         Path to agents directory (e.g., ~/.claude/agents or /usr/share/claude/agents).
     """
-    _home = os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude")
+    _home = os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude")
     return str(Path(_home) / "agents")
 
 

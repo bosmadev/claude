@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-SCREENSHOTS_DIR = Path(os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude")) / "skills" / "screen" / "screenshots"
+SCREENSHOTS_DIR = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude")) / "skills" / "screen" / "screenshots"
 FILENAME_PREFIX = "screen-"
 FILENAME_SUFFIX = ".png"
 RETENTION_DAYS = 7

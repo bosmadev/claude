@@ -44,7 +44,7 @@ From `$ARGUMENTS`, determine the action:
 Before executing any script command, validate that the required scripts exist:
 
 ```bash
-SCRIPT_DIR="C:/Users/Dennis/.claude/skills/screen/scripts"
+SCRIPT_DIR="~/.claude/skills/screen/scripts"
 
 # Check capture.py exists
 if [ ! -f "$SCRIPT_DIR/capture.py" ]; then
@@ -65,7 +65,7 @@ fi
 
 ## Storage
 
-Screenshots are stored at: `~/.claude\skills\screen\screenshots\`
+Screenshots are stored at: `~/.claude/skills/screen/screenshots/`
 
 Filename format: `screen-{timestamp}.png`
 
@@ -80,14 +80,14 @@ When user runs `/screen` with no arguments:
 ### 1. Run Capture Script
 
 ```bash
-python C:/Users/Dennis/.claude/skills/screen/scripts/capture.py
+python ~/.claude/skills/screen/scripts/capture.py
 ```
 
 The script will:
 
 - Launch Windows Snipping Tool in region capture mode
 - Wait for user to select a region
-- Save to `~/.claude\skills\screen\screenshots\screen-{timestamp}.png`
+- Save to `~/.claude/skills/screen/screenshots/screen-{timestamp}.png`
 - Output the file path on success
 
 ### 2. Display Result
@@ -95,7 +95,7 @@ The script will:
 On success:
 
 ```
-Screenshot captured: ~/.claude\skills\screen\screenshots\screen-20260123-143052.png
+Screenshot captured: ~/.claude/skills/screen/screenshots/screen-20260123-143052.png
 ```
 
 ### 3. Offer Analysis
@@ -113,7 +113,7 @@ If yes, use the Read tool to view the image and describe its contents.
 ### 1. Get Recent Screenshots
 
 ```bash
-python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py list --limit N --json
+python ~/.claude/skills/screen/scripts/manage.py list --limit N --json
 ```
 
 ### 2. Display and Analyze
@@ -133,13 +133,13 @@ For each screenshot (newest first):
 ### 1. Run List Command
 
 ```bash
-python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py list
+python ~/.claude/skills/screen/scripts/manage.py list
 ```
 
 ### 2. Display Table
 
 ```
-Screenshots (~/.claude\skills\screen\screenshots\):
+Screenshots (~/.claude/skills/screen/screenshots/):
 
 ID       | Filename                    | Created          | Size
 ---------|----------------------------|------------------|--------
@@ -191,7 +191,7 @@ Deleted 3 screenshots, freed 479 KB
 ### 1. Find Old Screenshots
 
 ```bash
-python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py clean --dry-run
+python ~/.claude/skills/screen/scripts/manage.py clean --dry-run
 ```
 
 ### 2. Show Preview
@@ -214,7 +214,7 @@ Total: 390 KB to free
 On "yes":
 
 ```bash
-python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py clean
+python ~/.claude/skills/screen/scripts/manage.py clean
 ```
 
 ### 5. Report
@@ -251,14 +251,14 @@ Use the Read tool to view the image file, then provide:
 ### 1. Find Screenshot
 
 ```bash
-python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py find <id>
+python ~/.claude/skills/screen/scripts/manage.py find <id>
 ```
 
 ### 2. Show Confirmation
 
 ```
 Delete screenshot?
-File: ~/.claude\skills\screen\screenshots\screen-20260123-143052.png
+File: ~/.claude/skills/screen/screenshots/screen-20260123-143052.png
 Created: Jan 23, 2026 14:30:52
 Size: 245 KB
 
@@ -270,7 +270,7 @@ Type "yes" to confirm:
 On "yes":
 
 ```bash
-python C:/Users/Dennis/.claude/skills/screen/scripts/manage.py delete <id>
+python ~/.claude/skills/screen/scripts/manage.py delete <id>
 ```
 
 ### 4. Report
@@ -304,6 +304,6 @@ Deleted: screen-20260123-143052.png
 
 | File                                           | Purpose               |
 | ---------------------------------------------- | --------------------- |
-| `~/.claude\skills\screen\scripts\capture.py` | Capture script        |
-| `~/.claude\skills\screen\scripts\manage.py`  | Management operations |
-| `~/.claude\skills\screen\screenshots\`       | Screenshot storage    |
+| `~/.claude/skills/screen/scripts/capture.py` | Capture script        |
+| `~/.claude/skills/screen/scripts/manage.py`  | Management operations |
+| `~/.claude/skills/screen/screenshots/`       | Screenshot storage    |

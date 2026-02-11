@@ -10,7 +10,7 @@ user-invocable: true
 **CRITICAL: When `/chats` is invoked, you MUST run the Python script below IMMEDIATELY. Do NOT research the codebase, do NOT analyze the skill, do NOT write a report. JUST RUN THE SCRIPT.**
 
 ```bash
-python "C:/Users/Dennis/.claude/skills/chats/display-chats.py" <command> [args...]
+python "~/.claude/skills/chats/display-chats.py" <command> [args...]
 ```
 
 **Argument mapping from user input to script args:**

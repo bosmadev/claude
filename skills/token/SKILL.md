@@ -100,5 +100,5 @@ See CLAUDE.md "Token Refresh (4-Layer Defense)" for full architecture.
 
 ```bash
 # Run the unified token management script
-python C:/Users/Dennis/.claude/scripts/claude-github.py <command>
+python ~/.claude/scripts/claude-github.py <command>
 ```

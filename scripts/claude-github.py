@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Configuration
-CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude" if sys.platform == "win32" else "/usr/share/claude"))
+CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude"))
 CREDS_FILE = Path.home() / ".claude" / ".credentials.json"
 LOG_FILE = Path.home() / ".claude" / "debug" / "token-refresh.log"
 BUFFER_SECONDS = 600  # Refresh 10 min before expiry
@@ -47,7 +47,7 @@ if sys.platform == "win32":
         Path.home() / "code",
         Path.home() / "repos",
         Path.home() / "projects",
-        Path(os.environ.get("CLAUDE_HOME", "C:/Users/Dennis/.claude")),
+        Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude"))),
     ]
 else:
     _default_search_paths = [
@@ -330,7 +330,7 @@ def cmd_status() -> None:
                 print(f"  {GREEN}+ Active (Task Scheduler){RESET}")
             else:
                 print(f"  {YELLOW}! Not active{RESET}")
-                print(f"  Install with: python ~/.claude\\scripts\\install-token-timer.py")
+                print(f"  Install with: python {CLAUDE_HOME / 'scripts' / 'install-token-timer.py'}")
         except (FileNotFoundError, subprocess.TimeoutExpired):
             print(f"  {YELLOW}! Cannot check Task Scheduler{RESET}")
     else:

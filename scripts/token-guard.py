@@ -23,8 +23,7 @@ from pathlib import Path
 from filelock import FileLock, Timeout as FileLockTimeout
 
 # Configuration
-_DEFAULT_CLAUDE_HOME = r"~/.claude" if sys.platform == "win32" else str(Path.home() / ".claude")
-CLAUDE_HOME = os.environ.get("CLAUDE_HOME", _DEFAULT_CLAUDE_HOME)
+CLAUDE_HOME = os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude"))
 CREDS_FILE = Path.home() / ".claude" / ".credentials.json"
 _REFRESH_EXT = "refresh-claude-token.py"  # Cross-platform Python script
 REFRESH_SCRIPT = Path(CLAUDE_HOME) / "scripts" / _REFRESH_EXT

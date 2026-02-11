@@ -30,25 +30,61 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Paths
-BAT_PATH = Path(r"~/.claude\chrome\chrome-native-host.bat")
-NODE_EXE = Path(r"D:\nvm4w\nodejs\node.exe")
-NODE_HOST_DIR = Path(r"~/.claude\chrome\node_host")
+# Paths - dynamically computed from home directory
+CLAUDE_HOME = Path.home() / ".claude"
+BAT_PATH = CLAUDE_HOME / "chrome" / "chrome-native-host.bat"
+NODE_HOST_DIR = CLAUDE_HOME / "chrome" / "node_host"
 CLI_JS_PATH = NODE_HOST_DIR / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
 PACKAGE_JSON_PATH = (
     NODE_HOST_DIR / "node_modules" / "@anthropic-ai" / "claude-code" / "package.json"
 )
-NPM_CLI_JS_PATH = Path(r"D:\nvm4w\nodejs\node_modules\@anthropic-ai\claude-code\cli.js")
-NPM_PACKAGE_JSON_PATH = Path(r"D:\nvm4w\nodejs\node_modules\@anthropic-ai\claude-code\package.json")
+
+# Detect npm global install location dynamically
+def _get_npm_global_prefix() -> Path:
+    """Get npm global prefix (e.g., D:/nvm4w/nodejs on Windows, /usr/local on Linux)."""
+    try:
+        result = subprocess.run(
+            ["npm", "config", "get", "prefix"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            shell=True,  # Windows needs shell for npm.cmd
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    # Fallback: platform-specific defaults
+    if sys.platform == "win32":
+        # Common Windows locations
+        for candidate in [Path("D:/nvm4w/nodejs"), Path("C:/Program Files/nodejs")]:
+            if candidate.exists():
+                return candidate
+    else:
+        # Unix-like defaults
+        for candidate in [Path("/usr/local"), Path.home() / ".local"]:
+            if candidate.exists():
+                return candidate
+    return Path("/usr/local")  # Final fallback
+
+NPM_PREFIX = _get_npm_global_prefix()
+NPM_CLI_JS_PATH = NPM_PREFIX / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
+NPM_PACKAGE_JSON_PATH = NPM_PREFIX / "node_modules" / "@anthropic-ai" / "claude-code" / "package.json"
+NODE_EXE = NPM_PREFIX / ("node.exe" if sys.platform == "win32" else "bin" / "node")
 
 # Expected .bat content — includes USERNAME sanitization for pipe name consistency
-CORRECT_BAT_CONTENT = r"""@echo off
+# Template is computed dynamically to use actual paths
+def _get_bat_content() -> str:
+    """Generate .bat content with actual system paths."""
+    return f"""@echo off
 REM Chrome native host wrapper script
 REM Fixed: Uses Node.js instead of Bun standalone to avoid stdin crash (GH #22901)
 REM Fixed: Strips spaces from USERNAME for pipe name consistency (GH #23828)
 SET "USERNAME=%USERNAME: =%"
-"D:\nvm4w\nodejs\node.exe" "~/.claude\chrome\node_host\node_modules\@anthropic-ai\claude-code\cli.js" --chrome-native-host
+"{NODE_EXE}" "{CLI_JS_PATH}" --chrome-native-host
 """
+
+CORRECT_BAT_CONTENT = _get_bat_content()
 
 # Self-contained ESM-compatible patch: uses process globals only.
 # cli.js is "type": "module" (ESM) so require() is not available.

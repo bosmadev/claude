@@ -97,7 +97,7 @@ def format_size(size_bytes: int) -> str:
 
 
 def decode_project_path(encoded_project_path: str) -> str:
-    """Decode Claude Code's project path encoding: C--Users-Dennis--claude -> ~/.claude"""
+    """Decode Claude Code's project path encoding: C--Users-username--project -> C:\\Users\\username\\project"""
     projects_dir_str = str(PROJECTS_DIR)
     if not encoded_project_path.startswith(projects_dir_str):
         return encoded_project_path
