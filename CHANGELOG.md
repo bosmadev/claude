@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.3.0](https://img.shields.io/badge/v1.3.0-2026--02--11-333333.svg)](https://github.com/bosmadev/claude/commit/00be92a2b97a76616a7a00e816d0cce80153713b) | Build 9
+
+feat: Docker persistence hardening with production configs
+
+
+
+---
+
 ## [![v1.2.0](https://img.shields.io/badge/v1.2.0-2026--02--10-333333.svg)](https://github.com/bosmadev/claude/commit/73425bcca92cc9394a173037b3b73a2430f74894) | Build 8
 
 feat: add worktree memory unification and session auto-naming
