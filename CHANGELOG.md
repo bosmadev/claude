@@ -3,6 +3,21 @@
 
 ---
 
+## [![v1.7.0](https://img.shields.io/badge/v1.7.0-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/a50e93f26433696441457cd5adca610b61a8a1fd) | Build 16
+
+feat(x): GitHub-to-X pipeline + CI changelog workflow fixes
+
+- [x] **GitHub-to-X Pipeline (2 files):** Added `/x github` command with 5-phase pipeline to scan GitHub trending repos/issues/releases, map users to X handles via GitHub API twitter_username field, and generate targeted search queries; supports --search flag to execute queries and --json for agent consumption
+- [x] **Changelog Script Refactor (1 file):** Fixed .github/changelog.ts formatting with Biome rules (quotes, imports, trailing commas), fixed pull-rebase error handling to be non-fatal, improved duplicate detection with anchored regex
+- [x] **CI Workflow Fix (1 file):** Moved concurrency blocks after runs-on in claude.yml to comply with GitHub Actions schema requirements (changelog job was failing to queue)
+- [x] **Init-Repo Skill Enhancement (1 file):** Added changelog.ts template copying with automatic Biome formatting to match repo indent style, documented noConsole override requirement for CLI scripts
+- [x] Added .gitignore entries for skills/*/.claude/ and .tmp-* temp files
+- [x] Added Bash(cd:*) to permissions.allow for directory navigation
+- [x] Updated README.md with /x github documentation and mode count (3→4)
+
+
+---
+
 ## [![v1.6.0](https://img.shields.io/badge/v1.6.0-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/fb5c976d0672be8e757c3afb6fb2be74052a5ad1) | Build 15
 
 feat(x): consolidate 5 scripts into unified x.py + TTY colors
