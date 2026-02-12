@@ -14,6 +14,7 @@
   "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
+      "Bash(cd:*)",
       "Bash(bash:*)",
       "Bash(pyright:*)",
       "Bash(pip3 list:*)",

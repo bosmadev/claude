@@ -24,6 +24,27 @@ This skill automates X/Twitter outreach for any project or tool. Claude dynamica
 
 ---
 
+## CRITICAL: Profile Post Approval Rule
+
+**NEVER post original tweets to the user's profile without EXPLICIT user approval.** This is the #1 rule.
+
+| Action | Approval Needed? | Why |
+|--------|-----------------|-----|
+| Reply to someone else's post | NO -- post immediately | Replies are the core workflow, no gate needed |
+| Original tweet on user's profile (`x.py tweet`) | YES -- ask user first | Profile posts represent the user's voice directly |
+| Quote tweet (embeds another post) | YES -- ask user first | Appears on user's profile, visible to all followers |
+| Retweet | YES -- ask user first | Visible on user's profile |
+
+**How to handle profile posts:**
+1. Research and compose the draft tweet
+2. Present it to the user: "Draft profile tweet: `{text}` -- should I post this?"
+3. Wait for explicit "yes" / approval
+4. Only THEN call `x.py tweet "{text}"`
+
+**Agents (subagents) MUST NEVER call `x.py tweet`** — only the main orchestrator can, after user approval. Agents should only use `x.py post` (replies to others).
+
+---
+
 ## Configuration (Auto-Generated)
 
 Config is auto-generated from environment variables. **No manual config.json creation needed.**
@@ -75,6 +96,8 @@ On first run, the scraper reads `.env` (or system env) and auto-generates `skill
 | `scheduler status` | Show scheduler + feed freshness | `/x scheduler status` |
 | `scheduler uninstall` | Remove auto-scraper | `/x scheduler uninstall` |
 | `auto [N] [model]` | Headless auto-run: scrape + research + post | `/x auto 5 sonnet` |
+| `github` | GitHub-to-X pipeline: scan repos/issues, map users to X handles, generate queries | `/x github` |
+| `github --search` | Same + search X API for each generated query | `/x github --search` |
 | `help` | Show usage help | `/x help` |
 
 ### Model Selection Syntax
@@ -86,39 +109,93 @@ Both `research` and `post` support `[N] [model]` syntax:
 
 **Examples:**
 ```
-/x post {TEXT}                    # Single agent, main Opus context
-/x post 10 opus {TEXT}            # 10 Opus agents in parallel
+/x post {TEXT}                    # Single agent, Sonnet (default)
+/x post 10 {TEXT}                 # 10 Sonnet agents in parallel (recommended)
+/x post 10 sonnet {TEXT}          # Same as above, explicit
 /x research 5 sonnet {TOPIC}      # 5 Sonnet agents for research
 /x post 2 haiku {TEXT}            # 2 Haiku agents (minimal cost)
 ```
 
-When `N > 1`, Claude spawns Team agents via `Task(model="opus"|"sonnet"|"haiku")` override. Each agent calls `tabs_create_mcp` for a dedicated Chrome tab.
+**Default model is Sonnet for all /x operations.** Never use Opus for /x — it runs continuously and burns weekly quota. Only use `opus` if user explicitly requests it.
 
-### Agent Allocation (N > 1)
+When `N > 1`, Claude spawns Task agents via `Task(model="sonnet")` override. Research agents use Bash subagent_type (X API only), For You scanner uses general-purpose (needs Chrome MCP).
 
-When spawning N agents, allocate them across two browser pools:
+### Agent Allocation (N > 1) -- Research + Poster Architecture
 
-**Browser Pool Assignment:**
-- **Agents 1-5:** Chrome MCP (`claude-in-chrome`) -- `tabs_create_mcp` per agent
-- **Agents 6-10:** Playwriter MCP (`playwriter`) -- `context.newPage()` per agent
-- **Agent 1 (always):** "For You" feed scanner (Chrome MCP)
+**Default model: Sonnet for ALL /x agents.** Never use Opus for /x — it runs continuously and would drain weekly Opus quota. Sonnet handles search, composition, and posting equally well.
 
-Chrome MCP caps at ~5 concurrent tabs reliably. Beyond 5, use Playwriter for the overflow.
+When spawning 10 agents (default for `/x post 10`), use this role-based allocation:
 
-**Role assignment:**
-- **1 agent: "For You" feed scanner** -- navigates to `https://x.com`, scrolls the "For You" feed, identifies posts from students/broke devs/people complaining about AI costs. This catches posts that search queries miss because they don't use specific keywords.
-- **Remaining N-1 agents: search agents** -- each gets 2-3 unique search queries to run on X
+| # | Role | Type | subagent_type | Purpose |
+|---|------|------|---------------|---------|
+| 1-2 | **Researchers** | X API search | Bash | Run 5 queries each, collect targets, dedup, report |
+| 3 | **For You Scanner** | Chrome MCP browse | general-purpose | Scroll algorithmic feed for non-searchable targets |
+| 4 | **GitHub Pipeline** | X API + web | Bash | GitHub trending/issues → X search queries |
+| 5-8 | **Posters** (4x) | X API posting | Bash | Compose unique replies, post via x.py, log |
+| 9 | **Quote Tweeter** | X API posting | Bash | Quote-tweet viral posts (2x distribution) |
+| 10 | **Thread Diver** | X API posting | Bash | Find viral threads, reply deep in conversation |
 
-The "For You" agent workflow:
-1. `tabs_create_mcp` for dedicated tab
+**Why this split:**
+- Researchers find MORE targets than posters can consume → no idle posters
+- Dedicated For You scanner catches posts that don't use searchable keywords
+- Quote tweets reach YOUR followers + the OP's audience (double distribution)
+- Thread diver finds active conversations where replies get the most eyeballs
+
+**Continuous Loop Protocol:**
+```
+Batch 1 (10 agents) → collect results → report stats
+                    → IMMEDIATELY launch Batch 2 (10 agents, fresh queries)
+                    → collect results → report stats
+                    → IMMEDIATELY launch Batch 3 ...
+                    → REPEAT UNTIL USER STOPS
+```
+
+**Never stop between batches.** The orchestrator launches the next batch as soon as agents complete. Each batch uses fresh query angles to avoid repeating the same searches.
+
+**For You Scanner Workflow:**
+1. `tabs_create_mcp` for dedicated Chrome tab
 2. `navigate` to `https://x.com` (lands on For You feed)
 3. `read_page` to scan visible posts
-4. `computer(scroll, down)` 3-4 times, `read_page` after each scroll
-5. Look for posts matching: student struggles, AI cost complaints, free tier limits, broke developers, can't afford API
+4. `computer(scroll, down)` 4-5 times, `read_page` after each scroll
+5. Look for: student struggles, AI cost complaints, free tier limits, broke developers, vibe coding frustration, rate limit pain
 6. Extract targets (author, text, URL, engagement)
-7. Report findings to team-lead
+7. Report findings back — posters will handle these targets
 
-**Why "For You":** The algorithmic feed surfaces posts from your network and interest graph -- often students and indie devs who don't use searchable keywords but ARE the target audience. Search misses these; the feed catches them.
+**Quote Tweet Strategy:**
+- Search for viral posts (min_faves:50+) about AI costs
+- Compose original commentary that adds YOUR perspective
+- Include share_url as the solution
+- Quote tweets get shown to your followers AND appear in the OP's notifications
+- 2x distribution: your follower feed + OP's quote tweet list
+
+**Thread Diver Strategy:**
+- Find threads with 10+ replies (active conversations)
+- Reply deep in the thread where engaged users are reading (not at the top)
+- Use `conversation_id:{thread_id}` to explore full threads
+- Reference the specific sub-discussion you're joining
+
+---
+
+### X Impressions: How They Work
+
+| Event | Counts as Impression? | Details |
+|-------|----------------------|---------|
+| Reply appears in timeline/search | Yes (1x per viewer) | When someone scrolls past it |
+| Someone expands thread to read replies | Yes (1x per viewer) | Most valuable -- engaged reader |
+| Someone clicks your profile from reply | No new reply impression | Profile gets a separate view |
+| Someone clicks the link card (share_url) | No new reply impression | But share_url post gets its OWN impression |
+| Same person sees it again (re-scroll) | No | X deduplicates per user per session |
+
+**Key insight:** Each reply generates impressions on the REPLY itself, plus the share_url link card generates SEPARATE impressions on your pinned post when people click through. Every reply = dual impression machine.
+
+**Maximizing impressions:**
+1. **Reply to posts with 5+ existing replies** -- people reading that thread will see yours
+2. **Early replies on rising posts** -- X sorts by engagement; first good reply gets pushed to top
+3. **Quote tweets** -- shown to YOUR followers, not just the OP's audience
+4. **Thread diving** -- reply to multiple people in same viral thread (3x impressions per thread)
+5. **Engagement hooks** -- end with a question to get responses, which pushes your reply higher in sort
+6. **Time-sensitive** -- `within_time:3h` catches posts where OP is still online and likely to respond
+7. **Fresh over stale** -- recent posts with growing engagement > old viral posts where replies are buried
 
 ---
 
@@ -157,7 +234,7 @@ Phase 2: FIND CONVERSATIONS -> DISTRIBUTE
 - Each distribution reply references the target conversation's topic
 - Include the URL of your original tweet (not the news source)
 - Follow same tone guidelines as reply mode
-- Rate limits apply (10/session, 30/day)
+- Check post count via `x.py rate-check` between batches
 
 ---
 
@@ -416,27 +493,65 @@ Claude dynamically composes and posts replies. Every reply is unique. Claude rea
 
 The following rules ensure replies don't look like a bot. Claude MUST follow these.
 
+### Tone Profiles (Rotate Between These)
+
+Each reply MUST use ONE of these tone profiles. Rotate between them so consecutive replies never use the same profile.
+
+**1. The Steal / Too Good to Be True (40% of replies)**
+Sound like you're sharing an insider secret, a deal so good it feels illegal. Informative but with "you won't believe this" energy.
+
+```
+"wait you're paying for API calls? someone pooled free gmails into 300rpm on gemini flash. literally zero cost"
+
+"genuinely wild that this exists - 300 requests per minute on gemini flash, no credit card, no billing surprises"
+
+"this feels like a cheat code honestly. free gemini flash at 300rpm while everyone else is paying per token"
+```
+
+**2. The Sarcastic / Dry Humor (30% of replies)**
+Light sarcasm about the AI pricing situation. Never mean, just wry observations.
+
+```
+"openai charging $20/month for rate limits is peak comedy when this does 300rpm for free"
+
+"love how the AI industry convinced everyone that paying per token is normal. anyway here's 300rpm for $0"
+
+"nothing like a surprise API bill to make you question your life choices. this might help with that"
+```
+
+**3. The Empathetic Helper (30% of replies)**
+Genuine, warm, relatable. You've been there too.
+
+```
+"been there with the rate limits. this pools free gmails for 300rpm on gemini flash - saved my project last month"
+
+"as a student this would've been huge for me. free gemini flash at 300 requests per min, no card needed"
+
+"the free tier struggle is real. this gets you way more out of gemini flash without spending anything"
+```
+
 ### DO:
 
+- Rotate between the 3 tone profiles above
 - Write like a real person texting a friend
 - Use simple short sentences
-- Use "you" and "your" directly
 - Reference something specific from their post
 - Keep it under 280 chars
 - Use lowercase naturally (not all proper case)
-- Use simple dashes (-) not long dashes
-- Say "about" not "approximately", "like" not "such as"
+- Make it sound like a genuine discovery, not an ad
+- Use "honestly", "genuinely", "actually", "literally" naturally
 
 ### DON'T:
 
-- Use em dashes (the long -- ones become short - in tweets anyway)
+- Use the same tone profile twice in a row
 - Use formal language ("Furthermore", "Additionally", "I'd like to share")
 - Use hashtags in replies (looks like a bot)
 - Start with "Hey!" or "Hi!" (looks like spam)
-- Use exclamation marks excessively
+- Use exclamation marks excessively (max 1 per reply)
 - Use corporate speak ("leverage", "utilize", "comprehensive")
 - Copy the same sentence structure across replies
 - Use bullet points or formatted lists in tweets
+- Sound like a salesperson (no "check it out!", "you should try this!")
 
 ### URL Strategy (MANDATORY)
 
@@ -449,23 +564,21 @@ The following rules ensure replies don't look like a bot. Claude MUST follow the
 
 Claude reads the `share_url` at the start of each `/x` session and includes it in every generated reply.
 
-### Examples of Good Tone:
+### Tone Rotation Protocol
 
-```
-"api costs suck for students. check this out - it pools
-free accounts for way higher rate limits. no card needed.
-{SHARE_URL}"
+To ensure variety, each agent maintains a tone counter:
+1. First reply: "steal" tone
+2. Second reply: "sarcastic" tone
+3. Third reply: "empathetic" tone
+4. Fourth reply: "steal" tone (restart cycle)
+5. ... and so on
 
-"if rate limits are killing you - this tool gets you
-way more requests for free.
-{SHARE_URL}"
-
-"you can get way more out of free tier APIs
-with this. zero cost.
-{SHARE_URL}"
-```
-
-Replace `{SHARE_URL}` with the actual URL from your config at runtime.
+When posting in parallel (multiple agents), each agent starts at a DIFFERENT point in the rotation:
+- Agent 1 (poster): starts at "steal"
+- Agent 2 (poster): starts at "sarcastic"
+- Agent 3 (poster): starts at "empathetic"
+- Agent 4 (poster): starts at "steal"
+- Quote tweeter: always uses "steal" tone (biggest impact for follower-facing content)
 
 ---
 
@@ -499,12 +612,17 @@ python skills/x/scripts/x.py post "TWEET_ID" "reply text with {SHARE_URL}"
 # Returns JSON: { "success": true, "tweet_id": "..." }
 ```
 
-### Post Original Tweet (X API)
+### Post Original Tweet (X API) -- REQUIRES USER APPROVAL
+
+**NEVER call this without explicit user approval.** See "Profile Post Approval Rule" above.
 
 ```bash
+# ONLY after user explicitly approves the draft:
 python skills/x/scripts/x.py tweet "tweet text with optional URL"
 # Returns JSON: { "success": true, "tweet_id": "...", "url": "..." }
 ```
+
+**Subagents MUST NOT call `x.py tweet`.** Only the main orchestrator, after user says yes.
 
 ### Post Flow (Speed-Optimized)
 
@@ -566,15 +684,35 @@ When `N > 1` and using Chrome MCP:
 
 | Rule | Implementation |
 |------|----------------|
-| **Auto-post on traction** | If target has likes > 0 OR replies > 0 OR views > 50, post immediately -- NO user approval |
-| **No approval gate** | Saves context window and time -- Claude posts and reports results after |
-| **Rate limit: 10/session** | `x.py rate-check` before each batch |
-| **Rate limit: 30/day** | Daily counter in history.json |
+| **PROFILE POSTS NEED APPROVAL** | `x.py tweet` (original tweets, quote tweets, retweets) REQUIRE explicit user approval. Subagents MUST NEVER call `x.py tweet`. |
+| **Replies are autonomous** | `x.py post` (replies to others) need NO approval -- this is the core workflow |
+| **Auto-post on traction** | If target has likes > 0 OR replies > 0 OR views > 50, reply immediately |
+| **Post tracking** | Daily counter in history.json, check via `x.py rate-check` |
 | **Dedup protection** | SHA256 of target_url checked before composing |
 | **Unique text per reply** | Claude generates fresh text, no repeated messages |
-| **Human tone enforced** | SKILL.md tone guidelines, no formal/bot language |
+| **Human tone enforced** | SKILL.md tone guidelines with 3-tone rotation (steal/sarcastic/empathetic) |
 | **Logged history** | Every post tracked with timestamp, topic, author, reach |
-| **For You feed agent** | 1 dedicated agent always scans For You feed for student/broke dev posts |
+| **For You feed agent** | 1 dedicated agent always scans For You feed for non-searchable targets |
+| **Shell-safe posting** | ALWAYS use `echo '...' \| python x.py post ID --stdin` to prevent `$` expansion |
+| **Number integrity** | European format: `.` for thousands, `,` for decimals. Always include `$` before amounts. |
+
+### Number Formatting Rules
+
+**CRITICAL**: All dollar amounts and large numbers must follow these rules:
+
+| Pattern | Correct | Wrong |
+|---------|---------|-------|
+| Thousands separator | `$1.256/year` | `$1,256/year` |
+| Dollar zero | `$0` | (shell expands to `/usr/bin/bash`) |
+| Dollar amounts | `$200/mo` | `00/mo` (stripped `$`) |
+| Small decimals | `$0.004` | `/usr/bin/bash.004` |
+| Large numbers | `5.660` | `5,660` or `,660` |
+
+**Shell safety**: The `$` character is special in bash. When posting via x.py:
+- ALWAYS use: `echo 'text with $0 and $100' | python x.py post TWEET_ID --stdin`
+- NEVER use: `python x.py post TWEET_ID "text with $0"` (shell expands `$0` to process name)
+- Single quotes `'...'` prevent ALL shell expansion
+- The `--stdin` flag reads text from pipe, bypassing shell argument parsing
 
 ---
 
@@ -692,10 +830,6 @@ Show daily/weekly post counts and reach estimates.
 **This Week:** 12 replies, ~18.5K reach
 **This Month:** 24 replies, ~45.3K reach
 
-**Rate Limits:**
-- Session: 3/10 replies remaining
-- Daily: 3/30 replies remaining
-
 **Top Topics:**
 1. free AI tools for students (8 replies, ~12K reach)
 2. broke developers rate limits (4 replies, ~6.5K reach)
@@ -736,10 +870,108 @@ Show usage help.
   [N] -- number of parallel agents (default: 1)
   [model] -- opus, sonnet, or haiku (default: main context)
 
-**Rate Limits:**
-  - 10 replies per session
-  - 30 replies per day
+**Post Tracking:**
+  Check count: /x status
 ```
+
+---
+
+## GitHub-to-X Pipeline: `/x github`
+
+Unified command that scans GitHub (trending repos, cost issues, releases), maps users to X handles via the GitHub API `twitter_username` field, and generates targeted X search queries.
+
+### Usage
+
+```bash
+/x github                    # Scan GitHub, map users, generate queries
+/x github --search           # Same + search X API for each query
+/x github --search --limit 30  # Increase lookup/search limit (default: 20)
+/x github --json             # Machine-readable JSON output for agents
+```
+
+### 5-Phase Pipeline
+
+```
+Phase 1: SCAN GITHUB
+  - Trending repos (scrape_trending_repos)
+  - Cost/rate-limit issues (scrape_cost_issues)
+  - New releases (scrape_new_releases)
+  → Collects repo owners, issue authors, release maintainers
+
+Phase 2: COLLECT USERNAMES
+  - Deduplicates across all sources
+  - Tracks source context per user (which repo/issue/release)
+  - Limits to --limit users (default 20)
+
+Phase 3: LOOK UP X HANDLES
+  - GitHub API: GET /users/{username} → twitter_username field
+  - 24-hour cache in feed.json → github_users key
+  - Uses gh CLI (5000 req/hr) with urllib fallback (60 req/hr)
+
+Phase 4: GENERATE QUERIES
+  For users WITH X handle:
+    - from:{handle} (AI OR API OR LLM) within_time:7d
+  For users WITHOUT X handle (repo context):
+    - "{repo_name}" (launched OR released OR built) min_faves:3
+  For issue authors:
+    - from:{handle} ("rate limit" OR "too expensive" OR "can't afford")
+  For release-related:
+    - "{repo}" (update OR release OR "new version") within_time:7d
+
+Phase 5: SEARCH X (optional, --search flag)
+  - Runs x.py search for each generated query
+  - Collects targets with engagement metrics
+  - Outputs combined target list sorted by views
+```
+
+### Caching
+
+GitHub user lookups are cached in `feed.json` under the `github_users` key with 24-hour TTL. Subsequent runs skip cached users, making repeated calls fast.
+
+### Example Output
+
+```
+== GitHub-to-X Pipeline ==
+
+Phase 1: Scanning GitHub...
+  Trending repos: 25
+  Cost issues: 15
+  New releases: 5
+
+Phase 2: Collected 30 unique GitHub users
+
+Phase 3: Looking up X handles (max 20)...
+  Found X handles: 8/20
+
+Phase 4: Generated 32 X search queries
+  - Direct handle queries: 8
+  - Repo context queries: 12
+  - Issue context queries: 7
+  - Release queries: 5
+
+== Top Targets (by views) ==
+  @user1 - 45K views - "switching to local inference..."
+  @user2 - 12K views - "rate limits are killing my app..."
+```
+
+### Agent Integration
+
+Use `--json` flag for programmatic consumption by posting agents:
+
+```bash
+# Agent reads targets, posts replies
+targets=$(python x.py github --search --json --limit 15)
+# Parse JSON: { "users": [...], "queries": [...], "targets": [...] }
+```
+
+### How It Connects to `/x post`
+
+The GitHub pipeline feeds into the standard post workflow:
+
+1. Run `/x github --search` to discover targets from GitHub ecosystem
+2. Targets include users who maintain free AI tools, file cost issues, release alternatives
+3. Feed these into `/x post` agents or use the targets directly for reply composition
+4. All replies still follow human tone guidelines and include `share_url`
 
 ---
 
@@ -908,7 +1140,7 @@ python skills/x/scripts/x.py poster-install 12
 
 ### Safety in Auto Mode
 
-- Rate limits still enforced (10/session, 30/day via x.py)
+- Post count tracked via history.json (no hard limits)
 - Dedup still enforced (SHA256 of target URL)
 - Human tone guidelines still apply (Sonnet follows SKILL.md instructions)
 - All posts logged to history.json for review
@@ -949,7 +1181,7 @@ python skills/x/scripts/x.py rate-check
 - **Config auto-generated** -- Config auto-generates from .env vars on first run. No manual config.json creation needed.
 - **Share URL mandatory** -- All replies MUST include the `share_url` from config. Never link to source repos directly.
 - **No nested teams** -- If spawning N agents via Task(), those are regular subagents, not nested teams.
-- **Rate limiting enforced** -- `x.py rate-check` returns exit code 1 if rate limited. Claude stops posting and reports the limit.
+- **Post tracking** -- `x.py rate-check` shows today's post count. No hard limits enforced.
 - **Dedup via SHA256** -- Target URL hashed to avoid replying twice to the same post.
 - **Reach estimation** -- Extracted from X API client search results (likes + retweets + replies + views).
 - **Session tracking** -- `.x-session` flag file created when skill runs, removed on completion. Used by `guards.py x-post-check` hook for post-click validation.

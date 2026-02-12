@@ -210,13 +210,16 @@ Manages Claude Code behavior rules via direct `settings.json` modifications. Tra
 | `/x news` | Show current news feed stats |
 | `/x history` | Show posting history |
 | `/x status` | Show daily/weekly counts + reach |
+| `/x github` | GitHub-to-X pipeline: scan repos/issues, map users to X handles, generate queries |
+| `/x github --search` | Same + search X API for each generated query |
 | `/x help` | Show usage |
 
-Automated X/Twitter outreach with three modes:
+Automated X/Twitter outreach with four modes:
 
 - **Post mode** — Find high-engagement targets on X, compose unique replies, post via X API (1-2 sec/post) with Chrome MCP fallback
 - **Compose mode** — Scrape news from 15+ sources (Google News RSS, GitHub API, Messari crypto API, changelogs), compose an original tweet on your profile, then distribute by replying to related conversations with the original tweet URL
 - **Research mode** — Explore X search queries and rank by engagement for future targeting
+- **GitHub mode** — Scan GitHub trending repos, cost issues, and releases; map users to X handles via API; generate targeted search queries for posting
 
 **Configuration:** Auto-generated from `skills/x/.env` (gitignored). Set `X_SHARE_URL`, `X_HANDLE`, `X_PROJECT_NAME`, `X_PROJECT_DESC`, plus X auth tokens. No manual `config.json` creation needed — auto-generates on first run.
 

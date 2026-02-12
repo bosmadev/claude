@@ -562,7 +562,11 @@ async def cmd_search(query: str, count: int = 20):
 
     results = []
     try:
-        data = r.json()
+        raw = r.text.strip()
+        if not raw:
+            print(json.dumps({"error": "Empty response body", "tweets": [], "raw_status": r.status_code}))
+            sys.exit(1)
+        data = json.loads(raw)
         instructions = (
             data.get("data", {})
             .get("search_by_raw_query", {})
@@ -597,7 +601,9 @@ async def cmd_search(query: str, count: int = 20):
 
 async def cmd_post(tweet_id: str, text: str):
     """Post a reply to a specific tweet"""
-    max_chars = 25000  # Premium limit
+    # Fix literal \n from shell arguments → actual newlines
+    text = text.replace("\\n", "\n")
+    max_chars = 4000  # X Premium limit
     if len(text) > max_chars:
         print(_red(f"ERROR: Reply exceeds {max_chars} character limit ({len(text)} chars)"))
         sys.exit(1)
@@ -652,9 +658,10 @@ async def cmd_post(tweet_id: str, text: str):
 
 async def cmd_tweet(text: str):
     """Post an original tweet (not a reply) for compose mode"""
-    # Premium allows up to 25,000 chars; free tier is 280
-    # We use 25,000 as default since config can be checked via X API
-    max_chars = 25000
+    # Fix literal \n from shell arguments → actual newlines
+    text = text.replace("\\n", "\n")
+    # X Premium allows up to 4,000 chars
+    max_chars = 4000
     if len(text) > max_chars:
         print(_red(f"ERROR: Tweet exceeds {max_chars} character limit ({len(text)} chars)"))
         sys.exit(1)
@@ -836,6 +843,45 @@ def github_api(endpoint, params=None):
     except Exception as e:
         print(f"  WARN: GitHub API error: {e}")
         return None
+
+
+def github_lookup_x_handles(usernames, cached_users=None, limit=20):
+    """Look up X/Twitter handles for GitHub users via /users/{name} API, with 24h cache"""
+    if cached_users is None:
+        cached_users = {}
+    results = {}
+    to_lookup = []
+
+    for username in usernames:
+        if username in cached_users:
+            cached = cached_users[username]
+            cached_time = cached.get("cached_at", "")
+            if cached_time:
+                try:
+                    ct = datetime.fromisoformat(cached_time)
+                    if ct > datetime.now(timezone.utc) - timedelta(hours=24):
+                        results[username] = cached
+                        continue
+                except (ValueError, TypeError):
+                    pass
+        to_lookup.append(username)
+
+    for username in to_lookup[:limit]:
+        data = github_api(f"/users/{username}")
+        if not data:
+            continue
+        twitter = data.get("twitter_username", "")
+        results[username] = {
+            "github": username,
+            "twitter": twitter or "",
+            "name": data.get("name", "") or "",
+            "bio": (data.get("bio") or "")[:200],
+            "followers": data.get("followers", 0),
+            "blog": data.get("blog", "") or "",
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    return results
 
 
 def parse_feed(xml_text):
@@ -1351,6 +1397,202 @@ def cmd_feed():
         print(json.dumps(feed, indent=2))
 
 
+def cmd_github(args):
+    """GitHub-to-X pipeline: scan GitHub, map users to X handles, generate targeted queries"""
+    do_search = getattr(args, "search", False)
+    json_out = getattr(args, "json", False)
+    limit = getattr(args, "limit", 20)
+
+    # Load cached github_users from feed.json
+    feed_path = get_feed_path()
+    cached_users = {}
+    if feed_path.exists():
+        try:
+            with open(feed_path, encoding="utf-8") as f:
+                feed_data = json.load(f)
+            cached_users = feed_data.get("github_users", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Phase 1: Scan GitHub
+    if not json_out:
+        print(_bold("Phase 1: Scanning GitHub..."))
+    repos = scrape_trending_repos()
+    issues = scrape_cost_issues()
+    releases = scrape_new_releases()
+    if not json_out:
+        print(f"  {len(repos)} trending repos, {len(issues)} cost issues, {len(releases)} releases")
+
+    # Phase 2: Collect unique usernames + track source
+    usernames = set()
+    user_sources = {}
+    for repo in repos:
+        owner = repo.get("owner", "")
+        if owner and len(owner) > 1:
+            usernames.add(owner)
+            user_sources.setdefault(owner, []).append(f"trending:{repo['name']}")
+    for issue in issues:
+        author = issue.get("author", "")
+        if author and len(author) > 1:
+            usernames.add(author)
+            user_sources.setdefault(author, []).append(f"issue:{issue['repo']}")
+
+    if not json_out:
+        print(f"\n{_bold('Phase 2: Looking up X handles')} for {len(usernames)} GitHub users...")
+
+    # Phase 3: Look up X handles (with caching)
+    users = github_lookup_x_handles(list(usernames), cached_users, limit)
+
+    # Attach sources
+    for username, info in users.items():
+        info["sources"] = user_sources.get(username, info.get("sources", []))
+
+    # Save to feed cache
+    try:
+        if feed_path.exists():
+            with open(feed_path, encoding="utf-8") as f:
+                feed_data = json.load(f)
+        else:
+            feed_data = {}
+        feed_data["github_users"] = users
+        with open(feed_path, "w", encoding="utf-8") as f:
+            json.dump(feed_data, f, indent=2, ensure_ascii=False)
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    mapped = {k: v for k, v in users.items() if v.get("twitter")}
+    unmapped = {k: v for k, v in users.items() if not v.get("twitter")}
+
+    if not json_out:
+        cached_count = len(users) - len([u for u in users if u not in cached_users])
+        print(f"  Looked up: {len(users)} users ({cached_count} cached), {_green(str(len(mapped)))} with X handles")
+        if mapped:
+            print(f"\n{_bold('GitHub -> X Mappings:')}")
+            for uname, info in sorted(mapped.items(), key=lambda x: x[1].get("followers", 0), reverse=True):
+                srcs = ", ".join(info.get("sources", [])[:2])
+                print(f"  {uname:25s} -> @{_cyan(info['twitter']):20s} {info.get('followers',0):>7,} followers  [{srcs}]")
+
+    # Phase 4: Generate targeted queries
+    queries = []
+
+    # Direct from:{handle} queries for mapped users
+    for username, info in mapped.items():
+        handle = info["twitter"]
+        queries.append({
+            "query": f"from:{handle} (AI OR API OR LLM OR cost OR rate OR free) within_time:30d",
+            "priority": "P2",
+            "source": "github_user_direct",
+            "context": f"@{username} -> X @{handle}",
+            "github_user": username,
+            "x_handle": handle,
+        })
+
+    # Repo context queries
+    for repo in repos[:10]:
+        name = repo["name"].split("/")[-1]
+        queries.append({
+            "query": f'"{name}" (free OR cost OR "rate limit") within_time:7d',
+            "priority": "P3",
+            "source": "github_repo",
+            "context": f"Discussions about {repo['name']} ({repo['stars']} stars)",
+        })
+
+    # Issue context queries (skip users already covered by direct mapping)
+    for issue in issues[:10]:
+        author = issue.get("author", "")
+        if author in mapped:
+            continue
+        title_terms = _extract_terms(issue.get("title", ""))
+        if len(title_terms) >= 2:
+            queries.append({
+                "query": f'({" OR ".join(title_terms[:3])}) within_time:7d min_faves:3',
+                "priority": "P2",
+                "source": "github_issue_context",
+                "context": f"Issue: {issue['title'][:60]}",
+            })
+
+    # Release thread queries
+    for rel in releases:
+        repo_name = rel["repo"].split("/")[-1]
+        queries.append({
+            "query": f'"{repo_name}" ("{rel["tag"]}" OR release OR update) within_time:3d min_faves:3',
+            "priority": "P4",
+            "source": "github_release",
+            "context": f"Release {rel['repo']} {rel['tag']}",
+        })
+
+    if not json_out:
+        print(f"\n{_bold('Phase 3: Generated')} {len(queries)} targeted queries")
+        print(f"  Direct @user:    {sum(1 for q in queries if q['source'] == 'github_user_direct')}")
+        print(f"  Repo context:    {sum(1 for q in queries if q['source'] == 'github_repo')}")
+        print(f"  Issue context:   {sum(1 for q in queries if q['source'] == 'github_issue_context')}")
+        print(f"  Release threads: {sum(1 for q in queries if q['source'] == 'github_release')}")
+
+    # Phase 5: Optionally search X for targets
+    targets = []
+    if do_search:
+        search_count = min(len(queries), limit)
+        if not json_out:
+            print(f"\n{_bold('Phase 4: Searching X API')} for {search_count} queries...")
+        for i, q in enumerate(queries[:search_count]):
+            try:
+                result = subprocess.run(
+                    [sys.executable, str(Path(__file__).resolve()), "search", q["query"], "--count", "5"],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                )
+                if result.returncode == 0 and result.stdout:
+                    search_data = json.loads(result.stdout)
+                    tweets = search_data.get("tweets", [])
+                    for tw in tweets:
+                        tw["source_query"] = q
+                    targets.extend(tweets)
+                    if not json_out:
+                        total_v = sum(t.get("views", 0) for t in tweets)
+                        print(f"  [{i+1}/{search_count}] {q['query'][:55]}... -> {len(tweets)} hits, {total_v:,} views")
+            except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
+                if not json_out:
+                    print(f"  [{i+1}] {_red('Error')}: {e}")
+
+        if not json_out and targets:
+            targets.sort(key=lambda t: t.get("views", 0), reverse=True)
+            print(f"\n{_bold('Top targets by reach:')}")
+            for t in targets[:10]:
+                print(f"  {t.get('views',0):>8,} views  @{t.get('author',''):20s} {t.get('text','')[:60]}...")
+
+    # Final output
+    if json_out:
+        output = {
+            "users": list(users.values()),
+            "mapped_count": len(mapped),
+            "unmapped_count": len(unmapped),
+            "queries": queries,
+            "targets": targets,
+            "stats": {
+                "repos_scanned": len(repos),
+                "issues_scanned": len(issues),
+                "releases_found": len(releases),
+                "users_looked_up": len(users),
+                "x_handles_found": len(mapped),
+                "queries_generated": len(queries),
+                "targets_found": len(targets),
+            },
+        }
+        print(json.dumps(output, indent=2, ensure_ascii=True))
+    else:
+        total_reach = sum(t.get("views", 0) for t in targets)
+        print(f"\n{_bold('=== Summary ===')}")
+        print(f"  GitHub users:     {len(users)}")
+        print(f"  X handles found:  {_green(str(len(mapped)))}")
+        print(f"  Queries ready:    {len(queries)}")
+        if targets:
+            print(f"  Targets found:    {len(targets)}")
+            print(f"  Combined reach:   {total_reach:,} views")
+        print(f"\n  Cache: {feed_path}")
+        if not do_search:
+            print(f"\n  {_dim('Tip: --search  to also search X for each query')}")
+            print(f"  {_dim('     --json    for machine-readable output')}")
+
+
 # =============================================================================
 # History Tracking
 # =============================================================================
@@ -1375,8 +1617,11 @@ def save_history(data):
 
 
 def get_url_hash(url):
-    """Generate SHA256 hash of target URL for dedup"""
-    return hashlib.sha256(url.encode("utf-8")).hexdigest()
+    """Generate SHA256 hash of normalized target URL for dedup"""
+    # Normalize: strip query params, trailing slashes, lowercase
+    parsed = urllib.parse.urlparse(url)
+    clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}".lower()
+    return hashlib.sha256(clean.encode("utf-8")).hexdigest()
 
 
 def cmd_log(args):
@@ -1399,16 +1644,41 @@ def cmd_log(args):
     history["replies"].append(reply_entry)
     history["daily_counts"][today] = history["daily_counts"].get(today, 0) + 1
     save_history(history)
-    print(f"Logged reply to {args.author} (reach: {args.reach})")
-
-
 def cmd_check(args):
     """Check if target URL already replied to (exit 0=ok, 1=already replied)"""
     history = load_history()
     url_hash = get_url_hash(args.target_url)
+
+    # Extract author from URL for secondary check (x.com/{author}/status/...)
+    url_author = ""
+    parts = urllib.parse.urlparse(args.target_url).path.strip("/").split("/")
+    if len(parts) >= 1:
+        url_author = parts[0].lower()
+
     for reply in history["replies"]:
+        # Primary: hash match (handles normalized URLs)
         if reply["id"] == url_hash:
+            print("Already replied (URL match)")
             sys.exit(1)
+        # Secondary: same author + same tweet ID in URL
+        stored_url = reply.get("target_url", "")
+        if stored_url:
+            stored_parts = urllib.parse.urlparse(stored_url).path.strip("/").split("/")
+            if len(stored_parts) >= 3 and len(parts) >= 3:
+                # Compare /author/status/id — case-insensitive author, exact ID
+                if stored_parts[0].lower() == url_author and stored_parts[2] == parts[2]:
+                    print("Already replied (author+ID match)")
+                    sys.exit(1)
+        # Tertiary: same author handle in last 24h (avoid spamming same person)
+        reply_author = reply.get("author", "").lstrip("@").lower()
+        if url_author and reply_author == url_author:
+            try:
+                ts = datetime.fromisoformat(reply["timestamp"].rstrip("Z"))
+                if ts > datetime.now() - timedelta(hours=24):
+                    print(f"Already replied to @{url_author} in last 24h")
+                    sys.exit(1)
+            except (ValueError, KeyError):
+                pass
     sys.exit(0)
 
 
@@ -1442,15 +1712,11 @@ def cmd_history(args):
         reach = f"{reply['estimated_reach']:<8}"
         print(f"{_dim(date)} {_cyan(author)} {topic} {_yellow(reach)}")
 
-    print(f"\nTotal: {_cyan(str(len(replies)))} replies")
-
-
 def cmd_status_history():
-    """Show daily/weekly post counts and reach estimates"""
+    """Show posting stats (no hard limits)"""
     history = load_history()
     today = datetime.now().strftime("%Y-%m-%d")
     today_count = history["daily_counts"].get(today, 0)
-
     week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     weekly_count = sum(
         count for date, count in history["daily_counts"].items()
@@ -1465,11 +1731,10 @@ def cmd_status_history():
         if datetime.fromisoformat(r["timestamp"].rstrip("Z")) >= week_ago_dt
     )
 
-    limit_color = _red if today_count >= 30 else (_yellow if today_count >= 20 else _green)
     header = f"{'Metric':<20} {'Count':<10}"
     print(f"\n{_bold(header)}")
     print(_dim("-" * 35))
-    print(f"{'Today':<20} {limit_color(f'{today_count:<10}')} {_dim('/ 30 daily limit')}")
+    print(f"{'Today':<20} {_cyan(f'{today_count:<10}')}")
     print(f"{'Last 7 days':<20} {_cyan(f'{weekly_count:<10}')}")
     total_replies = len(history["replies"])
     print(f"{'Total replies':<20} {_cyan(f'{total_replies:<10}')}")
@@ -1478,14 +1743,11 @@ def cmd_status_history():
 
 
 def cmd_rate_check():
-    """Check if rate limited (exit 0=ok, 1=limited)"""
+    """Show today's post count (no hard limits enforced)"""
     history = load_history()
     today = datetime.now().strftime("%Y-%m-%d")
     today_count = history["daily_counts"].get(today, 0)
-    if today_count >= 30:
-        print(_red(f"Rate limited: {today_count}/30 replies today"))
-        sys.exit(1)
-    print(_green(f"Rate OK: {today_count}/30 replies today"))
+    print(_green(f"Rate OK: {today_count} replies today"))
     sys.exit(0)
 
 
@@ -1564,23 +1826,40 @@ INSTRUCTIONS:
    c. Check dedup: python {script_path} check "{{target_url}}"
    d. Compose a UNIQUE reply following tone guidelines (casual, short, reference their pain point)
    e. ALWAYS include {share_url} in the reply
-   f. Post via: python {script_path} post "{{tweet_id}}" "{{reply_text}}"
+   f. Post via: echo '{{reply_text}}' | python {script_path} post "{{tweet_id}}" --stdin
+      CRITICAL: ALWAYS use --stdin with echo pipe to avoid shell expansion of $ signs.
+      NEVER pass reply text as a positional argument — $ signs get mangled by the shell.
+      Use single quotes around the echo text to prevent variable expansion.
    g. If X API client fails (Cloudflare 403), use Chrome MCP to post manually
    h. Log: python {script_path} log "{{url}}" "{{author}}" "{{text}}" "auto" "{{query}}" "{{reach}}"
-4. Stop after {max_posts} successful posts OR when rate-limited
+4. Stop after {max_posts} successful posts
 5. Report: how many posted, total estimated reach, any errors
 
-TONE RULES (critical):
-- Write like texting a friend, NOT formal
-- Reference their specific pain point from their post
-- Keep under 280 chars
-- No hashtags, no "Hey!", no exclamation spam
-- Every reply must be structurally different
+TONE PROFILES (rotate between these -- never use same twice in a row):
 
-RATE LIMITS:
+1. THE STEAL (40%): Sound like sharing an insider secret, too-good-to-be-true energy
+   "wait you're paying for API calls? someone pooled free gmails into 300rpm on gemini flash. zero cost"
+
+2. THE SARCASTIC (30%): Dry humor about AI pricing. Wry, never mean.
+   "openai charging $20/month for rate limits is peak comedy when this does 300rpm for free"
+
+3. THE EMPATHETIC (30%): Genuine, warm, you've been there.
+   "been there with the rate limits. this pools free gmails for 300rpm on gemini flash - saved my project"
+
+RULES:
+- Rotate profiles: steal → sarcastic → empathetic → steal → ...
+- Reference their specific pain point
+- Keep under 280 chars, no hashtags, no "Hey!"
+- Every reply must be structurally different
+- Sound like a discovery, not an ad
+- NUMBER FORMATTING: Use period for thousands separator, comma for decimals (European format)
+  Examples: $1.256/year (not $1,256), $0.004 stays as-is (decimal), 300 RPM (no separator needed)
+  NEVER write bare dollar amounts without the $ sign. Double-check all numbers before posting.
+- SHELL SAFETY: Always use echo '...' | python x.py post ID --stdin to avoid $ expansion
+
+POST TRACKING:
 - Max {max_posts} posts this run
-- Max 30/day total (check via rate-check)
-- If rate-limited, stop immediately and report
+- Check count via rate-check between batches
 """
 
 
@@ -1672,16 +1951,26 @@ DISTRIBUTE INSTRUCTIONS:
    f. Log: python {script_path} log "{{url}}" "{{author}}" "{{text}}" "compose-distribute" "{{query}}" "{{reach}}"
 3. Stop after {max_posts} successful distribution replies
 
-TONE RULES:
-- Write like texting a friend, NOT formal
-- Reference their specific topic from their post
-- Keep under 280 chars
-- No hashtags, no "Hey!", no exclamation spam
-- Every reply must be structurally different
+TONE PROFILES (rotate between these -- never use same twice in a row):
 
-RATE LIMITS:
+1. THE STEAL (40%): Insider secret, too-good-to-be-true energy
+   "genuinely wild that this exists - free gemini flash at 300rpm while everyone pays per token"
+
+2. THE SARCASTIC (30%): Dry humor about AI pricing
+   "love how the AI industry convinced everyone paying per token is normal. anyway here's 300rpm for $0"
+
+3. THE EMPATHETIC (30%): Genuine, warm
+   "been there with the rate limits. this pools free gmails for 300rpm on gemini flash"
+
+RULES:
+- Rotate profiles: steal → sarcastic → empathetic → steal → ...
+- Reference their specific topic
+- Keep under 280 chars, no hashtags, no "Hey!"
+- Sound like a discovery, not an ad
+
+POST TRACKING:
 - Max {max_posts} distribution replies this run
-- Max 30/day total (check via rate-check)
+- Check count via rate-check between batches
 """
 
 
@@ -1953,8 +2242,7 @@ def cmd_poster_status():
     history = load_history()
     today = datetime.now().strftime("%Y-%m-%d")
     today_count = history["daily_counts"].get(today, 0)
-    limit_color = _red if today_count >= 30 else (_yellow if today_count >= 20 else _green)
-    print(f"\nToday: {limit_color(str(today_count))}/30 posts  |  Total: {_cyan(str(len(history['replies'])))} replies")
+    print(f"\nToday: {_green(str(today_count))} posts  |  Total: {_cyan(str(len(history['replies'])))} replies")
 
 
 # =============================================================================
@@ -1993,7 +2281,8 @@ Examples:
 
     post_p = subparsers.add_parser("post", help="Post reply to a tweet")
     post_p.add_argument("tweet_id", help="Tweet ID to reply to")
-    post_p.add_argument("text", help="Reply text")
+    post_p.add_argument("text", nargs="?", default=None, help="Reply text (or use --stdin)")
+    post_p.add_argument("--stdin", action="store_true", help="Read reply text from stdin (avoids shell expansion of $ signs)")
 
     tweet_p = subparsers.add_parser("tweet", help="Post original tweet")
     tweet_p.add_argument("text", help="Tweet text")
@@ -2007,6 +2296,12 @@ Examples:
     # --- Scraper commands ---
     subparsers.add_parser("scrape", help="Full scrape -> feed.json")
     subparsers.add_parser("feed", help="Show current feed summary")
+
+    # --- GitHub-to-X pipeline ---
+    github_p = subparsers.add_parser("github", help="GitHub-to-X: scan repos/issues, map users to X handles, generate queries")
+    github_p.add_argument("--search", action="store_true", help="Also search X API for each generated query")
+    github_p.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    github_p.add_argument("--limit", type=int, default=20, help="Max users to look up / queries to search (default: 20)")
 
     # --- History commands ---
     log_p = subparsers.add_parser("log", help="Log a posted reply")
@@ -2064,7 +2359,13 @@ Examples:
     elif cmd == "search":
         asyncio.run(cmd_search(args.query, args.count))
     elif cmd == "post":
-        asyncio.run(cmd_post(args.tweet_id, args.text))
+        text = args.text
+        if args.stdin or text is None:
+            text = sys.stdin.read().strip()
+        if not text:
+            print(_red("ERROR: No reply text provided (use positional arg or --stdin)"))
+            sys.exit(1)
+        asyncio.run(cmd_post(args.tweet_id, text))
     elif cmd == "tweet":
         asyncio.run(cmd_tweet(args.text))
     elif cmd == "delete":
@@ -2077,6 +2378,8 @@ Examples:
         cmd_scrape()
     elif cmd == "feed":
         cmd_feed()
+    elif cmd == "github":
+        cmd_github(args)
 
     # History commands
     elif cmd == "log":

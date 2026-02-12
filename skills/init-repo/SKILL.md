@@ -138,7 +138,22 @@ Install GitHub workflow templates only.
        exit 1
    fi
    ```
-3. If `claude.yml` already exists, show warning and skip:
+3. Copy changelog template:
+
+   ```bash
+   CHANGELOG_TEMPLATE=~/.claude/.github/changelog.ts
+   CHANGELOG_DEST=".github/changelog.ts"
+
+   if [ -f "$CHANGELOG_TEMPLATE" ]; then
+       cp "$CHANGELOG_TEMPLATE" "$CHANGELOG_DEST"
+       # IMPORTANT: Run biome format to match the repo's indent style (tabs vs spaces)
+       npx @biomejs/biome format --write "$CHANGELOG_DEST" 2>/dev/null || true
+   fi
+   ```
+
+   **Critical:** Also add `.github/changelog.ts` to the repo's biome `noConsole` override if `noConsole` is not `"off"` globally. This file is a CLI script that legitimately uses console output.
+
+4. If `claude.yml` already exists, show warning and skip:
 
    ```
    ⚠️  .github/workflows/claude.yml already exists
@@ -354,6 +369,7 @@ All templates are sourced from Claude Code's configuration directory:
 | Template  | Source                                                   | Destination                      |
 | --------- | -------------------------------------------------------- | -------------------------------- |
 | Workflows | `~/.claude/.github/workflows/claude.yml` | `.github/workflows/claude.yml` |
+| Changelog | `~/.claude/.github/changelog.ts`         | `.github/changelog.ts`         |
 
 **Note:** On Windows, use forward slashes in paths for cross-platform compatibility.
 

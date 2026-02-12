@@ -34,9 +34,11 @@ memory/
 research/
 image-cache/
 skills/x/data/
+skills/*/.claude/
 
 # Files
 !.gitkeep
+.tmp-*
 *.pyc
 *.pyo
 *.swp

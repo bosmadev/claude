@@ -87,8 +87,6 @@ on:
   # To enable: uncomment above and add to job 'if' condition:
   #   (github.event_name == 'schedule' && github.event.inputs.max_turns <= 5 && github.event.inputs.model == 'claude-haiku-4-5-20251001') ||
 
-# NOTE: Concurrency moved to per-job level (changelog must queue, not cancel)
-
 permissions:
   id-token: write
   contents: read  # Default read-only, scoped per-job below
@@ -103,9 +101,6 @@ jobs:
   # Security: Only org members can trigger via comment. Manual dispatch requires write access.
   # PR open trigger requires 'claude' label to opt-in (prevents abuse on public repos).
   claude:
-    concurrency:
-      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
-      cancel-in-progress: true  # New push invalidates old review
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude review') && github.event.comment.author_association != 'NONE') ||
@@ -116,6 +111,9 @@ jobs:
       (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'claude') ||
       (github.event_name == 'pull_request' && github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'claude'))
     runs-on: ubuntu-latest
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      cancel-in-progress: true  # New push invalidates old review
     timeout-minutes: ${{ github.event.inputs.timeout && github.event.inputs.timeout <= 60 && github.event.inputs.timeout || 30 }}
     permissions:
       contents: read  # Read code only, no write access
@@ -228,14 +226,14 @@ jobs:
   # ============================================
   changelog:
     name: Update CHANGELOG & Version
-    concurrency:
-      group: changelog-${{ github.ref }}
-      cancel-in-progress: false  # QUEUE, never cancel — prevents missed CHANGELOG entries
     if: |
       github.event_name == 'push' &&
       github.actor != 'github-actions[bot]' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
+    concurrency:
+      group: changelog-${{ github.ref }}
+      cancel-in-progress: false  # QUEUE, never cancel — prevents missed CHANGELOG entries
     permissions:
       contents: write  # Required to commit and push CHANGELOG + version updates
 
