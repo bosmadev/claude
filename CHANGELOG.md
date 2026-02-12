@@ -3,6 +3,88 @@
 
 ---
 
+## [![v1.6.0](https://img.shields.io/badge/v1.6.0-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/fb5c976d0672be8e757c3afb6fb2be74052a5ad1) | Build 15
+
+feat(x): consolidate 5 scripts into unified x.py + TTY colors
+
+- [x] Merge x_client.py, test_api.py, scraper.py, auto-post.py into x.py (21 subcommands)
+- [x] Delete standalone scripts (net -432 lines)
+- [x] Add ANSI color output with auto-detection (isatty fallback)
+- [x] Color cmd_test, cmd_history, cmd_scrape, cmd_feed, cmd_status_history
+- [x] Fix tweet length validation for Premium (25K char limit)
+- [x] Fix scheduler 24h+ intervals (HOURLY to DAILY for >=24h)
+- [x] Fix poster-status duplicating full status_history output
+- [x] Update SKILL.md and README.md references to unified x.py
+
+
+---
+
+## [![v1.5.0](https://img.shields.io/badge/v1.5.0-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/4c9891cdf9336e2be685fc38c530240461d4fc70) | Build 14
+
+feat: refactor /x skill from Twikit to X API client
+
+- [x] Replace twikit_client.py with x_client.py (curl_cffi + XClientTransaction)
+- [x] Expand scraper.py with RSS, Messari crypto API, and changelog sources
+- [x] Add compose mode to auto-post.py for original tweet creation
+- [x] Add .env-based config auto-generation (replaces config.example.json)
+- [x] Update SKILL.md with compose/news modes and X API documentation
+- [x] Fix README.md stale Twikit references
+- [x] Fix hardcoded handle in x_client.py cmd_tweet()
+
+
+---
+
+## [![v1.4.0](https://img.shields.io/badge/v1.4.0-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/8f17bbf448eb2b0e46e8622c2c4693085a85583e) | Build 13
+
+feat: /x skill for automated X/Twitter outreach
+
+- [x] New skill: /x research, /x post, /x history, /x status
+- [x] Twikit API backend for fast posting (1-2 sec/post vs 17 sec Chrome)
+- [x] x.py tracker: dedup (SHA256), rate limiting (10/session, 30/day), history
+- [x] GitHub API scraper (trending repos, cost issues, new releases) generates feed.json
+- [x] Headless auto-poster via claude -p with Windows Task Scheduler integration
+- [x] Budget-conscious: Sonnet for auto, Haiku for simple tasks, never Opus
+- [x] x-guard merged into guards.py (x-post-check mode) for compact hook design
+
+
+---
+
+## [![v1.3.2](https://img.shields.io/badge/v1.3.2-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/5a7034f4a782b8eab2c607e1bbf23377239c082f) | Build 12
+
+fix(chrome): add bridge flag disable to self-healing hook
+
+- [x] Added disable_bridge_flag() to fix-chrome-native-host.py
+- [x] WSS bridge broken on Windows: accountUuid never populated
+- [x] When enabled, bridge used exclusively (no socket fallback)
+- [x] Disabling forces socket/pipe path which works with pipe patch
+- [x] GrowthBook may re-enable on cache refresh; hook enforces false
+
+
+---
+
+## [![v1.3.1](https://img.shields.io/badge/v1.3.1-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/48399f689dc9ba2fa7c5bdd632e2cd421ea09b50) | Build 11
+
+docs: consolidate README.md + CLAUDE.md, delete USAGE.md
+
+- [x] README.md complete rewrite as public-facing guide with hero image, full skill command tables
+- [x] CLAUDE.md updated to 2.1.39, absorbed model-knowledge sections from USAGE.md
+- [x] USAGE.md deleted, all content migrated to README.md (public) or CLAUDE.md (model knowledge)
+
+
+---
+
+## [![v1.3.0](https://img.shields.io/badge/v1.3.0-2026--02--11-333333.svg)](https://github.com/bosmadev/claude/commit/18f9e5e3de4f857d26c8b304d8d85d9a85634d07) | Build 9
+
+feat: Docker persistence hardening with production configs
+
+- [x] Import Kali production Redis config (maxmemory, allkeys-lru, slowlog, dynamic-hz)
+- [x] Add resource limits and C: drive config file mount
+- [x] Added backup-docker.py (BGSAVE + mongodump + retention)
+- [x] Added docker-health.py (persistence metrics, memory, color output)
+
+
+---
+
 ## [![v1.2.1](https://img.shields.io/badge/v1.2.1-2026--02--11-333333.svg)](https://github.com/bosmadev/claude/commit/b7cc58ec773a3afe35f12b97c713c6d25880bb83) | Build 10
 
 sanitize repo for public release

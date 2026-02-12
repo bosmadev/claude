@@ -263,26 +263,31 @@ if (pkgPath) {
   safeExec(`git add ${pkgPath}`, 'Failed to stage package.json');
 }
 
-try {
-  const msg = newVersion
-    ? `chore: bump to v${newVersion} and update CHANGELOG for Build ${buildId}`
-    : `docs: update CHANGELOG for Build ${buildId}`;
+// Step 1: Commit
+const msg = newVersion
+  ? `chore: bump to v${newVersion} and update CHANGELOG for Build ${buildId}`
+  : `docs: update CHANGELOG for Build ${buildId}`;
 
-  const result = spawnSync('git', ['commit', '-m', msg], { encoding: 'utf8' });
-  if (result.error) throw new Error(`Commit failed: ${result.error.message}`);
-
-  safeExec('git push', 'Push failed');
-  console.log(`✓ Pushed consolidated commit`);
-  if (newVersion) {
-    console.log(`✓ Version bumped: v${newVersion}`);
-  }
-  console.log(`✓ CHANGELOG updated: Build ${buildId}`);
-} catch (commitError: unknown) {
-  const err = commitError as Error;
+const commitResult = spawnSync('git', ['commit', '-m', msg], { encoding: 'utf8' });
+if (commitResult.status !== 0) {
   const status = safeExec('git status --porcelain', 'Failed to get git status');
   if (status.trim() === '') {
-    console.log('No changes to commit');
-  } else {
-    throw new Error(`Git commit/push failed: ${err.message}`);
+    console.log('No changes to commit (working tree clean)');
+    process.exit(0);
   }
+  throw new Error(`Commit failed: ${commitResult.stderr || commitResult.stdout}`);
 }
+console.log(`✓ Committed: ${msg}`);
+
+// Step 2: Push (separate error handling — don't swallow push failures)
+const pushResult = spawnSync('git', ['push'], { encoding: 'utf8' });
+if (pushResult.status !== 0) {
+  const errMsg = pushResult.stderr || pushResult.stdout || 'Unknown push error';
+  console.error(`✗ Push failed: ${errMsg}`);
+  throw new Error(`Push failed (branch protection?): ${errMsg}`);
+}
+console.log(`✓ Pushed consolidated commit`);
+if (newVersion) {
+  console.log(`✓ Version bumped: v${newVersion}`);
+}
+console.log(`✓ CHANGELOG updated: Build ${buildId}`);
