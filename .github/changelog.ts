@@ -279,7 +279,14 @@ if (commitResult.status !== 0) {
 }
 console.log(`✓ Committed: ${msg}`);
 
-// Step 2: Push (separate error handling — don't swallow push failures)
+// Step 2: Pull --rebase to handle queued changelog runs (prevents non-fast-forward)
+const pullResult = spawnSync('git', ['pull', '--rebase', 'origin', 'main'], { encoding: 'utf8' });
+if (pullResult.status !== 0) {
+  console.warn(`⚠ Pull --rebase failed (may be first push): ${pullResult.stderr || ''}`);
+  // Non-fatal: first changelog push after a user push won't need rebase
+}
+
+// Step 3: Push (separate error handling — don't swallow push failures)
 const pushResult = spawnSync('git', ['push'], { encoding: 'utf8' });
 if (pushResult.status !== 0) {
   const errMsg = pushResult.stderr || pushResult.stdout || 'Unknown push error';

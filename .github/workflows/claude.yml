@@ -87,10 +87,7 @@ on:
   # To enable: uncomment above and add to job 'if' condition:
   #   (github.event_name == 'schedule' && github.event.inputs.max_turns <= 5 && github.event.inputs.model == 'claude-haiku-4-5-20251001') ||
 
-# Prevent concurrent runs
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
-  cancel-in-progress: true
+# NOTE: Concurrency moved to per-job level (changelog must queue, not cancel)
 
 permissions:
   id-token: write
@@ -106,6 +103,9 @@ jobs:
   # Security: Only org members can trigger via comment. Manual dispatch requires write access.
   # PR open trigger requires 'claude' label to opt-in (prevents abuse on public repos).
   claude:
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      cancel-in-progress: true  # New push invalidates old review
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude review') && github.event.comment.author_association != 'NONE') ||
@@ -228,6 +228,9 @@ jobs:
   # ============================================
   changelog:
     name: Update CHANGELOG & Version
+    concurrency:
+      group: changelog-${{ github.ref }}
+      cancel-in-progress: false  # QUEUE, never cancel — prevents missed CHANGELOG entries
     if: |
       github.event_name == 'push' &&
       github.actor != 'github-actions[bot]' &&
