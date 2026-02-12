@@ -398,7 +398,7 @@ Claude dynamically composes and posts replies. Every reply is unique. Claude rea
      - Claude writes a unique reply following the tone guidelines below
      - Include the URL from the user's post text
 6. **Auto-post via X API** -- NO user approval needed. If a target post has traction (any engagement: likes > 0 OR replies > 0 OR views > 50), post immediately:
-   - `python skills/x/scripts/x_client.py post {tweet_id} "{reply text with SHARE_URL}"`
+   - `python skills/x/scripts/x.py post {tweet_id} "{reply text with SHARE_URL}"`
    - X API client posts via HTTP API in 1-2 seconds -- no browser needed
    - **Fallback (if X API client fails):** use Chrome MCP browser posting (see Chrome MCP section)
    - **ALWAYS include the `share_url`** from config
@@ -469,21 +469,18 @@ Replace `{SHARE_URL}` with the actual URL from your config at runtime.
 
 ---
 
-## X API client Backend (Primary -- Fast API Posting)
+## X API Backend (Primary -- Fast API Posting)
 
-X API client is the primary backend for searching and posting. It uses HTTP API calls (1-2 sec/post) instead of browser automation (17 sec/post).
+The unified `x.py` script handles all X API operations. It uses HTTP API calls (1-2 sec/post) instead of browser automation (17 sec/post).
 
 ### Setup (One-Time)
 
 ```bash
-# Option A: Interactive login (saves cookies automatically)
-python skills/x/scripts/x_client.py setup
-
-# Option B: Manual cookie input (from Cookie-Editor extension)
-python skills/x/scripts/x_client.py cookies <ct0> <auth_token>
+# Manual cookie input (from Cookie-Editor extension)
+python skills/x/scripts/x.py cookies <ct0> <auth_token>
 
 # Verify auth works
-python skills/x/scripts/x_client.py test
+python skills/x/scripts/x.py test
 ```
 
 Cookies saved to `skills/x/data/cookies.json` (gitignored).
@@ -491,21 +488,21 @@ Cookies saved to `skills/x/data/cookies.json` (gitignored).
 ### Search (X API)
 
 ```bash
-python skills/x/scripts/x_client.py search "\"can't afford\" API AI min_faves:10"
+python skills/x/scripts/x.py search "\"can't afford\" API AI min_faves:10"
 # Returns JSON: { "tweets": [{ "id", "text", "author", "likes", "retweets", "views", "url" }] }
 ```
 
 ### Post Reply (X API)
 
 ```bash
-python skills/x/scripts/x_client.py post "TWEET_ID" "reply text with {SHARE_URL}"
+python skills/x/scripts/x.py post "TWEET_ID" "reply text with {SHARE_URL}"
 # Returns JSON: { "success": true, "tweet_id": "..." }
 ```
 
 ### Post Original Tweet (X API)
 
 ```bash
-python skills/x/scripts/x_client.py tweet "tweet text with optional URL"
+python skills/x/scripts/x.py tweet "tweet text with optional URL"
 # Returns JSON: { "success": true, "tweet_id": "...", "url": "..." }
 ```
 
@@ -517,10 +514,10 @@ search -> pick target -> compose reply -> POST -> next target -> compose -> POST
 
 No browser needed. Each post takes 1-2 seconds. Agent moves IMMEDIATELY to next target after posting.
 
-1. `x_client.py search "{query}"` -> get list of targets
+1. `x.py search "{query}"` -> get list of targets
 2. `x.py check {url}` -> skip already-replied
 3. Claude composes unique reply (with X post URL, NOT gist)
-4. `x_client.py post {tweet_id} "{reply}"` -> posts instantly
+4. `x.py post {tweet_id} "{reply}"` -> posts instantly
 5. `x.py log {url} {author} {text} {topic} {query} {reach}` -> track
 6. **IMMEDIATELY move to next target** -- no waiting, no screenshots, no page loads
 
@@ -748,7 +745,7 @@ Show usage help.
 
 ## Auto-Feed Integration
 
-The scraper (`scraper.py`) aggregates multiple sources into `data/feed.json`:
+The scraper (`x.py scrape`) aggregates multiple sources into `data/feed.json`:
 
 ### Data Sources
 
@@ -834,13 +831,13 @@ The scraper (`scraper.py`) aggregates multiple sources into `data/feed.json`:
 
 ```bash
 # Manual run
-python skills/x/scripts/scraper.py scrape        # All sources -> feed.json
-python skills/x/scripts/scraper.py feed           # Show current feed + news
-python skills/x/scripts/scraper.py status         # Scheduler + feed status
+python skills/x/scripts/x.py scrape              # All sources -> feed.json
+python skills/x/scripts/x.py feed                # Show current feed + news
+python skills/x/scripts/x.py scraper-status      # Scheduler + feed status
 
 # Scheduler (Windows Task Scheduler)
-python skills/x/scripts/scraper.py install 6      # Run every 6 hours
-python skills/x/scripts/scraper.py uninstall      # Remove scheduler
+python skills/x/scripts/x.py scraper-install 6   # Run every 6 hours
+python skills/x/scripts/x.py scraper-uninstall   # Remove scheduler
 ```
 
 ---
@@ -853,30 +850,30 @@ Fully automated pipeline: scrape all sources -> generate queries -> find targets
 
 When Claude receives `/x auto`, it:
 
-1. **Runs scraper** -- `python scraper.py scrape` to refresh feed.json (GitHub + RSS + Messari + changelogs)
+1. **Runs scraper** -- `python x.py scrape` to refresh feed.json (GitHub + RSS + Messari + changelogs)
 2. **Loads feed** -- reads pre-computed queries + news from feed.json
 3. **Executes post mode** -- navigates X via Chrome MCP, finds targets, composes unique replies, posts via X API client
 4. **Reports results** -- logs everything to history.json
 
 ### Auto-Post Script
 
-For true background automation, use `auto-post.py`:
+For true background automation, use the `auto` subcommand:
 
 ```bash
 # Reply mode (default) -- find targets, post replies
-python skills/x/scripts/auto-post.py --posts 5 --model sonnet
+python skills/x/scripts/x.py auto --posts 5 --model sonnet
 
 # Compose mode -- create original tweet from news + distribute
-python skills/x/scripts/auto-post.py --mode compose --posts 3 --model sonnet
+python skills/x/scripts/x.py auto --mode compose --posts 3 --model sonnet
 
 # Dry run -- scrape + research, no posting
-python skills/x/scripts/auto-post.py --dry-run
+python skills/x/scripts/x.py auto --dry-run
 
 # Install scheduler (runs every 12h)
-python skills/x/scripts/auto-post.py install 12
+python skills/x/scripts/x.py poster-install 12
 
 # Check status
-python skills/x/scripts/auto-post.py status
+python skills/x/scripts/x.py poster-status
 ```
 
 **Model routing for auto mode (MANDATORY):**
@@ -895,18 +892,18 @@ python skills/x/scripts/auto-post.py status
 The scraper scheduler runs as a Windows Task Scheduler job:
 
 ```
-Every 6h: python scraper.py scrape              # Updates feed.json (no LLM)
-Every 12h: python auto-post.py --posts 5 ...    # Headless Claude posts using fresh feed
+Every 6h: python x.py scrape                    # Updates feed.json (no LLM)
+Every 12h: python x.py auto --posts 5 ...       # Headless Claude posts using fresh feed
 ```
 
 To install both:
 
 ```bash
 # Install scraper (every 6h)
-python skills/x/scripts/scraper.py install 6
+python skills/x/scripts/x.py scraper-install 6
 
 # Install headless poster (every 12h)
-python skills/x/scripts/auto-post.py install 12
+python skills/x/scripts/x.py poster-install 12
 ```
 
 ### Safety in Auto Mode
@@ -947,8 +944,8 @@ python skills/x/scripts/x.py rate-check
 ## Implementation Notes
 
 - **Main context, not forked** -- This skill runs in the main Opus context for dynamic reasoning. No `context: fork` in frontmatter.
-- **X API client primary, Chrome MCP fallback** -- All posting goes through X API (fast HTTP calls). Chrome MCP used for visual research and when X API client auth expires.
-- **Cookies in skills/x/data/** -- X API client cookies stored in `cookies.json`, gitignored. Setup via `x_client.py setup` or `cookies` command.
+- **X API primary, Chrome MCP fallback** -- All posting goes through X API (fast HTTP calls). Chrome MCP used for visual research and when auth expires.
+- **Cookies in skills/x/data/** -- Cookies stored in `cookies.json`, gitignored. Setup via `x.py cookies` command.
 - **Config auto-generated** -- Config auto-generates from .env vars on first run. No manual config.json creation needed.
 - **Share URL mandatory** -- All replies MUST include the `share_url` from config. Never link to source repos directly.
 - **No nested teams** -- If spawning N agents via Task(), those are regular subagents, not nested teams.

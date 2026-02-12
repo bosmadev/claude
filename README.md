@@ -222,7 +222,7 @@ Automated X/Twitter outreach with three modes:
 
 **News sources:** Google News RSS (AI, coding, crypto), Google Cloud feeds, GitHub trending repos + cost-related issues + releases, Messari API (optional), markdown changelogs (Claude Code, Next.js, VS Code).
 
-**Scraper scheduler:** `python skills/x/scripts/scraper.py install [HOURS]` installs a Windows Task Scheduler job to keep `feed.json` fresh (default: every 6 hours).
+**Scraper scheduler:** `python skills/x/scripts/x.py scraper-install [HOURS]` installs a Windows Task Scheduler job to keep `feed.json` fresh (default: every 6 hours).
 
 ### /help - Help & Documentation
 
