@@ -12,7 +12,7 @@
 ├── hooks/                      # Claude Code hook handlers (14 files)
 ├── output-styles/              # Response formatting styles
 ├── scripts/                    # CLI utilities (30 scripts)
-├── skills/                     # Skill definitions (/commands, 16 skills)
+├── skills/                     # Skill definitions (/commands, 17 skills)
 ├── CLAUDE.md                   # Core patterns (this file)
 ├── settings.json               # Hook registrations
 └── README.md                   # Public-facing documentation
@@ -366,7 +366,7 @@ When you receive a `shutdown_request` message (JSON with `type: "shutdown_reques
 
 For complete skill command tables with all argument combinations, see [README.md > Skills Reference](./README.md#skills-reference).
 
-16 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/serena-workflow`, `/init-repo`
+17 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/serena-workflow`, `/x`
 
 ## Web Research Fallback Chain
 
@@ -506,6 +506,7 @@ All hooks registered in `settings.json`:
 | PostToolUse | Task | `ralph.py agent-tracker` | 10s | Track agent progress |
 | PostToolUse | Skill | `guards.py skill-validator` | 5s | Validate skill invocation |
 | PostToolUse | Skill | `post-review.py hook` | 30s | Post-review processing |
+| PostToolUse | computer | `guards.py x-post-check` | 5s | Log /x skill Chrome MCP clicks |
 | UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | Parse skill commands |
 | UserPromptSubmit | ^/start | `guards.py skill-parser` | 5s | Parse /start command args |
 | UserPromptSubmit | - | `guards.py plan-comments` | 5s | Detect USER comments in plans |

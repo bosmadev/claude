@@ -20,6 +20,7 @@ Usage:
   python3 guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
   python3 guards.py quality-deprecation  # PostToolUse: Warn about /quality deprecation
   python3 guards.py fs-guard             # PreToolUse: Block new file/folder creation and deletion
+  python3 guards.py x-post-check         # PostToolUse: Log /x skill Chrome MCP clicks
 """
 
 import json
@@ -1084,6 +1085,50 @@ State file created: {state_path}"""
 
 
 # =============================================================================
+# X Post Check (PostToolUse: computer) -- merged from x-guard.py
+# =============================================================================
+
+def x_post_check() -> None:
+    """PostToolUse hook for computer tool during /x skill.
+
+    Logs click actions when .x-session flag exists.
+    Only activates during active /x skill sessions.
+    """
+    try:
+        hook_input = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, TypeError):
+        sys.exit(0)
+
+    tool_name = hook_input.get("tool_name", "")
+    if tool_name != "computer":
+        sys.exit(0)
+
+    tool_input = hook_input.get("tool_input", {})
+    action = tool_input.get("action", "")
+
+    if action != "left_click":
+        sys.exit(0)
+
+    # Check for .x-session flag file
+    session_flag = Path.cwd() / ".claude" / ".x-session"
+    if not session_flag.exists():
+        sys.exit(0)
+
+    # Log the click action during /x skill
+    coordinate = tool_input.get("coordinate", [])
+    log_file = Path.home() / ".claude" / "security" / "x-clicks.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with open(log_file, "a") as f:
+            f.write(f"CLICK at {coordinate}\n")
+    except OSError:
+        pass
+
+    sys.exit(0)
+
+
+# =============================================================================
 # FS Guard (PreToolUse: Write, Bash)
 # =============================================================================
 
@@ -1244,6 +1289,8 @@ def main() -> None:
         quality_deprecation_hook()
     elif mode == "fs-guard":
         fs_guard()
+    elif mode == "x-post-check":
+        x_post_check()
     else:
         # Unknown mode - exit gracefully to avoid hook errors
         sys.exit(0)

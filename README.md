@@ -8,7 +8,7 @@ Production [Claude Code](https://docs.anthropic.com/en/docs/claude-code) configu
 
 | Category | Count | Highlights |
 |----------|-------|------------|
-| Skills | 16 | `/start`, `/review`, `/commit`, `/openpr`, `/repotodo`, `/token`, and more |
+| Skills | 17 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/repotodo`, `/token`, and more |
 | Agents | 25 | Specialist (Opus), reviewer (Sonnet), ops (Sonnet), git coordinator (Haiku) |
 | Hooks | 14 | Security gate, auto-allow, change tracking, Ralph orchestration, ACID state |
 | Scripts | 30+ | Token management, Chrome MCP fix, statusline, session repair, PR aggregation |
@@ -197,6 +197,20 @@ Manages Claude Code behavior rules via direct `settings.json` modifications. Tra
 | `/chats` or `/chats list` | List recent sessions with metadata |
 | `/chats clean` | Clean orphaned session artifacts |
 | `/chats help` | Show usage |
+
+### /x - X/Twitter Outreach
+
+| Command | Description |
+|---------|-------------|
+| `/x research {TOPIC}` | Explore X queries, rank by engagement |
+| `/x research [N] [model] {TOPIC}` | N parallel agents for research |
+| `/x post {TEXT with URL}` | Compose unique replies, post via Twikit API |
+| `/x post [N] [model] {TEXT}` | N parallel agents for posting |
+| `/x history` | Show posting history |
+| `/x status` | Show daily/weekly counts + reach |
+| `/x help` | Show usage |
+
+Automated X/Twitter outreach. Claude dynamically searches, composes unique replies, and posts via Twikit API (1-2 sec/post) with Chrome MCP as fallback. Requires `skills/x/data/config.json` with `share_url`, `handle`, `project_name`, `project_desc`.
 
 ### /help - Help & Documentation
 

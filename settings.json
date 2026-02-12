@@ -557,6 +557,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "computer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py x-post-check",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
