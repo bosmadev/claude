@@ -60,6 +60,12 @@ Claude reads this config at skill startup and uses `{SHARE_URL}` in all generate
 | `post [N] [model] {TEXT with URL}` | Compose unique replies, post via Twikit API | `/x post 10 opus Tell users about our free tool {SHARE_URL}` |
 | `history` | Show posting history | `/x history` |
 | `status` | Show daily/weekly counts + reach | `/x status` |
+| `scrape` | Run GitHub scraper now, update feed.json | `/x scrape` |
+| `feed` | Show current auto-generated feed | `/x feed` |
+| `scheduler install [N]` | Install auto-scraper (every Nh, default 6) | `/x scheduler install 4` |
+| `scheduler status` | Show scheduler + feed freshness | `/x scheduler status` |
+| `scheduler uninstall` | Remove auto-scraper | `/x scheduler uninstall` |
+| `auto [N] [model]` | Headless auto-run: scrape + research + post | `/x auto 5 sonnet` |
 | `help` | Show usage help | `/x help` |
 
 ### Model Selection Syntax
@@ -647,6 +653,127 @@ Show usage help.
   - 10 replies per session
   - 30 replies per day
 ```
+
+---
+
+## Auto-Feed Integration
+
+The GitHub scraper (`scraper.py`) generates `data/feed.json` with pre-computed X search queries from live GitHub ecosystem data. Claude uses this feed as a head start for both research and post modes.
+
+### How Claude Uses the Feed
+
+**In `/x research`:**
+1. Check `data/feed.json` -- if exists and fresh (< 12h old), load pre-computed queries
+2. Use feed queries as the FIRST batch (already prioritized P1-P5)
+3. Generate additional dynamic queries based on the topic
+4. Report combined results (label feed vs dynamic queries)
+
+**In `/x post`:**
+1. Load feed queries (P1 first) as initial search set
+2. Add dynamic queries from the post text
+3. Feed queries run faster -- no query brainstorming needed
+4. Still generate unique replies per target (feed provides queries, not templates)
+
+**In `/x auto`:**
+1. Run scraper first (update feed.json)
+2. Load fresh feed queries
+3. Execute post mode with feed queries
+4. All automatic -- no human in the loop
+
+### Feed JSON Schema
+
+```json
+{
+  "last_updated": "2026-02-12T15:00:00Z",
+  "repos": [{"name": "owner/repo", "stars": 1234, "topics": [...]}],
+  "issues": [{"title": "...", "repo": "...", "author": "..."}],
+  "releases": [{"repo": "ollama/ollama", "tag": "v0.5.0"}],
+  "queries": [
+    {
+      "query": "\"can't afford\" API AI min_faves:5 within_time:3d",
+      "priority": "P1",
+      "source": "standard|github_trending|github_issues|github_releases",
+      "context": "Why this query matters"
+    }
+  ],
+  "stats": {"repos_found": 25, "issues_found": 15, "queries_generated": 32}
+}
+```
+
+### Scraper Commands
+
+```bash
+# Manual run
+python skills/x/scripts/scraper.py scrape        # GitHub API → feed.json
+python skills/x/scripts/scraper.py feed           # Show current feed
+python skills/x/scripts/scraper.py status         # Scheduler + feed status
+
+# Scheduler (Windows Task Scheduler)
+python skills/x/scripts/scraper.py install 6      # Run every 6 hours
+python skills/x/scripts/scraper.py uninstall      # Remove scheduler
+```
+
+---
+
+## Headless Auto Mode: `/x auto [N] [model]`
+
+Fully automated pipeline: scrape GitHub → generate queries → find targets → compose replies → post. Runs headless via `claude -p` (non-interactive).
+
+### How It Works
+
+When Claude receives `/x auto`, it:
+
+1. **Runs scraper** -- `python scraper.py scrape` to refresh feed.json
+2. **Loads feed** -- reads pre-computed queries from feed.json
+3. **Executes post mode** -- navigates X via Chrome MCP, finds targets, composes unique replies, posts via Twikit
+4. **Reports results** -- logs everything to history.json
+
+### Headless Execution via `claude -p`
+
+For true background automation (no terminal needed), the scraper can invoke Claude Code headlessly:
+
+```bash
+# From scheduler or cron -- runs Claude with Sonnet (budget-conscious)
+claude -p "/x auto 3 sonnet" --model claude-sonnet-4-5-20250929 --allowedTools "Bash,Read,Write,Edit,Glob,Grep,WebFetch,mcp__claude-in-chrome__*,mcp__playwriter__*"
+```
+
+**Model routing for auto mode (MANDATORY):**
+
+| Component | Model | Why |
+|-----------|-------|-----|
+| Scraper (GitHub API) | Python script | No LLM needed -- pure HTTP calls |
+| Research (query execution) | Sonnet | Good enough for navigating X search |
+| Reply composition | Sonnet | Adequate for human-tone short replies |
+| Post execution | Haiku | Simple Twikit API calls, no reasoning |
+
+**NEVER use Opus for auto mode** -- it runs on a schedule and would drain weekly Opus quota. Sonnet handles all /x tasks well. Use Haiku for simple posting loops.
+
+### Scheduler + Headless Integration
+
+The scraper scheduler runs as a Windows Task Scheduler job:
+
+```
+Every 6h: python scraper.py scrape              # Updates feed.json (no LLM)
+Every 12h: claude -p "/x auto 3 sonnet" ...     # Headless Claude posts using fresh feed
+```
+
+To install both:
+
+```bash
+# Install scraper (every 6h)
+python skills/x/scripts/scraper.py install 6
+
+# Install headless poster (every 12h) -- via schtasks directly
+schtasks /create /tn "XSkillAutoPost" /tr "claude -p \"/x auto 3 sonnet\" --model claude-sonnet-4-5-20250929" /sc HOURLY /mo 12 /f
+```
+
+### Safety in Auto Mode
+
+- Rate limits still enforced (10/session, 30/day via x.py)
+- Dedup still enforced (SHA256 of target URL)
+- Human tone guidelines still apply (Sonnet follows SKILL.md instructions)
+- All posts logged to history.json for review
+- Feed freshness check: skip if feed.json > 24h old (scraper probably failed)
 
 ---
 
