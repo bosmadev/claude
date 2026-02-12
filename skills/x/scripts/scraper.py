@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """
-GitHub trending scraper for /x skill -- auto-generates X search queries
-from GitHub ecosystem signals. Zero external dependencies (stdlib only).
+Scraper for /x skill -- aggregates GitHub, news feeds, and crypto data
+into feed.json for X/Twitter outreach. Zero external dependencies (stdlib only).
+
+Sources:
+  - GitHub API (via gh CLI for 5000 req/hr, urllib fallback 60/hr)
+  - Google News RSS (AI, coding, crypto)
+  - Google Cloud release feeds (Gemini, Vertex AI)
+  - Messari API (crypto news, needs MESSARI_API_KEY)
+  - Markdown changelogs (Claude Code, etc.)
 
 Usage:
-  python scraper.py scrape              # Scrape GitHub API → generate feed.json
+  python scraper.py scrape              # Full scrape -> feed.json
   python scraper.py feed                # Show current feed
   python scraper.py install [HOURS]     # Install Windows Task Scheduler (default: 6h)
   python scraper.py uninstall           # Remove scheduler
@@ -12,18 +19,114 @@ Usage:
 """
 
 import argparse
+import html as html_mod
 import json
+import os
+import re
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 GITHUB_API = "https://api.github.com"
 TASK_NAME = "XSkillScraper"
 USER_AGENT = "x-skill-scraper/1.0"
+
+
+# -- News Source Configuration ------------------------------------------------
+
+NEWS_RSS_FEEDS = [
+    # AI & Coding (Google News RSS)
+    {
+        "url": "https://news.google.com/rss/search?q=AI+artificial+intelligence+LLM&hl=en-US&gl=US&ceid=US:en",
+        "source": "google_news_ai",
+        "category": "ai",
+        "max_items": 10,
+    },
+    {
+        "url": "https://news.google.com/rss/search?q=vscode+%22visual+studio+code%22&hl=en-US&gl=US&ceid=US:en",
+        "source": "google_news_vscode",
+        "category": "coding",
+        "max_items": 5,
+    },
+    {
+        "url": "https://news.google.com/rss/search?q=react+nextjs+frontend&hl=en-US&gl=US&ceid=US:en",
+        "source": "google_news_react",
+        "category": "coding",
+        "max_items": 5,
+    },
+    {
+        "url": "https://news.google.com/rss/search?q=%22azure+AI%22+foundry&hl=en-US&gl=US&ceid=US:en",
+        "source": "google_news_azure",
+        "category": "ai",
+        "max_items": 5,
+    },
+    # Google Cloud product feeds (Atom XML)
+    {
+        "url": "https://cloud.google.com/feeds/gemini-code-assist-release-notes.xml",
+        "source": "gemini_code_assist",
+        "category": "ai",
+        "max_items": 5,
+    },
+    {
+        "url": "https://cloud.google.com/feeds/vertex-ai-release-notes.xml",
+        "source": "vertex_ai",
+        "category": "ai",
+        "max_items": 5,
+    },
+    # Crypto
+    {
+        "url": "https://news.google.com/rss/search?q=cryptocurrency+bitcoin+ethereum&hl=en-US&gl=US&ceid=US:en",
+        "source": "google_news_crypto",
+        "category": "crypto",
+        "max_items": 10,
+    },
+    {
+        "url": "https://cryptonews.com/news/feed/",
+        "source": "cryptonews",
+        "category": "crypto",
+        "max_items": 10,
+    },
+    # Dev blogs (RSS where available)
+    {
+        "url": "https://nextjs.org/feed.xml",
+        "source": "nextjs_blog",
+        "category": "coding",
+        "max_items": 5,
+    },
+    {
+        "url": "https://code.visualstudio.com/feed.xml",
+        "source": "vscode_updates",
+        "category": "coding",
+        "max_items": 5,
+    },
+]
+
+# URLs too dynamic for regex scraping -- Claude checks via Chrome MCP
+BROWSE_HINTS = [
+    {"url": "https://ai.google.dev/changelog", "source": "gemini_api", "category": "ai"},
+    {"url": "https://jules.google.com/changelog", "source": "jules", "category": "ai"},
+    {"url": "https://newsbit.nl", "source": "newsbit", "category": "ai"},
+    {"url": "https://blog.kilo.ai", "source": "kilo_ai", "category": "ai"},
+    {"url": "https://artificialanalysis.ai", "source": "artificial_analysis", "category": "ai"},
+    {"url": "https://finance.yahoo.com", "source": "yahoo_finance", "category": "crypto"},
+]
+
+CHANGELOGS = [
+    {
+        "url": "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md",
+        "source": "claude_code",
+        "category": "coding",
+        "max_entries": 3,
+    },
+]
+
+
+# -- Utilities ----------------------------------------------------------------
 
 
 def get_data_dir():
@@ -36,8 +139,84 @@ def get_feed_path():
     return get_data_dir() / "feed.json"
 
 
+def load_env_var(name):
+    """Load env var from system env or skills/x/.env file"""
+    val = os.environ.get(name)
+    if val:
+        return val
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith(f"{name}="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
+
+def load_config():
+    """Load config from config.json, auto-generate from .env if missing"""
+    config_path = get_data_dir() / "config.json"
+
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    # Auto-generate from .env or defaults
+    config = {
+        "share_url": load_env_var("X_SHARE_URL") or "",
+        "handle": load_env_var("X_HANDLE") or "",
+        "project_name": load_env_var("X_PROJECT_NAME") or "",
+        "project_desc": load_env_var("X_PROJECT_DESC") or "",
+    }
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+
+    if not config["share_url"]:
+        print("NOTE: No share_url configured. Set X_SHARE_URL in .env or pass URL in /x post.")
+
+    return config
+
+
+def fetch_url(url, headers=None, timeout=15):
+    """Fetch URL content as text, return None on failure"""
+    hdrs = {"User-Agent": USER_AGENT}
+    if headers:
+        hdrs.update(headers)
+    req = urllib.request.Request(url, headers=hdrs)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"  WARN: Failed to fetch {url[:80]}: {e}")
+        return None
+
+
 def github_api(endpoint, params=None):
-    """Call GitHub REST API (no auth needed, 60 req/hr limit)"""
+    """Call GitHub API -- tries gh CLI (5000/hr) then urllib (60/hr)"""
+    # Try authenticated gh CLI first
+    gh_url = endpoint
+    if params:
+        gh_url += "?" + urllib.parse.urlencode(params)
+    try:
+        result = subprocess.run(
+            ["gh", "api", gh_url, "--cache", "1h"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout:
+            return json.loads(result.stdout)
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        pass
+
+    # Fallback: unauthenticated urllib (60 req/hr)
     url = f"{GITHUB_API}{endpoint}"
     if params:
         query = urllib.parse.urlencode(params)
@@ -56,7 +235,7 @@ def github_api(endpoint, params=None):
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         if e.code == 403:
-            print("  WARN: GitHub API rate limited (60 req/hr). Wait and retry.")
+            print("  WARN: GitHub API rate limited. Try: gh auth login")
             return None
         if e.code == 422:
             print(f"  WARN: GitHub API rejected query: {e.read().decode()[:200]}")
@@ -68,7 +247,97 @@ def github_api(endpoint, params=None):
         return None
 
 
-# ─── Scrapers ────────────────────────────────────────────────────────────────
+def parse_feed(xml_text):
+    """Parse RSS 2.0 or Atom feed XML into list of dicts"""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+
+    items = []
+
+    # RSS 2.0: rss/channel/item
+    for item in root.iter("item"):
+        items.append(
+            {
+                "title": _xml_text(item, "title"),
+                "url": _xml_text(item, "link"),
+                "summary": _strip_html(_xml_text(item, "description"))[:300],
+                "published": _xml_text(item, "pubDate"),
+            }
+        )
+
+    if items:
+        return items
+
+    # Atom with namespace
+    atom_ns = "{http://www.w3.org/2005/Atom}"
+    for entry in root.iter(f"{atom_ns}entry"):
+        link = entry.find(f"{atom_ns}link")
+        url = link.get("href", "") if link is not None else ""
+        items.append(
+            {
+                "title": _xml_text(entry, f"{atom_ns}title"),
+                "url": url,
+                "summary": _strip_html(_xml_text(entry, f"{atom_ns}summary"))[:300],
+                "published": _xml_text(entry, f"{atom_ns}updated"),
+            }
+        )
+
+    if items:
+        return items
+
+    # Atom without namespace prefix
+    for entry in root.iter("entry"):
+        link = entry.find("link")
+        url = link.get("href", "") if link is not None else ""
+        items.append(
+            {
+                "title": _xml_text(entry, "title"),
+                "url": url,
+                "summary": _strip_html(_xml_text(entry, "summary"))[:300],
+                "published": _xml_text(entry, "updated"),
+            }
+        )
+
+    return items
+
+
+def _xml_text(parent, tag):
+    el = parent.find(tag)
+    return (el.text or "").strip() if el is not None else ""
+
+
+def _strip_html(text):
+    """Remove HTML tags and decode entities"""
+    text = re.sub(r"<[^>]+>", "", text)
+    return html_mod.unescape(text).strip()
+
+
+def _extract_terms(text):
+    """Extract meaningful search terms from a title"""
+    stop = {
+        "the", "a", "an", "in", "on", "at", "to", "for", "of", "with", "and",
+        "or", "is", "are", "was", "were", "be", "been", "has", "have", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might",
+        "can", "new", "now", "just", "how", "what", "when", "where", "why",
+        "who", "which", "this", "that", "these", "those", "it", "its", "not",
+        "all", "some", "more", "most", "very", "much", "about", "also", "than",
+        "into", "from", "over", "after", "before", "between", "through", "out",
+        "up", "down", "been", "being", "other", "each", "every", "both", "few",
+    }
+    words = re.findall(r"\b[a-zA-Z0-9.]+\b", text.lower())
+    terms = [w for w in words if w not in stop and len(w) > 2]
+    seen = set()
+    unique = []
+    for t in terms:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+    return unique[:5]
+
+
+# -- GitHub Scrapers ----------------------------------------------------------
 
 
 def scrape_trending_repos():
@@ -77,33 +346,28 @@ def scrape_trending_repos():
     month_ago = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
     searches = [
-        # New AI repos this week with traction
         {
             "q": f"topic:ai created:>{week_ago} stars:>5",
             "sort": "stars",
             "order": "desc",
             "per_page": 15,
         },
-        # Free/open LLM tools recently pushed
         {
             "q": f"(free OR self-hosted OR local) topic:llm pushed:>{week_ago} stars:>50",
             "sort": "updated",
             "per_page": 10,
         },
-        # Inference frameworks actively maintained
         {
             "q": f"(ollama OR vllm OR localai OR litellm OR jan) in:name stars:>100 pushed:>{month_ago}",
             "sort": "stars",
             "per_page": 10,
         },
-        # Budget/cost-aware AI tools
         {
             "q": "topic:ai (free-tier OR budget OR cost OR cheap) stars:>10",
             "sort": "stars",
             "order": "desc",
             "per_page": 10,
         },
-        # New CLI tools for AI
         {
             "q": f"(cli OR terminal) (ai OR llm OR gpt) created:>{month_ago} stars:>20",
             "sort": "stars",
@@ -139,7 +403,6 @@ def scrape_trending_repos():
                 }
             )
 
-    # Sort by stars descending
     repos.sort(key=lambda r: r["stars"], reverse=True)
     return repos
 
@@ -160,7 +423,7 @@ def scrape_cost_issues():
             "per_page": 10,
         },
         {
-            "q": '"can\'t afford" OR "student discount" (api OR ai OR llm) is:issue',
+            "q": "\"can't afford\" OR \"student discount\" (api OR ai OR llm) is:issue",
             "sort": "created",
             "order": "desc",
             "per_page": 10,
@@ -181,7 +444,6 @@ def scrape_cost_issues():
                 continue
             seen.add(url)
 
-            # Extract repo from URL: github.com/owner/repo/issues/N
             parts = url.split("/")
             repo = "/".join(parts[3:5]) if len(parts) >= 5 else ""
 
@@ -201,7 +463,6 @@ def scrape_cost_issues():
 
 def scrape_new_releases():
     """Find recent releases of popular free AI tools"""
-    # Check releases for key repos
     key_repos = [
         "ollama/ollama",
         "vllm-project/vllm",
@@ -222,7 +483,6 @@ def scrape_new_releases():
         rel = data[0]
         published = rel.get("published_at", "")
 
-        # Only include releases from last 7 days
         if published:
             try:
                 pub_dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
@@ -244,14 +504,137 @@ def scrape_new_releases():
     return releases
 
 
-# ─── Query Generator ─────────────────────────────────────────────────────────
+# -- News Scrapers ------------------------------------------------------------
 
 
-def generate_x_queries(repos, issues, releases):
-    """Generate X search queries from scraped GitHub data"""
+def scrape_news_feeds():
+    """Scrape RSS/Atom news feeds from configured sources"""
+    all_items = []
+
+    for feed_cfg in NEWS_RSS_FEEDS:
+        url = feed_cfg["url"]
+        source = feed_cfg["source"]
+        category = feed_cfg["category"]
+        max_items = feed_cfg.get("max_items", 10)
+
+        xml_text = fetch_url(url)
+        if not xml_text:
+            continue
+
+        items = parse_feed(xml_text)
+        for item in items[:max_items]:
+            if not item.get("title"):
+                continue
+            all_items.append(
+                {
+                    "title": item["title"][:200],
+                    "summary": item.get("summary", "")[:300],
+                    "url": item.get("url", ""),
+                    "source": source,
+                    "category": category,
+                    "published": item.get("published", ""),
+                }
+            )
+
+    return all_items
+
+
+def scrape_messari():
+    """Fetch crypto news from Messari API (needs MESSARI_API_KEY)"""
+    api_key = load_env_var("MESSARI_API_KEY")
+    if not api_key:
+        print("  SKIP: MESSARI_API_KEY not set (add to skills/x/.env)")
+        return []
+
+    url = (
+        "https://data.messari.io/api/v1/news"
+        "?fields=id,title,content,references,author,published_at,tags"
+        "&page[size]=20"
+    )
+    content = fetch_url(url, headers={"x-messari-api-key": api_key})
+    if not content:
+        return []
+
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        print("  WARN: Messari returned invalid JSON")
+        return []
+
+    items = []
+    for article in data.get("data", []):
+        # Filter to last 3 days
+        published = article.get("published_at", "")
+        if published:
+            try:
+                pub_dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
+                if pub_dt < datetime.now(timezone.utc) - timedelta(days=3):
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+        refs = article.get("references") or []
+        ref_url = refs[0].get("url", "") if refs else ""
+
+        items.append(
+            {
+                "title": (article.get("title") or "")[:200],
+                "summary": _strip_html(article.get("content") or "")[:300],
+                "url": ref_url,
+                "source": "messari",
+                "category": "crypto",
+                "published": published,
+                "tags": [t.get("name", "") for t in (article.get("tags") or [])[:5]],
+            }
+        )
+
+    return items
+
+
+def scrape_markdown_changelogs():
+    """Scrape markdown changelogs (e.g., Claude Code CHANGELOG.md)"""
+    items = []
+    for cl in CHANGELOGS:
+        text = fetch_url(cl["url"])
+        if not text:
+            continue
+
+        max_entries = cl.get("max_entries", 3)
+        sections = re.split(r"^## ", text, flags=re.MULTILINE)[1 : max_entries + 1]
+
+        for section in sections:
+            lines = section.strip().split("\n")
+            heading = lines[0].strip()
+            body = "\n".join(lines[1:6]).strip()[:300]
+
+            # Convert raw.githubusercontent.com to github.com blob URL
+            display_url = cl["url"]
+            display_url = display_url.replace(
+                "raw.githubusercontent.com", "github.com"
+            ).replace("/main/", "/blob/main/")
+
+            items.append(
+                {
+                    "title": f"{cl['source'].replace('_', ' ').title()}: {heading}",
+                    "summary": _strip_html(body),
+                    "url": display_url,
+                    "source": cl["source"],
+                    "category": cl["category"],
+                    "published": "",
+                }
+            )
+
+    return items
+
+
+# -- Query Generator ----------------------------------------------------------
+
+
+def generate_x_queries(repos, issues, releases, news=None):
+    """Generate X search queries from all scraped data"""
     queries = []
 
-    # ── Standard high-value queries (always included) ──
+    # -- Standard high-value queries (always included) --
     standard = [
         {
             "query": "\"can't afford\" (API OR AI OR LLM) min_faves:5 within_time:3d",
@@ -304,12 +687,11 @@ def generate_x_queries(repos, issues, releases):
     ]
     queries.extend(standard)
 
-    # ── From trending repos ──
+    # -- From trending repos --
     for repo in repos[:15]:
         name = repo["name"].split("/")[-1]
         topics = repo.get("topics", [])
 
-        # People tweeting about cost-conscious tools
         if any(
             t in topics for t in ["free", "self-hosted", "local", "budget", "inference"]
         ):
@@ -322,7 +704,6 @@ def generate_x_queries(repos, issues, releases):
                 }
             )
 
-        # Discussions about popular repos
         if repo["stars"] > 500:
             queries.append(
                 {
@@ -333,7 +714,7 @@ def generate_x_queries(repos, issues, releases):
                 }
             )
 
-    # ── From cost issues → find authors on X ──
+    # -- From cost issues -> find authors on X --
     for issue in issues[:10]:
         author = issue.get("author", "")
         if author and len(author) > 2:
@@ -346,7 +727,7 @@ def generate_x_queries(repos, issues, releases):
                 }
             )
 
-    # ── From new releases → find announcement threads ──
+    # -- From new releases -> find announcement threads --
     for rel in releases:
         repo_name = rel["repo"].split("/")[-1]
         queries.append(
@@ -358,30 +739,67 @@ def generate_x_queries(repos, issues, releases):
             }
         )
 
+    # -- From news items -> find related X conversations --
+    if news:
+        for item in news[:20]:
+            title = item.get("title", "")
+            category = item.get("category", "")
+            source = item.get("source", "unknown")
+
+            terms = _extract_terms(title)
+            if len(terms) < 2:
+                continue
+
+            priority = "P3" if category == "ai" else "P4"
+            query_str = f'({" OR ".join(terms[:3])}) within_time:3d min_faves:3'
+
+            queries.append(
+                {
+                    "query": query_str,
+                    "priority": priority,
+                    "source": f"news_{source}",
+                    "context": f"News: {title[:80]}",
+                }
+            )
+
     return queries
 
 
-# ─── Commands ────────────────────────────────────────────────────────────────
+# -- Commands -----------------------------------------------------------------
 
 
 def cmd_scrape():
     """Run full scrape cycle"""
-    print("=== GitHub Scraper for /x Skill ===\n")
+    print("=== /x Skill Scraper ===\n")
 
-    print("[1/4] Scraping trending AI repos...")
+    print("[1/7] Scraping trending AI repos (GitHub)...")
     repos = scrape_trending_repos()
     print(f"  Found {len(repos)} repos")
 
-    print("[2/4] Scraping cost-related issues...")
+    print("[2/7] Scraping cost-related issues (GitHub)...")
     issues = scrape_cost_issues()
     print(f"  Found {len(issues)} issues")
 
-    print("[3/4] Checking recent releases...")
+    print("[3/7] Checking recent releases (GitHub)...")
     releases = scrape_new_releases()
     print(f"  Found {len(releases)} releases")
 
-    print("[4/4] Generating X search queries...")
-    x_queries = generate_x_queries(repos, issues, releases)
+    print("[4/7] Fetching RSS/Atom news feeds...")
+    rss_news = scrape_news_feeds()
+    print(f"  Found {len(rss_news)} news items from RSS")
+
+    print("[5/7] Fetching markdown changelogs...")
+    changelog_news = scrape_markdown_changelogs()
+    print(f"  Found {len(changelog_news)} changelog entries")
+
+    print("[6/7] Fetching Messari crypto news...")
+    messari_news = scrape_messari()
+    print(f"  Found {len(messari_news)} crypto articles")
+
+    all_news = rss_news + changelog_news + messari_news
+
+    print("[7/7] Generating X search queries...")
+    x_queries = generate_x_queries(repos, issues, releases, all_news)
     print(f"  Generated {len(x_queries)} queries")
 
     feed = {
@@ -389,11 +807,14 @@ def cmd_scrape():
         "repos": repos,
         "issues": issues,
         "releases": releases,
+        "news": all_news,
+        "browse_hints": BROWSE_HINTS,
         "queries": x_queries,
         "stats": {
             "repos_found": len(repos),
             "issues_found": len(issues),
             "releases_found": len(releases),
+            "news_items": len(all_news),
             "queries_generated": len(x_queries),
         },
     }
@@ -412,7 +833,15 @@ def cmd_scrape():
             for q in pq[:2]:
                 print(f"    {q['query'][:80]}")
 
-    print(f"\nReady for: /x post OR /x research")
+    # News summary by category
+    if all_news:
+        print(f"\n  News ({len(all_news)} items):")
+        for cat in ["ai", "coding", "crypto"]:
+            cat_items = [n for n in all_news if n.get("category") == cat]
+            if cat_items:
+                print(f"    {cat.upper()}: {len(cat_items)} items")
+
+    print(f"\nReady for: /x post OR /x research OR /x compose")
 
 
 def cmd_feed():
@@ -430,6 +859,7 @@ def cmd_feed():
     queries = feed.get("queries", [])
     repos = feed.get("repos", [])
     releases = feed.get("releases", [])
+    news = feed.get("news", [])
 
     # Check freshness
     try:
@@ -445,6 +875,7 @@ def cmd_feed():
     print(f"Repos: {stats.get('repos_found', 0)}")
     print(f"Issues: {stats.get('issues_found', 0)}")
     print(f"Releases: {stats.get('releases_found', 0)}")
+    print(f"News: {stats.get('news_items', 0)}")
     print(f"Queries: {stats.get('queries_generated', 0)}")
 
     # Top repos
@@ -458,6 +889,24 @@ def cmd_feed():
         print(f"\nRecent releases:")
         for r in releases:
             print(f"  {r['repo']:40s} {r['tag']}")
+
+    # News by category
+    if news:
+        print(f"\nNews ({len(news)} items):")
+        for cat in ["ai", "coding", "crypto"]:
+            cat_items = [n for n in news if n.get("category") == cat]
+            if cat_items:
+                print(f"  {cat.upper()} ({len(cat_items)}):")
+                for n in cat_items[:3]:
+                    title = n['title'][:70].encode('ascii', 'replace').decode('ascii')
+                    print(f"    {title}")
+
+    # Browse hints
+    hints = feed.get("browse_hints", [])
+    if hints:
+        print(f"\nBrowse hints ({len(hints)} URLs for Claude to check):")
+        for h in hints:
+            print(f"  [{h['category']}] {h['url']}")
 
     # Queries by priority
     print(f"\nQueries by priority:")
@@ -507,7 +956,6 @@ def cmd_install(hours=6):
         except FileNotFoundError:
             print("schtasks not found.")
     else:
-        # Linux/Mac: show crontab command
         cron = f"0 */{hours} * * * {python_path} {script_path} scrape >> /tmp/x-scraper.log 2>&1"
         print(f"Add to crontab (crontab -e):\n  {cron}")
 
@@ -533,7 +981,6 @@ def cmd_uninstall():
 
 def cmd_status():
     """Show scheduler + feed status"""
-    # Scheduler status
     if sys.platform == "win32":
         try:
             result = subprocess.run(
@@ -569,6 +1016,7 @@ def cmd_status():
             print(f"\nFeed: exists (age unknown)")
         print(f"  Queries: {stats.get('queries_generated', 0)}")
         print(f"  Repos: {stats.get('repos_found', 0)}")
+        print(f"  News: {stats.get('news_items', 0)}")
     else:
         print(f"\nFeed: MISSING")
         print(f"  Run: python scraper.py scrape")
@@ -576,11 +1024,11 @@ def cmd_status():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="GitHub scraper for /x skill - auto-generates X search queries"
+        description="Scraper for /x skill - aggregates GitHub, news, and crypto data"
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("scrape", help="Scrape GitHub, generate X queries")
+    subparsers.add_parser("scrape", help="Full scrape -> feed.json")
     subparsers.add_parser("feed", help="Show current feed")
 
     install_p = subparsers.add_parser("install", help="Install scheduler")

@@ -204,13 +204,25 @@ Manages Claude Code behavior rules via direct `settings.json` modifications. Tra
 |---------|-------------|
 | `/x research {TOPIC}` | Explore X queries, rank by engagement |
 | `/x research [N] [model] {TOPIC}` | N parallel agents for research |
-| `/x post {TEXT with URL}` | Compose unique replies, post via Twikit API |
+| `/x post {TEXT with URL}` | Compose unique replies, post via X API |
 | `/x post [N] [model] {TEXT}` | N parallel agents for posting |
+| `/x compose` | Scrape news, compose original tweet, distribute via replies |
+| `/x news` | Show current news feed stats |
 | `/x history` | Show posting history |
 | `/x status` | Show daily/weekly counts + reach |
 | `/x help` | Show usage |
 
-Automated X/Twitter outreach. Claude dynamically searches, composes unique replies, and posts via Twikit API (1-2 sec/post) with Chrome MCP as fallback. Requires `skills/x/data/config.json` with `share_url`, `handle`, `project_name`, `project_desc`.
+Automated X/Twitter outreach with three modes:
+
+- **Post mode** — Find high-engagement targets on X, compose unique replies, post via X API (1-2 sec/post) with Chrome MCP fallback
+- **Compose mode** — Scrape news from 15+ sources (Google News RSS, GitHub API, Messari crypto API, changelogs), compose an original tweet on your profile, then distribute by replying to related conversations with the original tweet URL
+- **Research mode** — Explore X search queries and rank by engagement for future targeting
+
+**Configuration:** Auto-generated from `skills/x/.env` (gitignored). Set `X_SHARE_URL`, `X_HANDLE`, `X_PROJECT_NAME`, `X_PROJECT_DESC`, plus X auth tokens. No manual `config.json` creation needed — auto-generates on first run.
+
+**News sources:** Google News RSS (AI, coding, crypto), Google Cloud feeds, GitHub trending repos + cost-related issues + releases, Messari API (optional), markdown changelogs (Claude Code, Next.js, VS Code).
+
+**Scraper scheduler:** `python skills/x/scripts/scraper.py install [HOURS]` installs a Windows Task Scheduler job to keep `feed.json` fresh (default: every 6 hours).
 
 ### /help - Help & Documentation
 
