@@ -335,6 +335,39 @@ def patch_socket_paths(cli_js_path: Path) -> bool:
         return False
 
 
+def disable_bridge_flag() -> bool:
+    """Disable tengu_copper_bridge in .claude.json cached features.
+
+    The WSS bridge (bridge.claudeusercontent.com) is broken on Windows:
+    - oauthAccount.accountUuid never populated (requires token refresh)
+    - Extension startup race condition (isFeatureEnabledAsync returns false)
+    - addinCount always 0 (pairing never succeeds)
+
+    When the bridge is enabled, the MCP server uses it EXCLUSIVELY (no fallback to
+    sockets/pipes). Disabling forces the socket pool path, which works with our
+    getSocketPaths pipe patch. See: anthropics/claude-code#23828
+    """
+    claude_json = CLAUDE_HOME / ".claude.json"
+    if not claude_json.exists():
+        return False
+
+    try:
+        with open(claude_json, encoding="utf-8") as f:
+            data = json.load(f)
+
+        features = data.get("cachedGrowthBookFeatures", {})
+        if features.get("tengu_copper_bridge") is True:
+            features["tengu_copper_bridge"] = False
+            with open(claude_json, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            log_error("✓ Disabled tengu_copper_bridge (WSS bridge broken on Windows)")
+            return True
+    except Exception as e:
+        log_error(f"✗ Failed to disable bridge flag: {e}")
+
+    return False
+
+
 def main() -> None:
     """Main hook logic."""
     # Consume stdin (hook protocol requirement)
@@ -373,6 +406,12 @@ def main() -> None:
     if NPM_CLI_JS_PATH.exists() and not is_socket_paths_patched(NPM_CLI_JS_PATH):
         if patch_socket_paths(NPM_CLI_JS_PATH):
             fixes_applied = True
+
+    # Disable bridge (tengu_copper_bridge) — WSS bridge is broken on Windows
+    # (accountUuid never populated, extension startup race condition).
+    # Forces socket/pipe path which works with our getSocketPaths patch.
+    if disable_bridge_flag():
+        fixes_applied = True
 
     # Only log success if we actually did something
     if not fixes_applied:
