@@ -209,7 +209,15 @@ Manages Claude Code behavior rules via direct `settings.json` modifications. Tra
 | `/x compose` | Scrape news, compose original tweet, distribute via replies |
 | `/x news` | Show current news feed stats |
 | `/x history` | Show posting history |
+| `/x history --days N` | Show history for last N days |
+| `/x history --topic T` | Filter history by topic |
 | `/x status` | Show daily/weekly counts + reach |
+| `/x scrape` | Run scraper now, update feed.json |
+| `/x feed` | Show current auto-generated feed (queries + news) |
+| `/x scheduler install [N]` | Install auto-scraper (every N hours, default 6) |
+| `/x scheduler status` | Show scheduler + feed freshness |
+| `/x scheduler uninstall` | Remove auto-scraper |
+| `/x auto [N] [model]` | Headless auto-run: scrape + research + post |
 | `/x github` | GitHub-to-X pipeline: scan repos/issues, map users to X handles, generate queries |
 | `/x github --search` | Same + search X API for each generated query |
 | `/x help` | Show usage |
