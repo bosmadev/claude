@@ -3,6 +3,26 @@
 
 ---
 
+## [![v1.9.0](https://img.shields.io/badge/v1.9.0-2026--02--13-333333.svg)](https://github.com/bosmadev/claude/commit/74ef522465c62fd80a1bb1255b30997f7d7fc391) | Build 19
+
+feat: CC 2.1.41 upgrade + CLAUDE.md context slim (-46%) + /x skill expansion
+
+- [x] Moved to README.md: CHANGELOG Automation, Complete Model Routing Matrix,
+- [x] CLAUDE.md keeps compact summaries with ./README.md#anchor cross-references
+- [x] fix-chrome-native-host.py detects native Windows pipe support, skips patching
+- [x] Removed deprecated TodoWrite from settings.json permissions
+- [x] Fixed PYTHONPYCACHEPREFIX tilde path (doesn't expand on Windows)
+- [x] Added 3 hunter agents (backend, datascience, web3)
+- [x] sanitize_reply_text guard improvements
+- [x] Tone enforcement rules (self-deprecating OK, putting others down blocked)
+- [x] Continuous operation protocol with aggressive retry logic
+- [x] /x model routing added to CLAUDE.md and README.md
+- [x] skills/x/.gitignore for nested temp/reply/signal files
+- [x] .gitignore: wildcard patterns for temp-*, test-*.py, scratch-*, *.reply, ralph/
+
+
+---
+
 ## [![v1.8.0](https://img.shields.io/badge/v1.8.0-2026--02--13-333333.svg)](https://github.com/bosmadev/claude/commit/8e908417041891d3326b1ce12ac9606d68c84cd2) | Build 18
 
 feat(x): add sanitize_reply_text guard for post quality
