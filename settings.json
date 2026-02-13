@@ -5,7 +5,7 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_TMPDIR": "C:/Users/Dennis/AppData/Local/Temp/claude-tmp",
-    "PYTHONPYCACHEPREFIX": "~/.claude\\.cache\\pycache"
+    "PYTHONPYCACHEPREFIX": "C:/Users/Dennis/.claude/.cache/pycache"
   },
   "attribution": {
     "commit": "",
@@ -94,7 +94,6 @@
       "KillShell",
       "NotebookEdit",
       "Task",
-      "TodoWrite",
       "mcp__serena__activate_project",
       "mcp__serena__check_onboarding_performed",
       "mcp__serena__create_text_file",
@@ -224,7 +223,24 @@
       "Bash(Format-List:*)",
       "Bash(Sort-Object:*)",
       "Bash(Where-Object:*)",
-      "Bash(Measure-Object:*)"
+      "Bash(Measure-Object:*)",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__claude-in-chrome__tabs_create_mcp",
+      "mcp__claude-in-chrome__navigate",
+      "mcp__claude-in-chrome__read_page",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__computer",
+      "mcp__claude-in-chrome__form_input",
+      "mcp__claude-in-chrome__javascript_tool",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__claude-in-chrome__resize_window",
+      "mcp__claude-in-chrome__gif_creator",
+      "mcp__claude-in-chrome__upload_image",
+      "mcp__claude-in-chrome__read_console_messages",
+      "mcp__claude-in-chrome__read_network_requests",
+      "mcp__claude-in-chrome__shortcuts_list",
+      "mcp__claude-in-chrome__shortcuts_execute",
+      "mcp__claude-in-chrome__update_plan"
     ],
     "deny": [],
     "ask": [
@@ -280,8 +296,6 @@
       "Bash(kill:*)",
       "Bash(pkill:*)",
       "Bash(sed -i:*)",
-      "mcp__serena__execute_shell_command",
-      "ExitPlanMode",
       "Bash(del:*)",
       "Bash(rmdir:*)",
       "Bash(mv:*)",

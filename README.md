@@ -227,6 +227,14 @@ Automated X/Twitter outreach with four modes:
 
 **Scraper scheduler:** `python skills/x/scripts/x.py scraper-install [HOURS]` installs a Windows Task Scheduler job to keep `feed.json` fresh (default: every 6 hours).
 
+**Model routing:** Default Sonnet for ALL /x operations. Never use Opus — continuous posting loops burn weekly quota. `[N]` = parallel agents (default 1), `[model]` = `opus`/`sonnet`/`haiku`.
+
+**Backend architecture:** X HTTP API is primary (1-2 sec/post). Chrome MCP is fallback for visual research, For You feed scanning, and auth expiry recovery.
+
+**Quality guard:** `sanitize_reply_text()` runs before every post — strips non-ASCII encoding artifacts, blocks banned words/phrases, validates formatting (no ALL CAPS, no hashtag spam >2, no excessive punctuation).
+
+**Security audit:** `x-post-check` hook logs all Chrome MCP clicks during `/x` sessions to `~/.claude/security/x-clicks.log`. Activated via `.claude/.x-session` flag file.
+
 ### /help - Help & Documentation
 
 Shows available skills and usage information.
@@ -392,7 +400,7 @@ After patching, restart your Claude Code session for the MCP server to load the 
 ├── hooks/                      # Claude Code hook handlers (14 files)
 ├── output-styles/              # Response formatting styles
 ├── scripts/                    # CLI utilities (30+ scripts)
-├── skills/                     # Skill definitions (16 skills)
+├── skills/                     # Skill definitions (17 skills)
 ├── plans/                      # Plan files from /start sessions
 ├── CLAUDE.md                   # Model knowledge (behavioral patterns)
 ├── settings.json               # Hook registrations and permissions
@@ -411,6 +419,41 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | PostToolUse | Change tracking, plan markers, insights | Track and validate edits |
 | UserPromptSubmit | Skill parsing, plan comments | Intercept user commands |
 | SubagentStart/Stop | Ralph orchestration | Track agent lifecycle |
+
+#### Hook Registration Table
+
+| Hook Event | Matcher | Handler | Timeout | Purpose |
+|-----------|---------|---------|---------|---------|
+| Setup | - | `token-guard.py check` | 60s | Validate Claude token before session |
+| Setup | - | `setup.py validate-symlinks` | 30s | Verify symlink integrity |
+| Stop | - | `ralph.py stop` | 30s | Cleanup Ralph state |
+| Stop | - | `claudeChangeStop.js` | 5s | Save session state |
+| SessionStart | startup\|resume | `utils.py model-capture` | 5s | Capture model ID for session |
+| SessionStart | - | `ralph.py session-start` | 10s | Initialize Ralph session |
+| PreCompact | - | `ralph.py pre-compact` | 10s | Save Ralph state before compaction |
+| PreToolUse | Read | `auto-allow.py` | 5s | Auto-approve safe Read operations |
+| PreToolUse | Bash | `security-gate.py pre-bash` | 5s | Security validation for Bash commands |
+| PreToolUse | Bash | `git.py pre-commit-checks` | 5s | Git safety checks before commits |
+| PreToolUse | MultiEdit\|Edit\|Write | `auto-allow.py` | 5s | Auto-approve safe edits |
+| PreToolUse | MultiEdit\|Edit\|Write | `claudeChangePreToolUse.js` | 5s | Track file changes |
+| PreToolUse | Task | `ralph.py hook-pretool` | 10s | Ralph task orchestration prep |
+| PostToolUse | Bash | `git.py command-history` | 5s | Track git command history |
+| PostToolUse | Edit\|Write | `git.py change-tracker` | 5s | Log file changes for commits |
+| PostToolUse | Edit\|Write | `guards.py guardian` | 5s | Validate edit safety |
+| PostToolUse | Edit\|Write | `guards.py plan-write-check` | 5s | Enforce plan change markers |
+| PostToolUse | Edit\|Write | `guards.py insights-reminder` | 5s | Remind to update insights |
+| PostToolUse | ExitPlanMode | `guards.py ralph-enforcer` | 10s | Validate Ralph protocol on plan exit |
+| PostToolUse | Task | `ralph.py agent-tracker` | 10s | Track agent progress |
+| PostToolUse | Skill | `guards.py skill-validator` | 5s | Validate skill invocation |
+| PostToolUse | Skill | `post-review.py hook` | 30s | Post-review processing |
+| PostToolUse | computer | `guards.py x-post-check` | 5s | Security audit: log Chrome clicks during /x sessions |
+| UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | Parse skill commands |
+| UserPromptSubmit | ^/start | `guards.py skill-parser` | 5s | Parse /start command args |
+| UserPromptSubmit | - | `guards.py plan-comments` | 5s | Detect USER comments in plans |
+| UserPromptSubmit | - | `guards.py auto-ralph` | 5s | Auto-trigger Ralph for complex tasks |
+| SubagentStart | - | `ralph.py hook-subagent-start` | 10s | Initialize subagent context |
+| SubagentStop | - | `ralph.py hook-subagent-stop` | 10s | Cleanup subagent state |
+| Notification | permission_prompt | `utils.py notify` | 10s | Desktop notifications |
 
 ### Agent Inventory
 
@@ -431,6 +474,58 @@ Ralph is the multi-agent orchestration system invoked via `/start`:
 4. **VERIFY+FIX** — Build/type/lint checks with auto-fix
 5. **Review** — Sonnet agents review all changes (TODO-P1/P2/P3 comments)
 6. **Git** — Dedicated git-coordinator commits and pushes
+
+#### Ralph Safety Layers
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     DEFENSE IN DEPTH (7 LAYERS)                  │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer 1: External Script → Orchestrates loop, creates state      │
+│ Layer 2: Skill → Invokes script, spawns agents                   │
+│ Layer 3: Hook  → Validates protocol, injects reminders           │
+│ Layer 4: Context → Always-visible protocol rules                 │
+│ Layer 5: Push Gate → MUST push before completion allowed         │
+│ Layer 6: Exit  → Validates completion signals                    │
+│ Layer 7: VERIFY+FIX → Build/type/lint checks + auto-fix         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Push Gate (Layer 5):** Agents MUST push before `TaskUpdate(completed)`. Check: `git log origin/branch..HEAD`. Read-only agents bypass. Hook validation in `ralph.py` blocks completion if push required.
+
+**VERIFY+FIX (Layer 7):** `PLAN → IMPLEMENT → VERIFY+FIX → REVIEW → COMPLETE`. Auto-fix imports/types/lint. Escalate complex issues. Config: `agents/verify-fix.md`.
+
+#### Work-Stealing Queue
+
+Ralph agents use atomic task claiming with `FileLock` to prevent idle agents:
+
+```python
+def claim_next_task(agent_id: str) -> Optional[Task]:
+    with FileLock(".claude/ralph/queue.lock"):
+        queue = load_queue()
+        for task in queue:
+            if task.status == "pending" and not task.claimed_by:
+                task.claimed_by = agent_id
+                task.status = "in_progress"
+                save_queue(queue)
+                return task
+    return None
+```
+
+Queue file: `{project}/.claude/task-queue-{plan-id}.json`
+
+#### Performance Tracking
+
+Ralph tracks per-agent metrics via `PerformanceTracker`:
+
+| Metric | Description |
+|--------|-------------|
+| `cost_usd` | API cost per agent |
+| `num_turns` | API round-trips per agent |
+| `duration_seconds` | Wall-clock time per agent |
+| `avg_cost_per_agent` | Mean cost across completed agents |
+
+Progress file: `.claude/ralph/progress.json`. Budget guard: `ralph.py loop 10 3 --budget 5.00 "task"` — caps total spending, remaining agents get `BUDGET` status.
 
 ### Security Layers
 
@@ -536,6 +631,41 @@ If authentication errors occur: `claude auth login` then `/token sync`.
 
 ---
 
+## CHANGELOG Automation
+
+Automated changelog generation via GitHub Actions workflow (`claude.yml`):
+
+### Workflow
+
+1. **@claude prepare** — Bot creates PR with aggregated commit summary and Build ID
+2. **Review** — Team reviews PR via GitHub UI
+3. **Squash Merge** — GitHub Actions generates CHANGELOG entry with badge + checkboxes
+4. **Auto Release** — Creates git tag `v{version}` and GitHub Release with CHANGELOG notes
+
+### CHANGELOG Entry Format
+
+```markdown
+---
+
+## [![v{version}](https://img.shields.io/badge/v{version}-{date}--{date}-333333.svg)](https://github.com/bosmadev/{repo}/pull/{pr}) | Build {id}
+
+{summary}
+
+- [x] {change_1}
+- [x] {change_2}
+```
+
+### Key Points
+
+- Working branches do NOT edit CHANGELOG directly — all updates via GitHub Actions post-merge
+- `changelog.ts` requires `Build N` in commit subject to trigger (format: `Build 3: feat: description`)
+- `/commit` on main auto-reads CHANGELOG.md → injects `Build N+1`
+- Feature branches: Build ID from branch name via `/openpr` squash merge
+- Version bumping: `scripts/aggregate-pr.py --bump` with semantic versioning
+- Override: `skip-changelog` or `skip-release` labels on PR
+
+---
+
 ## Token Management
 
 Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sleep:
@@ -580,6 +710,105 @@ Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sle
 
 Configured in `.claude.json` under `mcpServers`. See `.claude.json.example` for reference configuration.
 
+### Serena Semantic Code Tools
+
+Serena provides LSP-powered semantic code analysis. **Prefer Serena over Grep/Read** for code understanding.
+
+| Task | Serena Tool | Instead of |
+|------|-------------|------------|
+| Find function/class by name | `find_symbol` | `Grep` |
+| Get file structure overview | `get_symbols_overview` | `Read` full file |
+| Find all callers of a function | `find_referencing_symbols` | `Grep` for name |
+| Rename symbol across codebase | `rename_symbol` | Multi-file `Edit` |
+| Replace function body | `replace_symbol_body` | `Edit` tool |
+| Insert code after symbol | `insert_after_symbol` | `Edit` tool |
+| Search with code context | `search_for_pattern` | `Grep` |
+
+**Workflow:** `get_symbols_overview` → `find_symbol` → `find_referencing_symbols` → edit → verify with `think_about_*` tools.
+
+**Memory tools:** `write_memory` / `read_memory` / `list_memories` / `edit_memory` for persistent architectural context.
+
+---
+
+## Agent Teams
+
+Experimental feature enabling parallel Claude Code instances within a session.
+
+**Configuration:** `"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"` in `settings.json` env block. In-process mode only (no tmux on Windows).
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Shift+Tab` | Delegate mode (lead coordinates, no code) |
+| `Shift+Up/Down` | Select teammate to message |
+| `Ctrl+T` | Toggle task list |
+
+### When to Use
+
+| Scenario | Tool |
+|----------|------|
+| Parallel research, multi-perspective reviews | Agent Teams |
+| Implementation loops, VERIFY+FIX, push-gated | Ralph (`/start`) |
+| Competing hypotheses, architecture exploration | Agent Teams |
+| Sequential task execution with review | Ralph (`/start`) |
+
+### Compatibility & Limitations
+
+- Teammates are full Claude Code instances (load CLAUDE.md, hooks, skills)
+- Ralph hooks fire per-teammate (ralph.py, guards.py all execute)
+- Task() subagents work inside teammates
+- No nested teams, no session resumption, one team per session, fixed lead
+- Idle notifications (`idle_notification`, `task_completed`) are auto-delivered — NOT hookable events
+
+### Cleanup
+
+1. Shut down each teammate via `SendMessage(type="shutdown_request")`
+2. Lead calls `TeamDelete()` to remove `~/.claude/teams/{name}/` and `~/.claude/tasks/{name}/`
+
+---
+
+## Complete Model Routing Matrix
+
+| Component | Model | Effort | Context | Layer | Notes |
+|-----------|-------|--------|---------|-------|-------|
+| `/start` main | Opus 4.6 | High | 200K | — | Complex orchestration |
+| `/start` impl agents | Opus 4.6 | High | 200K | L3 | Task(model="opus") override |
+| `/start` plan agents | Opus 4.6 | Med | 200K | L3 | Planning phase |
+| `/start sonnet` plan | Sonnet 4.5 | N/A | 200K | L3 | Budget-mode planning |
+| `/review` main | Opus 4.6 | Med | 200K | — | Orchestration only |
+| `/review` agents | Sonnet 4.5 | N/A | 1M | L3 | Read-only, extended context |
+| `/repotodo` | Opus 4.6 | High | 200K | — | Critical code changes |
+| `/reviewplan` | Opus 4.6 | Med | 200K | — | Plan edits only |
+| `/commit` | Sonnet 4.5 | N/A | 200K | L2 | Fork, pattern matching |
+| `/openpr` | Sonnet 4.5 | N/A | 200K | L2 | Fork, read commits |
+| `/screen` | Sonnet 4.5 | N/A | 200K | L2 | Fork, screenshots |
+| `/youtube` | Sonnet 4.5 | N/A | 200K | L2 | Fork, transcription |
+| `/launch` | Sonnet 4.5 | N/A | 200K | L2 | Fork, browser |
+| `/token` | Haiku 4.5 | N/A | 200K | L2 | Fork, token mgmt |
+| `/rule` | Sonnet 4.5 | N/A | 200K | L2 | Fork, settings |
+| `/init-repo` | Sonnet 4.5 | N/A | 200K | L2 | Fork, templates |
+| `/x` | Sonnet 4.5 | N/A | 200K | L2 | Fork, X/Twitter outreach |
+| `/x` agents | Sonnet 4.5 | N/A | 200K | L3 | Never Opus (continuous loops burn quota) |
+| VERIFY+FIX scoped | Opus 4.6 | Med | 200K | — | Per-task checks |
+| VERIFY+FIX full | Opus 4.6 | High | 200K | — | Final gate |
+| VERIFY+FIX plan | Opus 4.6 | Med | 200K | — | Plan checks |
+| Post-review agents | Sonnet 4.5 | N/A | 1M | L3 | Read-only review |
+| Ralph impl agents | Opus 4.6 | High | 200K | L3 | Task(model="opus") |
+| Ralph work-stealing | Opus 4.6 | High | 200K | L3 | Same as impl |
+| Ralph retry queue | Opus 4.6 | High | 200K | L3 | Retries need best quality |
+| GH Actions (auto PR) | Sonnet 4.5 | N/A | 200K | — | Default trigger |
+| GH Actions: Summarize | Sonnet 4.5 | N/A | 1M | — | Large PRs |
+| GH Actions: Review | Sonnet 4.5 | N/A | 1M | — | Full repo context |
+| GH Actions: Security | Opus 4.6 | Med | 200K | — | OWASP depth |
+| GH Actions: Custom | User picks | Varies | Varies | — | workflow_dispatch |
+| Specialist agents (7) | Opus | — | — | .md | go, nextjs, python, refactor, verify-fix, owasp, coordinator |
+| Review agents (13) | Sonnet | — | — | .md | a11y, api, arch, commit, db, doc, perf, secret, security + more |
+| Ops agents (6) | Sonnet | — | — | .md | build-error, e2e, devops, scraper, pr-gen, plan-verify |
+| Git coordinator (1) | Haiku | — | — | .md | Lightweight git ops |
+
+**Legend:** Effort: Low/Med/High (Opus only). Layer: L1 = Global default, L2 = Skill fork, L3 = Per-agent override, .md = Agent config. [1m] = Extended 1M context.
+
 ---
 
 ## Configuration Files
@@ -596,4 +825,4 @@ Configured in `.claude.json` under `mcpServers`. See `.claude.json.example` for 
 
 ## For Claude Code
 
-See [CLAUDE.md](./CLAUDE.md) for model-specific behavioral patterns, conventions, and the complete hook registration table.
+See [CLAUDE.md](./CLAUDE.md) for behavioral patterns and conventions. Reference tables (hook registration, model routing matrix, Ralph internals, Agent Teams, Serena, CHANGELOG) are in this README — CLAUDE.md contains compact summaries with links back here.

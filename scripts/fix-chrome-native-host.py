@@ -8,6 +8,11 @@ Also patches the getSocketPaths function (minified name varies per version) in c
 to include Windows named pipe paths with username sanitization, fixing the
 "Browser extension is not connected" issue on Windows (GitHub issues #23082, #23828, #23539).
 
+VERSION DETECTION:
+- CC 2.1.41+: Native Windows pipe support detected via early return pattern
+- CC 2.1.40 and earlier: Manual patch injected before 'return A}'
+- Script auto-detects which approach is needed and skips patching if native support exists
+
 This hook maintains TWO cli.js installations:
 1. Isolated install: ~/.claude/chrome/node_host/ (used by .bat for native host)
 2. npm global install: D:\nvm4w\nodejs\node_modules\@anthropic-ai\claude-code\
@@ -18,7 +23,7 @@ This hook:
 3. Gets version from npm global package.json (source of truth)
 4. Verifies version match with isolated cli.js install
 5. If version mismatch: installs correct @anthropic-ai/claude-code version
-6. Patches getSocketPaths in BOTH cli.js files using content-based pattern matching
+6. Detects native Windows pipe support (CC 2.1.41+) OR patches getSocketPaths (pre-2.1.41)
 7. Only outputs to stderr if fixes were made (silent when healthy)
 """
 
@@ -256,7 +261,15 @@ def find_get_socket_paths_function(code: str) -> tuple[int, int, str] | None:
 
 
 def is_socket_paths_patched(cli_js_path: Path) -> bool:
-    """Check if the getSocketPaths function already has our self-contained pipe patch."""
+    """Check if the getSocketPaths function already has Windows pipe support.
+
+    CC 2.1.41+ has native Windows pipe support via early return at function start.
+    Pre-2.1.41 versions need our manual patch injected before 'return A}'.
+
+    Returns True if EITHER:
+    1. Native support detected (CC 2.1.41+): Early 'if(platform=="win32")return[pipe]' pattern
+    2. Our patch detected (pre-2.1.41): PIPE_PATCH_MARKER in function body
+    """
     if not cli_js_path.exists():
         return False
 
@@ -268,6 +281,20 @@ def is_socket_paths_patched(cli_js_path: Path) -> bool:
 
         start, end, _ = result
         snippet = code[start:end]
+
+        # CC 2.1.41+ native support detection:
+        # Look for early return pattern: if(platform_check()==="win32")return[`\.\pipe\..`]
+        # This pattern appears at the START of the function (within first 150 chars after opening brace)
+        # Example: if(td7()==="win32")return[`\\\\.\\pipe\\${zc7()}`]
+        opening_brace = snippet.find('{')
+        if opening_brace != -1:
+            early_code = snippet[opening_brace:opening_brace + 150]
+            # Match: if(FUNC()==="win32")return[`...pipe...`]
+            native_pattern = r'if\(\w+\(\)==="win32"\)return\[`[^`]*\\\\pipe\\\\[^`]*`\]'
+            if re.search(native_pattern, early_code):
+                return True  # Native Windows pipe support detected (CC 2.1.41+)
+
+        # Pre-2.1.41 manual patch detection:
         # Check for our self-contained marker (not the old qCY-based one)
         return PIPE_PATCH_MARKER in snippet
     except Exception:
@@ -277,13 +304,18 @@ def is_socket_paths_patched(cli_js_path: Path) -> bool:
 def patch_socket_paths(cli_js_path: Path) -> bool:
     r"""Patch getSocketPaths in cli.js to add Windows named pipe path discovery.
 
-    The unpatched function on Windows only returns os.tmpdir() and /tmp paths, which can't
-    connect to named pipes. This patch adds \\.\pipe\claude-mcp-browser-bridge-USERNAME
-    to the search list, matching what the native host creates via tW6().
+    CC 2.1.41+: Native Windows pipe support exists, this function returns False (no patch needed)
+    CC 2.1.40 and earlier: Injects Windows pipe path before 'return A}'
+
+    The unpatched function on Windows (pre-2.1.41) only returns os.tmpdir() and /tmp paths,
+    which can't connect to named pipes. This patch adds \\.\pipe\claude-mcp-browser-bridge-USERNAME
+    to the search list, matching what the native host creates.
 
     Uses content-based pattern matching to find the function regardless of minified name.
-    Uses self-contained process.platform + require("os") to avoid dependency on
+    Uses self-contained process.platform + process.env to avoid dependency on
     minified helper function names that change between versions.
+
+    Returns True if patch was applied, False if native support exists or already patched.
     """
     if not cli_js_path.exists():
         log_error(f"✗ cli.js not found at {cli_js_path}")

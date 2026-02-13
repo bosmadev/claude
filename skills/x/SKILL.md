@@ -22,6 +22,35 @@ This skill automates X/Twitter outreach for any project or tool. Claude dynamica
 
 **URL rule:** ALWAYS link to the user's configured `SHARE_URL` (see config below). Never link to source repos directly -- drive impressions to the user's social post.
 
+**Persistence design:** Agents work continuously with aggressive retry logic. Rate limits trigger wait-and-retry, never shutdown.
+
+---
+
+## CRITICAL: Continuous Operation (Never Stop)
+
+**ALL agents must work continuously until explicit shutdown request.** No automatic stopping.
+
+**When hitting obstacles:**
+- ❌ **NEVER** stop or go idle permanently
+- ❌ **NEVER** exit due to rate limits or empty search results
+- ✅ **ALWAYS** wait 60-180 seconds and retry
+- ✅ **ALWAYS** try alternative search queries if one fails
+- ✅ **ALWAYS** rotate between different targeting strategies
+
+**Rate limit behavior:**
+1. Hit rate limit → Wait 60s → Retry same query
+2. Still limited → Wait 120s → Try different query
+3. Still limited → Wait 180s → Cycle through all targeting strategies
+4. Repeat forever until search succeeds or shutdown requested
+
+**Empty results behavior:**
+1. No results found → Try broader search terms
+2. Still empty → Try different time window (within_time:1d → 3d → 7d)
+3. Still empty → Try different engagement threshold (min_faves:10 → 5 → 3 → 1)
+4. Cycle through all combinations, then restart
+
+**Rule:** Work continuously = aggressive retry + strategy rotation + zero automatic exits
+
 ---
 
 ## CRITICAL: Profile Post Approval Rule
@@ -42,6 +71,41 @@ This skill automates X/Twitter outreach for any project or tool. Claude dynamica
 4. Only THEN call `x.py tweet "{text}"`
 
 **Agents (subagents) MUST NEVER call `x.py tweet`** — only the main orchestrator can, after user approval. Agents should only use `x.py post` (replies to others).
+
+---
+
+## CRITICAL: Tone Enforcement (Friendly, Funny, Humorous with Light Sarcasm)
+
+**Target tone:** Helpful + playful + self-aware. Think "friend giving advice over coffee" not "expert lecturing".
+
+### ❌ BLOCKED: Mean/Condescending Sarcasm
+- "Love watching people discover [tool] isn't magic..." (condescending)
+- "Good luck with that..." (dismissive)
+- "Hope you hit real complexity..." (schadenfreude)
+- "Welcome to reality..." (superior)
+- "Sure that'll work out..." (doubting)
+
+### ✅ GOOD: Playful/Self-Aware Humor
+- "Been there. Spent 3 hours debugging before realizing I forgot to restart the server. Classic."
+- "If I had a dollar for every time I forgot to commit .env to .gitignore... I'd have enough for therapy."
+- "Love how we all pretend our side projects will be 'quick weekenders'. Three months later..."
+- "Pro tip: The bug is always in the code you're 100% certain is correct. Always."
+- "Nothing says 'senior developer' like confidently googling the same error for the 47th time."
+
+### ✅ GOOD: Helpful + Funny
+- "Have you tried [solution]? Saved my bacon last week when I was drowning in [problem]"
+- "Running into [issue]? Our tool handles that - learned the hard way so you don't have to: {SHARE_URL}"
+- "Love this approach! Reminds me of when I discovered [technique] - game changer"
+- "That moment when [relatable struggle]... we built {SHARE_URL} specifically for this"
+
+### ✅ GOOD: Genuine Interest
+- "How did you solve [specific challenge]? Genuinely curious - ran into this last month"
+- "This is brilliant. What made you choose [approach] over [alternative]?"
+- "Following this thread. Love seeing different approaches to [problem]"
+
+**Rule:** Self-deprecating humor ✅ | Putting others down ❌ | Being helpful always ✅
+
+**Enforcement:** Script blocks condescending patterns. Aim for "funny friend" not "superior expert".
 
 ---
 
@@ -711,7 +775,8 @@ When `N > 1` and using Chrome MCP:
 **Shell safety**: The `$` character is special in bash. When posting via x.py:
 - ALWAYS use: `echo 'text with $0 and $100' | python x.py post TWEET_ID --stdin`
 - NEVER use: `python x.py post TWEET_ID "text with $0"` (shell expands `$0` to process name)
-- Single quotes `'...'` prevent ALL shell expansion
+- Single quotes `'...'` prevent ALL shell expansion — no need to escape `!` `?` `"` `'`
+- **NEVER add backslashes** before punctuation (`\!` `\?` `\"` `\'`) — they become literal in the post
 - The `--stdin` flag reads text from pipe, bypassing shell argument parsing
 
 ---

@@ -630,6 +630,10 @@ def sanitize_reply_text(text: str) -> str:
     for uni, ascii_eq in replacements.items():
         text = text.replace(uni, ascii_eq)
 
+    # 1.5. Remove unnecessary backslash escaping (agents sometimes add \! \? \" \')
+    # With echo 'TEXT', these backslashes are literal and look wrong in the post
+    text = re.sub(r'\\([!?"\'])', r'\1', text)
+
     # 2. Strip any remaining non-ASCII (keep only printable ASCII + newlines)
     cleaned = []
     for ch in text:
@@ -655,12 +659,31 @@ def sanitize_reply_text(text: str) -> str:
             print(_red(f"Text was: {text[:200]}"))
             sys.exit(1)
 
-    # 4. Block "bro" -- user explicitly banned this word
+    # 4. Block negative/aggressive sarcasm (must be helpful/funny, not mean)
+    negative_patterns = [
+        r"love watching (people|you|them|others) (discover|realize|learn|find out)",
+        r"isn't magic",
+        r"not (magic|perfect|flawless)",
+        r"hope you (fail|struggle|suffer|hit|encounter)",
+        r"(welcome to|enjoy) (reality|the real world|pain)",
+        r"good luck with that",
+        r"sure that('ll|will) work",
+        r"let me know how that (goes|works out)",
+        r"why so (aggro|aggressive|angry|negative)",
+    ]
+    for pat in negative_patterns:
+        if re.search(pat, text, re.IGNORECASE):
+            print(_red(f"BLOCKED: Reply contains negative/sarcastic tone matching '{pat}'"))
+            print(_red(f"Text was: {text[:200]}"))
+            print(_yellow("TIP: Be helpful/funny, not sarcastic/mean. Suggest solutions or ask questions."))
+            sys.exit(1)
+
+    # 5. Block "bro" -- user explicitly banned this word
     if re.search(r"\bbro\b", text, re.IGNORECASE):
         text = re.sub(r"\bbro\b", "dude", text, flags=re.IGNORECASE)
         print(_yellow("SANITIZED: Replaced 'bro' with 'dude'"))
 
-    # 5. Warn if reply looks too long for a casual reply (>280 chars)
+    # 6. Warn if reply looks too long for a casual reply (>280 chars)
     if len(text) > 280:
         print(_yellow(f"WARNING: Reply is {len(text)} chars -- might be too long for engagement"))
 

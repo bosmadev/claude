@@ -37,20 +37,38 @@ skills/x/data/
 skills/*/.claude/
 ${TMPDIR}/
 
-# Files
-!.gitkeep
+# Temp files (any location)
+temp-*
+temp_*
 .tmp-*
+*.tmp
+*.temp
+test-*.py
+scratch-*
+ralph/
+
+# Reply/signal files (from /x skill)
+*.reply
+*.signal
+
+# Build/cache
 *.pyc
 *.pyo
+*.pyd
 *.swp
 *~
 *.lock
 *.log
 *-lock.json
 *-lock.yaml
+
+# Auth/secrets
 .credentials.json
 .claude.json
 .env*
+!.env.example
+
+# State files
 command-history.log
 history.jsonl
 stats-cache.json
@@ -64,3 +82,6 @@ nul
 .statusline-last
 .model-info
 .session-info
+
+# Keep markers
+!.gitkeep
