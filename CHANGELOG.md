@@ -3,6 +3,26 @@
 
 ---
 
+## [![v1.9.1](https://img.shields.io/badge/v1.9.1-2026--02--13-333333.svg)](https://github.com/bosmadev/claude/commit/479a10c18b1502ce9a3c51b4edf5daa486ddae3c) | Build 20
+
+refactor: ralph.py consolidation + safety layer renumber + audit cleanup
+
+- [x] ralph_lib.py (811 lines) merged into ralph.py — single-file deployment
+- [x] ralph.py: 6,420 → 4,460 lines (dead code deletion + merge)
+- [x] ralph.py.bak deleted (242KB stale backup)
+- [x] Safety layers renumbered (7 layers): Skill→Hook→Context→PushGate→Exit→VERIFY+FIX→Review
+- [x] State machine documented: IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE
+- [x] README.md Ralph Safety section updated with state machine + new layer numbering
+- [x] CLAUDE.md Ralph Safety compact summary updated to match
+- [x] /quality skill deprecated, /serena-workflow skill removed
+- [x] Agent configs: verify-fix scoped mode, reviewer token efficiency, model frontmatter
+- [x] /x SKILL.md: engagement-first approach, GSwarm reference patterns, algorithm insights
+- [x] MEMORY.md slimmed 277 → 111 lines with topic files (chrome-mcp-details.md, infrastructure-details.md)
+- [x] 5-agent CC 2.1.41 audit: full compatibility confirmed, zero code changes needed
+
+
+---
+
 ## [![v1.9.0](https://img.shields.io/badge/v1.9.0-2026--02--13-333333.svg)](https://github.com/bosmadev/claude/commit/74ef522465c62fd80a1bb1255b30997f7d7fc391) | Build 19
 
 feat: CC 2.1.41 upgrade + CLAUDE.md context slim (-46%) + /x skill expansion
