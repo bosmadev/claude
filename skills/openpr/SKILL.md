@@ -31,30 +31,34 @@ Usage:
   /openpr [base-branch]
 
 Commands:
-  (no args)        Create PR targeting main branch
+  (no args)        Auto-detect target branch (see hierarchy below)
   [branch]         Create PR targeting specified branch
   help             Show this help
 
+Branch Hierarchy (auto-detected when no base-branch given):
+  *-dev branches     → PR targets main (Build N+1 from CHANGELOG)
+  feature/* branches → PR targets {repo}-dev (no Build ID)
+  anything else      → PR targets {repo}-dev if exists, else main
+
 Workflow:
-  1. Runs ~/.claude/scripts/aggregate-pr.py to gather and format commits
-     - Extracts build ID from branch name (b101 -> 101)
-     - Groups commits by type (feat, fix, refactor, etc.)
-     - Generates summary paragraph from commit composition
-  2. Generates .claude/pending-pr.md for review
-  3. On confirm:
+  1. Auto-detects target branch from hierarchy
+  2. Checks if branch is behind target — auto-rebases if needed
+  3. Runs ~/.claude/scripts/aggregate-pr.py to gather and format commits
+  4. Generates .claude/pending-pr.md for review
+  5. On confirm:
      - Creates squash commit with formatted message
      - Pushes to origin
      - Creates PR with auto-generated body
      - Amends commit with PR URL reference
 
 PR Format:
-  Title: Build {number}
-  Body: Auto-generated summary + commits grouped by type
-  Commit: Includes ## Summary, ## Changes, ## Details, PR: {url}
+  dev→main:     Title: "Build {N+1}", Build ID from CHANGELOG
+  feature→dev:  Title: conventional commit summary, no Build ID
 
 Examples:
-  /openpr              # PR to main
-  /openpr develop      # PR to develop branch
+  /openpr              # Auto-detect target from branch hierarchy
+  /openpr main         # Force PR to main
+  /openpr cwchat-dev   # Force PR to cwchat-dev
 ```
 
 ---
@@ -64,8 +68,76 @@ Examples:
 **$ARGUMENTS**: "$ARGUMENTS"
 
 Parse arguments:
-- `base-branch` (optional): Target branch for PR (default: `main`)
+- `base-branch` (optional): Target branch for PR (auto-detected if omitted)
 - `help`: Show usage information
+
+## Branch Hierarchy Detection
+
+When no base branch is explicitly provided, auto-detect using this logic:
+
+```
+Current Branch              → Target Base Branch
+────────────────────────────────────────────────
+*-dev (e.g. cwchat-dev)      → main
+feature/*, anything else     → {repo}-dev (if exists on remote, else main)
+main/master                  → BLOCKED (abort with error)
+```
+
+**Detection steps:**
+
+1. If user provided a base branch arg → use it directly
+2. Get current branch: `git branch --show-current`
+3. If current branch ends with `-dev` → base = `main`
+4. Else → check if `{repo}-dev` exists on remote:
+   ```bash
+   REPO=$(basename "$(git rev-parse --show-toplevel)")
+   DEV_BRANCH="${REPO}-dev"
+   git ls-remote --heads origin "${DEV_BRANCH}" | grep -q "${DEV_BRANCH}"
+   ```
+   - If exists → base = `{repo}-dev`
+   - If not → base = `main` (with info message: "No {repo}-dev found, targeting main")
+
+**Output the detected target:**
+```
+Current branch: {branch} → Target: {base}
+```
+
+## Pre-PR Sync Check
+
+Before generating the PR, ensure the branch is up-to-date with the target:
+
+```bash
+BASE_BRANCH="${BASE_BRANCH}"  # from hierarchy detection above
+git fetch origin "${BASE_BRANCH}"
+BEHIND=$(git rev-list --count HEAD..origin/${BASE_BRANCH})
+```
+
+**If behind > 0:**
+```
+⚠️  Branch is ${BEHIND} commits behind origin/${BASE_BRANCH}
+Rebasing on origin/${BASE_BRANCH}...
+```
+
+```bash
+git rebase origin/${BASE_BRANCH}
+```
+
+- If rebase succeeds: `✓ Rebase successful` → continue
+- If rebase conflicts: abort rebase and show resolution instructions:
+  ```
+  ✗ Rebase failed due to conflicts.
+
+  To resolve manually:
+    git rebase origin/${BASE_BRANCH}
+    # Fix conflicts in each file
+    git add <resolved-files>
+    git rebase --continue
+
+  Then run /openpr again.
+  ```
+  Abort with: `git rebase --abort` and cancel PR.
+
+**If behind = 0:** `✓ Branch is up to date with origin/${BASE_BRANCH}` → continue
 
 ## Error Handling Examples
 
@@ -164,23 +236,40 @@ echo "$BRANCH"
 
 If on `main` or `master`, abort with: "Error: Cannot create PR from main/master branch. Switch to a dev branch first (e.g., claude-dev, pulsona-dev)."
 
-### 3. Extract Build Number
+### 3. Extract Build Number (Conditional)
 
-Build ID is auto-detected with this priority:
+Build ID is **only injected for PRs targeting `main`** (i.e., `*-dev` → `main` PRs).
+
+| Source Branch     | Target         | Build ID?                                     |
+| ----------------- | -------------- | --------------------------------------------- |
+| `*-dev`         | `main`       | Yes — `Build N+1` from CHANGELOG            |
+| `feature/*`     | `{repo}-dev` | No — conventional commit summary as PR title |
+| Legacy `b{N}-*` | any            | Yes — from branch name (backward compat)     |
+
+**When Build ID applies** (target = `main`):
 1. **Branch name pattern:** `b101`, `feature/b42-auth` → numeric ID from name
-2. **CHANGELOG.md auto-detect:** For `*-dev` branches (e.g., `claude-dev`, `pulsona-dev`), reads `CHANGELOG.md` for highest `Build N`, uses `N+1`
+2. **CHANGELOG.md auto-detect:** reads `CHANGELOG.md` for highest `Build N`, uses `N+1`
 3. **Fallback:** `Build 1` if no CHANGELOG or no existing builds
+
+PR Title: `Build {number}` (e.g., "Build 3")
+
+**When Build ID does NOT apply** (target = `{repo}-dev`):
+- PR Title = conventional commit summary from aggregated commits
+- No `Build N` prefix in squash commit message
+- aggregate-pr.py generates title from commit types (e.g., "feat: auth + fix: parser")
 
 ```bash
 BRANCH=$(git branch --show-current)
 # aggregate-pr.py handles all detection logic automatically
+# Pass --no-build-id flag when targeting non-main branches
+if [ "${BASE_BRANCH}" != "main" ] && [ "${BASE_BRANCH}" != "master" ]; then
+  EXTRA_FLAGS="--no-build-id"
+fi
 ```
 
-PR Title format: `Build {number}` (e.g., "Build 3")
-
-**Typical workflow:**
-- Work on `claude-dev` → run `/openpr` → auto-detects `Build 3` from CHANGELOG → PR title: `Build 3`
-- Squash merge to main → `changelog.ts` picks up `Build 3` → CHANGELOG entry created
+**Typical workflows:**
+- `cwchat-dev` → `/openpr` → targets `main` → `Build 3` → CHANGELOG entry
+- `feature/auth` → `/openpr` → targets `cwchat-dev` → "feat: auth system" → no CHANGELOG
 
 ### 4. Check for Unpushed Commits
 
@@ -196,12 +285,19 @@ If no commits to include, abort with: "Error: No commits found to include in PR.
 
 ### 1. Run aggregate-pr.py
 
-Use the aggregation script to gather and format all commit data:
+Use the aggregation script to gather and format all commit data.
+The `BASE_BRANCH` was determined in the Branch Hierarchy Detection step above.
 
 ```bash
-BASE_BRANCH="${BASE_BRANCH:-main}"
+# BASE_BRANCH already set from hierarchy detection
 cd "$(git rev-parse --show-toplevel)"
-python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}" > .claude/pending-pr-raw.md 2>&1
+
+# For non-main targets, pass --no-build-id to skip Build ID injection
+if [ "${BASE_BRANCH}" != "main" ] && [ "${BASE_BRANCH}" != "master" ]; then
+  python ~/.claude/scripts/aggregate-pr.py --no-build-id "${BASE_BRANCH}" > .claude/pending-pr-raw.md 2>&1
+else
+  python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}" > .claude/pending-pr-raw.md 2>&1
+fi
 ```
 
 The script handles:
@@ -525,63 +621,61 @@ Then run /openpr again.
 
 ---
 
-## Example Workflow
+## Example Workflows
+
+### Example 1: Dev → Main (with Build ID)
 
 ```
 User: /openpr
 
 Claude: **SKILL_STARTED:** openpr
 
-Gathering commits from branch claude-dev...
-Running aggregate-pr.py to analyze commits...
+Current branch: cwchat-dev → Target: main
+
+Checking branch currency...
+✓ Branch is up to date with origin/main
+
+Gathering commits...
 Auto-detected Build 3 from CHANGELOG.md (highest: Build 2)
 
 Created: .claude/pending-pr.md
+[... shows PR preview ...]
 
-# Pull Request: Build 3
-
-## Summary
-This PR includes 2 new features and 1 bug fix.
-
-## Commits Included
-
-### feat
-- b3-1: feat(auth): Add user validation
-- b3-2: feat(api): Add rate limiting
-
-### fix
-- b3-3: fix(parser): Handle edge case in token parsing
-
-## Detailed Changes
-
-**abc123**: Implemented user validation middleware with email and password checks.
-**def456**: Added rate limiting to protect API endpoints.
-**ghi789**: Fixed parser crash when encountering malformed tokens.
-
----
-**Note:** Edit this file as needed. Run `/openpr` again or type "confirm" to squash and create the PR.
-
-Please review and edit .claude/pending-pr.md if needed.
 Type "confirm" to squash and create the PR.
 
 User: confirm
 
-Claude: Squashing commits...
-Creating squash commit message...
-Pushing to origin...
-Creating pull request...
-
-Pull Request Created Successfully!
-
+Claude: Pull Request Created Successfully!
 Title: Build 3
-URL: https://github.com/bosmadev/claude/pull/5
-Branch: claude-dev -> main
+URL: https://github.com/bosmadev/cwchat/pull/5
+Branch: cwchat-dev -> main
+```
 
-The squashed commit now references: https://github.com/bosmadev/claude/pull/5
+### Example 2: Feature → Dev (no Build ID)
 
-Would you like to delete .claude/pending-pr.md? (yes/no)
+```
+User: /openpr
 
-User: yes
+Claude: **SKILL_STARTED:** openpr
 
-Claude: Deleted .claude/pending-pr.md. Done!
+Current branch: feature/auth → Target: cwchat-dev (auto-detected)
+
+Checking branch currency...
+⚠️  Branch is 2 commits behind origin/cwchat-dev
+Rebasing on origin/cwchat-dev...
+✓ Rebase successful
+
+Gathering commits...
+
+Created: .claude/pending-pr.md
+
+# Pull Request: feat: auth system with JWT validation
+[... conventional commit summary, no Build ID ...]
+
+User: confirm
+
+Claude: Pull Request Created Successfully!
+Title: feat: auth system with JWT validation
+URL: https://github.com/bosmadev/cwchat/pull/6
+Branch: feature/auth -> cwchat-dev
 ```

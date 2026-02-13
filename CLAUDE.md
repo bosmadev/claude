@@ -176,17 +176,30 @@ Build IDs are **auto-detected** from CHANGELOG.md — no manual assignment neede
 
 **Branching Model:**
 
-| Branch              | Purpose                   | Build ID Source                        |
-| ------------------- | ------------------------- | -------------------------------------- |
-| `main`            | Production                | Auto from CHANGELOG.md via `/commit` |
-| `{repo}-dev`      | Development (PRs to main) | Auto from CHANGELOG.md via `/openpr` |
-| `feature/b{id}-*` | Legacy feature branches   | From branch name (backward compat)     |
+| Branch             | Purpose             | Build ID                 | PR Target      |
+| ------------------ | ------------------- | ------------------------ | -------------- |
+| `main`           | Production          | `/commit` → Build N+1 | —             |
+| `{repo}-dev`     | Primary development | `/openpr` → Build N+1 | `main`       |
+| `feature/*`      | Feature work        | None                     | `{repo}-dev` |
+| `~/.claude` main | Claude config       | `/commit` → Build N+1 | —             |
 
-**Examples:**
+**Post-merge cleanup:** GitHub Action (`reset-dev.yml`) auto-resets `{repo}-dev` to match `main` after PR merge. Manual fallback: `git reset-dev`.
 
-- `claude-dev` - Development branch for bosmadev/claude
-- `pulsona-dev` - Development branch for bosmadev/pulsona
-- `cwchat-dev` - Development branch for bosmadev/cwchat
+**Worktree layout:**
+```
+D:/source/{repo}/          .git/ (bare)
+D:/source/{repo}/main/     [main] — production
+D:/source/{repo}/{repo}-dev/  [{repo}-dev] — development
+```
+
+**Active repos and dev branches:**
+
+- `cwchat-dev` → `D:/source/cwchat/cwchat-dev/` (PRs to main)
+- `pulsona-dev` → `D:/source/pulsona/pulsona-dev/` (PRs to main)
+- `gswarm-dev` → `D:/source/gswarm/gswarm-dev/` (PRs to main)
+- `~/.claude` — main only (no dev branch needed)
+
+**Excluded repos:** `my-app`, `nextjs-bosmadev` (dummy/template repos)
 
 **Build ID Auto-Detection:**
 
@@ -208,6 +221,14 @@ Build IDs are **auto-detected** from CHANGELOG.md — no manual assignment neede
 2. Run `/openpr` → auto-detects `Build N+1` → creates PR
 3. Squash merge to main → `changelog.ts` picks up Build ID → CHANGELOG entry
 4. Direct commits to main → `/commit` auto-injects Build ID
+
+## Git Aliases
+
+| Alias | Command | Purpose |
+|-------|---------|---------|
+| `reset-dev` | Auto-detect `{repo}-dev`, fetch, reset --hard origin/main, force push | Reset dev branch after PR merge (manual fallback for GitHub Action) |
+
+Usage: `git reset-dev` (auto-detects branch) or `git reset-dev custom-branch`
 
 ## CHANGELOG Automation
 

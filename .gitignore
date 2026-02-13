@@ -35,6 +35,7 @@ research/
 image-cache/
 skills/x/data/
 skills/*/.claude/
+${TMPDIR}/
 
 # Files
 !.gitkeep

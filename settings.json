@@ -4,7 +4,7 @@
     "FORCE_COLOR": "1",
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_TMPDIR": "${TMPDIR}/claude-tmp",
+    "CLAUDE_CODE_TMPDIR": "C:/Users/Dennis/AppData/Local/Temp/claude-tmp",
     "PYTHONPYCACHEPREFIX": "~/.claude\\.cache\\pycache"
   },
   "attribution": {
