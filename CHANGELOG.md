@@ -3,6 +3,18 @@
 
 ---
 
+## [![v1.8.0](https://img.shields.io/badge/v1.8.0-2026--02--13-333333.svg)](https://github.com/bosmadev/claude/commit/8e908417041891d3326b1ce12ac9606d68c84cd2) | Build 18
+
+feat(x): add sanitize_reply_text guard for post quality
+
+- [x] Strip non-ASCII unicode artifacts (em-dash, curly quotes, etc)
+- [x] Block banned references (github, gist, repo, source code)
+- [x] Auto-replace "bro" with "dude"
+- [x] Warn on replies >280 chars
+
+
+---
+
 ## [![v1.7.0](https://img.shields.io/badge/v1.7.0-2026--02--12-333333.svg)](https://github.com/bosmadev/claude/commit/a50e93f26433696441457cd5adca610b61a8a1fd) | Build 16
 
 feat(x): GitHub-to-X pipeline + CI changelog workflow fixes
