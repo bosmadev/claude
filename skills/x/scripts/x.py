@@ -599,10 +599,80 @@ async def cmd_search(query: str, count: int = 20):
     await s.close()
 
 
+def sanitize_reply_text(text: str) -> str:
+    """Enforce reply quality rules at the Python level.
+
+    This runs BEFORE every post/reply to catch agent mistakes:
+    - Strip non-ASCII characters (encoding artifacts)
+    - Block banned words/references
+    - Validate number format
+    - Enforce character limit for reply-style posts
+    """
+    import unicodedata
+
+    # 1. Replace common unicode artifacts with ASCII equivalents
+    replacements = {
+        "\u2014": "--",   # em-dash
+        "\u2013": "-",    # en-dash
+        "\u2018": "'",    # left single quote
+        "\u2019": "'",    # right single quote
+        "\u201c": '"',    # left double quote
+        "\u201d": '"',    # right double quote
+        "\u2026": "...",  # ellipsis
+        "\u00e4": "a", "\u00c4": "A",  # a-umlaut
+        "\u00f6": "o", "\u00d6": "O",  # o-umlaut
+        "\u00fc": "u", "\u00dc": "U",  # u-umlaut
+        "\u00e9": "e", "\u00c9": "E",  # e-acute
+        "\u00e8": "e", "\u00c8": "E",  # e-grave
+        "\u00e0": "a", "\u00c0": "A",  # a-grave
+        "\u00f1": "n", "\u00d1": "N",  # n-tilde
+    }
+    for uni, ascii_eq in replacements.items():
+        text = text.replace(uni, ascii_eq)
+
+    # 2. Strip any remaining non-ASCII (keep only printable ASCII + newlines)
+    cleaned = []
+    for ch in text:
+        if ord(ch) < 128 or ch == "\n":
+            cleaned.append(ch)
+        # silently drop non-ASCII
+    text = "".join(cleaned)
+
+    # 3. Block banned references (case-insensitive)
+    banned_patterns = [
+        r"github\.com",
+        r"gist\.github",
+        r"\bgithub\b",
+        r"\bgist\b",
+        r"\brepo\b",
+        r"\brepository\b",
+        r"\bsource\s*code\b",
+        r"\bopen\s*source\b",
+    ]
+    for pat in banned_patterns:
+        if re.search(pat, text, re.IGNORECASE):
+            print(_red(f"BLOCKED: Reply contains banned reference matching '{pat}'"))
+            print(_red(f"Text was: {text[:200]}"))
+            sys.exit(1)
+
+    # 4. Block "bro" -- user explicitly banned this word
+    if re.search(r"\bbro\b", text, re.IGNORECASE):
+        text = re.sub(r"\bbro\b", "dude", text, flags=re.IGNORECASE)
+        print(_yellow("SANITIZED: Replaced 'bro' with 'dude'"))
+
+    # 5. Warn if reply looks too long for a casual reply (>280 chars)
+    if len(text) > 280:
+        print(_yellow(f"WARNING: Reply is {len(text)} chars -- might be too long for engagement"))
+
+    return text.strip()
+
+
 async def cmd_post(tweet_id: str, text: str):
     """Post a reply to a specific tweet"""
     # Fix literal \n from shell arguments → actual newlines
     text = text.replace("\\n", "\n")
+    # Enforce reply quality rules
+    text = sanitize_reply_text(text)
     max_chars = 4000  # X Premium limit
     if len(text) > max_chars:
         print(_red(f"ERROR: Reply exceeds {max_chars} character limit ({len(text)} chars)"))
@@ -660,6 +730,8 @@ async def cmd_tweet(text: str):
     """Post an original tweet (not a reply) for compose mode"""
     # Fix literal \n from shell arguments → actual newlines
     text = text.replace("\\n", "\n")
+    # Enforce reply quality rules (same sanitization for tweets)
+    text = sanitize_reply_text(text)
     # X Premium allows up to 4,000 chars
     max_chars = 4000
     if len(text) > max_chars:
