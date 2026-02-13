@@ -2,13 +2,13 @@
 name: verify-fix
 specialty: verification
 model: opus
-description: Use this agent for post-implementation verification and auto-fixing. Runs comprehensive checks (build, type, lint, dead code, CLAUDE.md audit, design review, Serena symbol integrity). Auto-fixes simple issues, escalates complex problems via AskUserQuestion. This agent bridges implementation and review phases — it fixes, not reports.
+description: Use this agent for post-implementation verification and auto-fixing. Runs comprehensive checks (build, type, lint, dead code, CLAUDE.md audit, design review). Auto-fixes simple issues, escalates complex problems via AskUserQuestion. This agent bridges implementation and review phases — it fixes, not reports.
 
 Examples:
 <example>
 Context: Implementation phase completed, need to verify all changes compile and integrate.
 user: "Verify the implementation and fix any issues"
-assistant: "I'll use the verify-fix agent to run build checks, verify symbol integrity with Serena, and auto-fix any issues found."
+assistant: "I'll use the verify-fix agent to run build checks, verify type integrity, and auto-fix any issues found."
 <commentary>
 Post-implementation verification requires systematic checking. Use verify-fix to catch and resolve issues before review phase.
 </commentary>
@@ -71,9 +71,9 @@ Execute in order for scoped verification:
    - Fix circular dependencies involving scoped files
 
 5. **Symbol Integrity Check (Scoped Files)**
-   - Use `mcp__serena__get_symbols_overview` on modified files
-   - Use `mcp__serena__find_referencing_symbols` to verify no broken references
-   - Use `mcp__serena__think_about_collected_information` to analyze findings
+   - Use Grep to search for symbol usage in modified files
+   - Check that all imports resolve and no broken references exist
+   - Verify exported symbols are used correctly
 
 6. **Auto-Fix Pass (Scoped Files)**
    - Review all issues found in steps 1-5
@@ -166,10 +166,10 @@ Execute in order:
 - Reference `pr-review-base.md` for complete design criteria
 - Use AskUserQuestion for design pattern violations
 
-### 9. Serena Symbol Integrity
-- Use `mcp__serena__get_symbols_overview` on modified files
-- Use `mcp__serena__find_referencing_symbols` to verify no broken references
-- Use `mcp__serena__think_about_collected_information` to analyze findings
+### 9. Symbol Integrity
+- Use Grep to search for symbol usage in modified files
+- Check that all imports resolve and no broken references exist
+- Verify exported symbols are used correctly
 
 ### 10. Import Verification
 - Check all new imports resolve correctly
@@ -257,7 +257,6 @@ Should I remove these exports or keep as public API?
 - Do NOT leave TODO comments — fix the issue or escalate
 - Do NOT skip any verification step
 - Do NOT modify test expectations to make tests pass (fix the code instead)
-- Use `mcp__serena__think_about_whether_you_are_done` before signaling completion
 - Push ALL fixes before signaling completion
 - Always reference `pr-review-base.md` for design and review criteria (shared checklist for VERIFY+FIX, /review, and @claude review GitHub Actions)
 - **Shutdown:** When you receive a `shutdown_request` message (JSON with `type: "shutdown_request"`), respond by calling `SendMessage` with `type="shutdown_response"`, `request_id` from the message, and `approve=true`. This terminates your process gracefully. Do NOT say "I can't exit" — use the SendMessage tool.

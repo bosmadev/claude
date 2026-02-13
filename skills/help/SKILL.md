@@ -52,7 +52,6 @@ Read from `.claude/` directory:
 ### 3. Available Tools
 
 Check MCP server availability:
-- `serena` - Semantic code analysis
 - `context7` - Documentation lookup
 - `playwriter` - Browser automation
 - `claude-in-chrome` - DevTools access
@@ -159,16 +158,6 @@ This skill provides guidance but doesn't execute actions. Direct users to:
 | Manage screenshots | `/screen` |
 | Token management | `/token status` |
 
-## Serena Integration
-
-Use Serena for code-aware responses:
-
-```
-# Find relevant context
-mcp__serena__list_memories() - Check for project conventions
-mcp__serena__get_symbols_overview(relative_path) - Understand file structure
-mcp__serena__search_for_pattern(pattern) - Find related code
-```
 
 ## Ralph Status Check
 

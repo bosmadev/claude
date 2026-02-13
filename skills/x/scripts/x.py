@@ -678,6 +678,72 @@ def sanitize_reply_text(text: str) -> str:
             print(_yellow("TIP: Be helpful/funny, not sarcastic/mean. Suggest solutions or ask questions."))
             sys.exit(1)
 
+    # 4.5. Block vague/generic "AI slop" comments (must be specific and helpful)
+    vague_patterns = [
+        r"^(nice|cool|great|awesome|interesting|amazing)!?$",  # Single-word reactions
+        r"^(this is|that's|it's) (nice|cool|great|awesome|interesting|amazing)!?$",
+        r"^(love|like) this!?$",
+        r"^thanks for sharing!?$",
+        r"^(good|great) (post|tweet|thread)!?$",
+        r"^(totally|completely|absolutely) agree!?$",
+        r"^so true!?$",
+        r"^exactly!?$",
+        r"^this!?$",
+        r"^yep!?$",
+        r"^yeah!?$",
+        r"^wow!?$",
+    ]
+    for pat in vague_patterns:
+        if re.search(pat, text.strip(), re.IGNORECASE):
+            print(_red(f"BLOCKED: Reply is too vague/generic matching '{pat}'"))
+            print(_red(f"Text was: {text[:200]}"))
+            print(_yellow("TIP: Reference specific details from the original post. Add your own experience or ask a question."))
+            sys.exit(1)
+
+    # 4.6. Block Wikipedia/narrator/news anchor tone (must sound like a real person)
+    narrator_patterns = [
+        r"\b(furthermore|moreover|additionally|in addition|consequently)\b",  # Formal transitions
+        r"\b(one can|one should|one might|it is worth noting)\b",  # Impersonal voice
+        r"\b(it('s| is) important to note|it('s| is) worth mentioning)\b",  # Narrator framing
+        r"\b(this (allows|enables|provides|offers) (users?|developers?|teams?))\b",  # Feature description style
+        r"^(the|this) .{20,}(is|are|was|were) (a|an|the)",  # Wikipedia opening style
+        r"\b(comprehensive|robust|powerful|versatile|feature-rich)\b",  # Marketing speak
+        r"\?(\\n| ){0,3}(what|how|have you|did you|are you).{10,}\?$",  # Forced double question
+    ]
+    for pat in narrator_patterns:
+        if re.search(pat, text, re.IGNORECASE):
+            print(_red(f"BLOCKED: Reply sounds like Wikipedia/narrator matching '{pat}'"))
+            print(_red(f"Text was: {text[:200]}"))
+            print(_yellow("TIP: Write like you're texting a friend. Drop the formal tone. Just react naturally."))
+            sys.exit(1)
+
+    # 4.7. Block passive observations (no engagement hook - people won't respond)
+    passive_patterns = [
+        r"\b(is wild|that'?s wild|so wild)\b",  # Passive observation
+        r"\b(hits different|hit different)\b",  # No engagement trigger
+        r"\b(really (hits|slaps|goes hard))\b",  # Observation without question/help
+        r"^[^?!.]{1,30}(is|was|are) (wild|crazy|insane|nuts|sick)$",  # Just adjective, no hook
+        r"\b(lowkey|highkey|ngl) [^?]{10,}$",  # Observation ending without question
+        r"^(the way|the fact that) [^?]{15,}$",  # Observation with no engagement
+        r"\b(gotta love|you love to see)\b",  # Passive approval
+        r"^respect[^?]{0,20}$",  # One-word approval
+        r"^(big|huge|massive) (W|L|win|loss|mood|vibe)[^?]{0,20}$",  # Reaction without hook
+        r"\bbro\b",  # NEVER use "bro" - sounds forced/cringe
+    ]
+    for pat in passive_patterns:
+        if re.search(pat, text, re.IGNORECASE):
+            print(_red(f"BLOCKED: Reply is passive observation (no engagement trigger) matching '{pat}'"))
+            print(_red(f"Text was: {text[:200]}"))
+            print(_yellow("TIP: Add a question, share a solution, or help them solve their problem. Engagement requires a hook."))
+            sys.exit(1)
+
+    # Also block if reply is suspiciously short (< 20 chars) without being a question
+    if len(text.strip()) < 20 and "?" not in text:
+        print(_red(f"BLOCKED: Reply too short ({len(text.strip())} chars) without being a question"))
+        print(_red(f"Text was: {text[:200]}"))
+        print(_yellow("TIP: Add more substance. Reference the original post or share your experience."))
+        sys.exit(1)
+
     # 5. Block "bro" -- user explicitly banned this word
     if re.search(r"\bbro\b", text, re.IGNORECASE):
         text = re.sub(r"\bbro\b", "dude", text, flags=re.IGNORECASE)

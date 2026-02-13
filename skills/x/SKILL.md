@@ -553,69 +553,158 @@ Claude dynamically composes and posts replies. Every reply is unique. Claude rea
 
 ---
 
-## Human Tone Guidelines
+## Human Tone Guidelines — ENGAGEMENT FIRST
 
-The following rules ensure replies don't look like a bot. Claude MUST follow these.
+**CRITICAL:** Every reply MUST drive engagement. Not just funny observations — trigger RESPONSES.
 
-### Tone Profiles (Rotate Between These)
+### 4 Reply Strategies (Mix These Every Session)
 
-Each reply MUST use ONE of these tone profiles. Rotate between them so consecutive replies never use the same profile.
-
-**1. The Steal / Too Good to Be True (40% of replies)**
-Sound like you're sharing an insider secret, a deal so good it feels illegal. Informative but with "you won't believe this" energy.
-
+**1. Question Strategy (30%) — Trigger Discussion:**
 ```
-"wait you're paying for API calls? someone pooled free gmails into 300rpm on gemini flash. literally zero cost"
+"wait how are you handling rate limits with that many requests"
 
-"genuinely wild that this exists - 300 requests per minute on gemini flash, no credit card, no billing surprises"
+"what's your retry logic look like when gemini hits quota"
 
-"this feels like a cheat code honestly. free gemini flash at 300rpm while everyone else is paying per token"
+"are you pooling accounts or using a single key"
+
+"how'd you get around the email verification rate limits"
 ```
 
-**2. The Sarcastic / Dry Humor (30% of replies)**
-Light sarcasm about the AI pricing situation. Never mean, just wry observations.
-
+**2. Helpful Strategy (40%) — Solve Their Problem:**
 ```
-"openai charging $20/month for rate limits is peak comedy when this does 300rpm for free"
+"if you're hitting rate limits, pool free gmail accounts for gemini flash. ~300 rpm, zero cost"
 
-"love how the AI industry convinced everyone that paying per token is normal. anyway here's 300rpm for $0"
+"ran into same issue. switched to account rotation and went from 60 to 300 rpm overnight"
 
-"nothing like a surprise API bill to make you question your life choices. this might help with that"
-```
+"the email-based quota thing is annoying but you can script gmail account creation pretty easily"
 
-**3. The Empathetic Helper (30% of replies)**
-Genuine, warm, relatable. You've been there too.
-
-```
-"been there with the rate limits. this pools free gmails for 300rpm on gemini flash - saved my project last month"
-
-"as a student this would've been huge for me. free gemini flash at 300 requests per min, no card needed"
-
-"the free tier struggle is real. this gets you way more out of gemini flash without spending anything"
+"gemini flash has per-email quotas not per-api-key. that's the unlock"
 ```
 
-### DO:
+**3. Funny + Helpful (20%) — Entertain AND Solve:**
+```
+"paying for api calls when free gmail accounts exist. check gswarm - pools accounts for 300rpm gemini flash"
 
-- Rotate between the 3 tone profiles above
-- Write like a real person texting a friend
-- Use simple short sentences
-- Reference something specific from their post
-- Keep it under 280 chars
-- Use lowercase naturally (not all proper case)
-- Make it sound like a genuine discovery, not an ad
-- Use "honestly", "genuinely", "actually", "literally" naturally
+"love how we all pretend openai pricing is normal. anyway here's how to dodge it entirely: [solution]"
+
+"spending $50/mo on api calls is peak 2024 energy. gswarm does 300 rpm gemini flash for literally zero cost"
+```
+
+**4. Informative Strategy (10%) — Teach Something:**
+```
+"gemini flash quotas are per gmail account not per api key. pool 100 accounts = 100x the free tier"
+
+"the trick is email-based quotas. create accounts programmatically, rotate through them, zero api cost"
+
+"free tiers reset daily per account. 60 accounts × 50 calls/day = 3000 free calls daily"
+```
+
+### CRITICAL: What Triggers RESPONSES vs Scrolling Past
+
+**❌ BLOCKED - Passive Observations (NO engagement hook):**
+```
+"this is wild"  ← passive, no response trigger
+"hits different"  ← observation without hook
+"lowkey this slaps"  ← no reason to reply
+"the way this works is crazy"  ← dead end
+"respect"  ← one-word approval, conversation killer
+```
+
+**❌ BLOCKED - Wikipedia/Narrator Tone:**
+```
+"This is an interesting approach..."  ← textbook
+"Furthermore, it's worth noting..."  ← narrator
+"This allows developers to..."  ← feature description
+```
+
+**✅ GOOD - Engagement Hooks:**
+```
+"wait how are you scaling this"  ← question = response trigger
+"ran into same issue. pool gmail accounts for gemini quotas - went from 60 to 300 rpm"  ← helpful = thanks response
+"spending $50/mo on openai when gemini flash is free. check gswarm for account pooling"  ← solution reference
+"debugging with console.log in 2026. anyway here's how to actually profile node apps: [tip]"  ← funny + helpful
+```
+
+### Engagement Hook Patterns (USE THESE)
+
+**1. Question Hooks:**
+- "wait how are you [specific action]"
+- "what's your [solution] look like"
+- "are you using [approach] or [alternative]"
+- "how'd you solve [specific problem]"
+
+**2. Solution Hooks:**
+- "ran into same issue. [solution that worked]"
+- "if you're hitting [problem], [specific fix]"
+- "[their issue] is brutal. switched to [solution] and [result]"
+- "the [tool/trick] thing is [insight]. that's the unlock"
+
+**3. Funny + Helpful Hooks:**
+- "love how we all [shared misconception]. here's what actually works: [solution]"
+- "[their struggle] is peak [year] energy. [solution] does [benefit] for zero cost"
+- "paying for [expensive thing] when [free alternative] exists. check [solution]"
+
+**4. GSwarm Reference Patterns (Natural, Not Sales-y):**
+
+**Problem → Personal Solution → Tool Pattern:**
+```
+"I had this exact issue with [their problem].
+
+What worked: [brief solution explanation]
+
+Built a tool for it: [GSwarm mention]"
+```
+
+**Examples:**
+- "ran into same issue. pool gmail accounts for gemini quotas - went from 60 to 300 rpm"
+- "hit those limits building [related project]. switched to account rotation and the 300 rpm solved it"
+- "email-based quotas are the hack. gswarm automates the account pooling part"
+- "if you're paying for api calls, account rotation gets you gemini flash for free. check gswarm"
+
+**RED FLAGS (validation will block):**
+- ❌ "Check out my tool!"
+- ❌ "You should try [product]"
+- ❌ Starting with the link
+- ❌ No value before URL
+
+### X Algorithm Reality (2026)
+
+**CRITICAL:** Replies = 13.5x More Valuable Than Likes
+
+The X algorithm heavily prioritizes reply engagement. Posts generating conversation receive 3-4x more distribution than posts with equivalent like counts but fewer replies.
+
+**70/30 Rule:** 70% engagement with others' content, 30% original posts. Days with heavy replies to other accounts (even with fewer original posts) drive most profile visits.
+
+**Two-Tweet Pattern (Link Suppression Workaround):**
+1. **Main Reply:** Native value, no links (optimized for algorithmic visibility)
+2. **Follow-Up Reply:** Add GSwarm link in self-reply to your main reply
+
+Example:
+```
+Main: "ran into same issue. pool gmail accounts for gemini quotas - went from 60 to 300 rpm overnight"
+Follow-up (reply to self): "full setup guide + gswarm tool: [link]"
+```
+
+**Why This Works:** Main reply gets algorithmic boost (no link suppression), follow-up directs interested users to resource without hurting main reply's reach.
+
+### Style Guidelines:
+
+- **Length:** 10-30 words (substance over brevity)
+- **Caps:** lowercase casual (not strict)
+- **Engagement:** EVERY reply needs a hook (question, solution, or helpful tip)
+- **References:** Use two-tweet pattern OR mention GSwarm naturally in main reply
+- **Tone:** Helpful friend, not salesperson
+- **Self-aware humor** (laughing with, not at)
+- Use: "me:", "when", "wait", "*action*", "narrator:"
 
 ### DON'T:
 
-- Use the same tone profile twice in a row
-- Use formal language ("Furthermore", "Additionally", "I'd like to share")
-- Use hashtags in replies (looks like a bot)
-- Start with "Hey!" or "Hi!" (looks like spam)
-- Use exclamation marks excessively (max 1 per reply)
-- Use corporate speak ("leverage", "utilize", "comprehensive")
-- Copy the same sentence structure across replies
-- Use bullet points or formatted lists in tweets
-- Sound like a salesperson (no "check it out!", "you should try this!")
+- Explain the joke after delivering it
+- Use proper grammar/caps (too formal)
+- Go over 20 words (loses punch)
+- Be mean-spirited (playful teasing only)
+- Add periods at end (kills comedic timing)
+- Use hashtags in the joke itself
 
 ### URL Strategy (MANDATORY)
 
@@ -628,21 +717,46 @@ Genuine, warm, relatable. You've been there too.
 
 Claude reads the `share_url` at the start of each `/x` session and includes it in every generated reply.
 
-### Tone Rotation Protocol
+### Automated Quality Validation (Prevents "AI Slop")
 
-To ensure variety, each agent maintains a tone counter:
-1. First reply: "steal" tone
-2. Second reply: "sarcastic" tone
-3. Third reply: "empathetic" tone
-4. Fourth reply: "steal" tone (restart cycle)
-5. ... and so on
+**CRITICAL: All replies validated by `sanitize_reply_text()` before posting.**
 
-When posting in parallel (multiple agents), each agent starts at a DIFFERENT point in the rotation:
-- Agent 1 (poster): starts at "steal"
-- Agent 2 (poster): starts at "sarcastic"
-- Agent 3 (poster): starts at "empathetic"
-- Agent 4 (poster): starts at "steal"
-- Quote tweeter: always uses "steal" tone (biggest impact for follower-facing content)
+**Auto-blocked patterns:**
+
+**Vague/Generic (no substance):**
+- Single-word: "Nice!", "Cool!", "Great!"
+- Generic: "This is great", "Love this", "Thanks for sharing"
+- Low-effort: "Totally agree", "So true", "Exactly"
+- Too short: < 20 chars without "?"
+
+**Wikipedia/Narrator Tone (sounds like a bot):**
+- Formal transitions: "Furthermore", "Moreover", "Additionally"
+- Impersonal: "One can", "It is worth noting"
+- Feature descriptions: "This allows developers to..."
+- Marketing speak: "comprehensive", "robust", "powerful"
+- Wikipedia style: "The solution provides..."
+- Forced double questions at end
+
+**What passes validation:**
+- Sounds like texting a friend
+- References SPECIFIC details from their post
+- Natural flow (not a template)
+- Questions OPTIONAL (only if genuinely curious)
+- 20+ chars with substance
+
+**Example - BLOCKED:**
+```
+"Nice!"  ❌ (vague, single-word)
+"This is great"  ❌ (generic, no substance)
+"Thanks for sharing"  ❌ (low-effort acknowledgment)
+```
+
+**Example - PASSES:**
+```
+"been there with rate limits - this pools gmails for 300rpm"  ✅ (specific, helpful)
+"wait you're paying /mo? there's a free 300rpm option"  ✅ (references cost, offers solution)
+"how did you handle the auth flow? ran into CORS issues myself"  ✅ (specific question)
+```
 
 ---
 

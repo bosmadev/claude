@@ -162,17 +162,6 @@
       ],
       "env": {}
     },
-    "serena": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/oraios/serena",
-        "serena",
-        "start-mcp-server"
-      ],
-      "env": {}
-    },
     "claude-in-chrome": {
       "type": "stdio",
       "command": "node.exe",

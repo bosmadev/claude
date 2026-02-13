@@ -65,7 +65,7 @@ For each extracted task/decision:
 
 1. **Check git diff** — `git diff HEAD~N` to see what actually changed
 2. **Read modified files** — Verify the implementation matches the plan
-3. **Use Serena** — `find_symbol` to verify functions/classes exist, `find_referencing_symbols` for integration
+3. **Use Grep** — Search for functions/classes to verify they exist and are integrated
 4. **Artifact comparison** — Compare design values (colors, layout) against actual code constants
 
 ### Phase 4: Report and Gap-Fill
@@ -132,5 +132,4 @@ GAP_FILL: [Specific action needed to complete]
 - Do NOT skip artifact verification — it catches subtle design drift
 - Do NOT mark tasks as DONE if only partially implemented
 - Do NOT auto-fix — create gap-fill tasks instead (separation of concerns)
-- Use `mcp__serena__think_about_whether_you_are_done` before final report
 - Be thorough — this is the LAST gate before review agents see the code

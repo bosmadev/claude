@@ -1,39 +1,25 @@
 #!/usr/bin/env python3
 """
-Ralph Protocol - Unified Autonomous Agent Loop Implementation
+Ralph Protocol - Hook Handlers and Agent Utilities
 
 This module implements the Ralph Protocol for managing autonomous Claude agent
-loops with state persistence, hook integration, and multi-agent orchestration.
+loops with hook integration, agent configuration, and work-stealing queues.
 
-The protocol ensures:
-- Agents complete their designated iterations before exit
-- State is preserved across sessions via checkpointing
-- Hook handlers inject proper context and block premature exits
-- Multiple agents can be spawned concurrently with asyncio
-
-Spawn Backends:
-- subprocess: Spawns agents as separate `claude --print` processes (default)
-- task: Generates prompts for manual Task() spawning in parent Claude session
-- auto: Uses Task for <=10 agents, subprocess for overflow
+Orchestration uses Claude Code native Agent Teams (TeamCreate/Task/SendMessage).
+Subprocess orchestration has been removed — see /start skill for team-based flow.
 
 Usage:
-    ralph.py loop N M [task]         - Run N agents × M iterations (subprocess backend)
-    ralph.py prompt N [task]         - Generate N prompts for Task() spawning
-    ralph.py status                  - Show current state
-    ralph.py resume                  - Resume from checkpoint
-    ralph.py cleanup                 - Clean state files
-
-Task Backend Workflow:
-    The 'task' backend requires manual Task() spawning from the parent Claude session
-    because ralph.py runs as a subprocess and cannot directly invoke the Task tool.
-    
-    Example:
-        1. Generate prompts: python ralph.py prompt 5 "implement auth"
-        2. In parent Claude session, spawn each prompt via Task tool:
-           Task(prompt="...agent 1 prompt...")
-           Task(prompt="...agent 2 prompt...")
-           ...
-        3. All agents share the same TaskList and coordinate via Ralph protocol
+    ralph.py prompt N [task]         - Generate N agent prompts for Task tool spawning
+    ralph.py status                  - Show current Ralph state
+    ralph.py cleanup                 - Clean up all state files
+    ralph.py cleanup --auto          - Auto-cleanup old files (default: 7 days)
+    ralph.py agent-tracker           - Handle PostToolUse:Task hook (reads stdin)
+    ralph.py hook-stop               - Handle hook-stop (reads stdin)
+    ralph.py hook-pretool            - Handle hook-pretool (reads stdin)
+    ralph.py hook-user-prompt        - Handle hook-user-prompt (reads stdin)
+    ralph.py hook-session            - Handle hook-session-start (reads stdin)
+    ralph.py hook-subagent-start     - Handle SubagentStart hook (reads stdin)
+    ralph.py hook-subagent-stop      - Handle SubagentStop hook (reads stdin)
 """
 
 import asyncio
@@ -55,16 +41,500 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from zoneinfo import ZoneInfo
 
-# Import Ralph library functions
-from ralph_lib import (
-    build_agent_prompt,
-    load_agent_config,
-    match_agent_to_task,
-    discover_agent_configs,
-    generate_agent_name,
-    _get_agents_dir,
-    AGENT_SPECIALTIES,
-)
+# Ralph library functions (merged from ralph_lib.py)
+
+# =============================================================================
+# Agent Specialties + Auto-Assignment
+# =============================================================================
+
+AGENT_SPECIALTIES: dict[str, list[str]] = {
+    "security-reviewer": ["security", "auth", "owasp", "xss", "csrf", "injection", "vulnerability", "encryption", "token", "password"],
+    "performance-reviewer": ["performance", "speed", "latency", "cache", "optimize", "memory", "profil", "bottleneck", "slow"],
+    "api-reviewer": ["api", "rest", "graphql", "endpoint", "route", "http", "request", "response", "cors", "middleware"],
+    "architecture-reviewer": ["architecture", "pattern", "design", "structure", "module", "dependency", "coupling", "solid"],
+    "a11y-reviewer": ["accessibility", "a11y", "aria", "wcag", "screen reader", "keyboard", "contrast", "focus"],
+    "database-reviewer": ["database", "sql", "query", "migration", "schema", "index", "orm", "prisma", "drizzle"],
+    "commit-reviewer": ["commit", "git", "merge", "branch", "changelog", "version", "release"],
+    "performance-profiler": ["profile", "benchmark", "flame", "trace", "cpu", "heap", "allocation"],
+    "doc-accuracy-checker": ["documentation", "readme", "jsdoc", "docstring", "comment", "api doc"],
+    "build-error-resolver": ["build", "compile", "error", "typescript", "lint", "biome", "webpack", "vite", "bundle"],
+    "refactor-cleaner": ["refactor", "clean", "dead code", "unused", "duplicate", "simplify", "extract"],
+    "e2e-runner": ["test", "e2e", "playwright", "cypress", "selenium", "integration test", "coverage"],
+    "review-coordinator": ["review", "coordinate", "summary", "aggregate", "findings", "report"],
+    "nextjs-specialist": ["nextjs", "next", "react", "ssr", "server component", "app router", "page", "layout"],
+    "python-specialist": ["python", "fastapi", "django", "flask", "pip", "uv", "pytest", "pydantic"],
+    "go-specialist": ["go", "golang", "goroutine", "channel", "gin", "fiber"],
+    "devops-automator": ["devops", "ci", "cd", "docker", "kubernetes", "deploy", "pipeline", "github actions"],
+    "scraper-agent": ["scrape", "crawl", "extract", "parse", "html", "browser", "puppeteer"],
+    "pr-body-generator": ["pr", "pull request", "description", "summary", "changelog"],
+}
+
+
+def _get_agents_dir() -> str:
+    """Get default agents directory, cross-platform."""
+    _home = os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude")
+    return str(Path(_home) / "agents")
+
+
+def discover_agent_configs(agents_dir: str | None = None) -> dict[str, str]:
+    """Discover ALL agent config files (not just reviewers).
+
+    Returns:
+        Dict mapping config name to file path.
+    """
+    if agents_dir is None:
+        agents_dir = _get_agents_dir()
+
+    agents_path = Path(agents_dir)
+    if not agents_path.exists():
+        return {}
+
+    configs = {}
+    for agent_file in sorted(agents_path.glob("*.md")):
+        configs[agent_file.stem] = str(agent_file)
+
+    return configs
+
+
+def load_agent_config(config_path: str) -> str:
+    """Load an agent config file content."""
+    try:
+        return Path(config_path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def match_agent_to_task(task: str, agents_dir: str | None = None) -> str:
+    """Match a task description to the best-fit agent config via keyword overlap scoring."""
+    if not task:
+        return "general"
+
+    task_lower = task.lower()
+    best_match = "general"
+    best_score = 0
+
+    available = discover_agent_configs(agents_dir)
+
+    for agent_name, keywords in AGENT_SPECIALTIES.items():
+        if agent_name not in available:
+            continue
+        score = sum(1 for kw in keywords if kw in task_lower)
+        if score > best_score:
+            best_score = score
+            best_match = agent_name
+
+    return best_match if best_score > 0 else "general"
+
+
+def generate_agent_name(phase: str, specialty: str, index: int) -> str:
+    """Generate a structured agent name (ralph-{phase}-{specialty}-{index})."""
+    phase_abbrev = {
+        "implementation": "impl",
+        "verify_fix": "vf",
+        "review": "review",
+        "plan": "plan",
+        "complete": "done",
+    }.get(phase, phase[:4])
+
+    spec = specialty.replace("-reviewer", "").replace("-specialist", "").replace("-", "")[:8]
+    return f"ralph-{phase_abbrev}-{spec}-{index}"
+
+
+def build_agent_prompt(
+    agent_id: int,
+    total_agents: int,
+    current_iteration: int,
+    max_iterations: int,
+    task: Optional[str],
+    session_id: str,
+    complete_signal: str,
+    exit_signal: str,
+    assigned_config: Optional[str] = None,
+) -> str:
+    """Build the initial prompt for an agent with agent config loading."""
+    all_configs = discover_agent_configs()
+    config_names = list(all_configs.keys())
+    agent_config_content = ""
+    assigned_role = "general"
+
+    if assigned_config and assigned_config in all_configs:
+        config_path = all_configs[assigned_config]
+        agent_config_content = load_agent_config(config_path)
+        assigned_role = assigned_config
+    elif config_names:
+        config_name = config_names[agent_id % len(config_names)]
+        config_path = all_configs[config_name]
+        agent_config_content = load_agent_config(config_path)
+        assigned_role = config_name
+
+    role_section = ""
+    if agent_config_content:
+        role_section = f"""
+ROLE CONFIG ({assigned_role}):
+{agent_config_content[:2000]}
+"""
+
+    inbox_section = f"""
+COORDINATION:
+- Check inbox: .claude/ralph/team-{session_id}/inbox/agent-{agent_id}.json
+- Report completion: write task_completed message to relay
+- If idle: write idle_notification message
+- Heartbeat: write to .claude/ralph/team-{session_id}/heartbeat/agent-{agent_id}.json
+"""
+
+    return f"""You are Ralph Agent {agent_id}/{total_agents} working on: {task or 'Complete the assigned development work'}
+
+ASSIGNMENT: {assigned_role}
+ITERATION: {current_iteration + 1} of {max_iterations}
+{role_section}
+WORK PROTOCOL:
+1. Call TaskList to see available tasks
+2. Claim next available task (status=pending, no blockers)
+3. Work autonomously — no confirmation needed
+4. Push ALL commits before signaling completion
+5. Mark task completed, claim next
+6. When all your work is done, output EXACTLY:
+   {complete_signal}
+   {exit_signal}
+{inbox_section}
+TOOLS: All standard tools + Context7 MCP
+
+Begin working now.
+"""
+
+
+# =============================================================================
+# Work-Stealing Queue Data Models
+# =============================================================================
+
+@dataclass
+class QueueTask:
+    """Task in the work-stealing queue."""
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    description: str = ""
+    status: str = "pending"
+    blocked_by: list = field(default_factory=list)
+    claimed_by: Optional[str] = None
+    iterations: int = 0
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "description": self.description, "status": self.status,
+            "blockedBy": self.blocked_by, "claimed_by": self.claimed_by,
+            "iterations": self.iterations, "started_at": self.started_at,
+            "completed_at": self.completed_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "QueueTask":
+        return cls(
+            id=data["id"], description=data.get("description", ""),
+            status=data.get("status", "pending"), blocked_by=data.get("blockedBy", []),
+            claimed_by=data.get("claimed_by"), iterations=data.get("iterations", 0),
+            started_at=data.get("started_at"), completed_at=data.get("completed_at"),
+        )
+
+
+@dataclass
+class TaskQueue:
+    """Work-stealing task queue tied to a plan file (JSON and Markdown)."""
+    plan_id: str
+    plan_file: str
+    created_at: str
+    tasks: list = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "plan_id": self.plan_id, "plan_file": self.plan_file,
+            "created_at": self.created_at,
+            "tasks": [t.to_dict() if isinstance(t, QueueTask) else t for t in self.tasks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TaskQueue":
+        return cls(
+            plan_id=data["plan_id"], plan_file=data["plan_file"],
+            created_at=data["created_at"],
+            tasks=[QueueTask.from_dict(t) if isinstance(t, dict) else t for t in data.get("tasks", [])],
+        )
+
+    def to_markdown(self) -> str:
+        """Generate markdown representation of task queue."""
+        completed = [t for t in self.tasks if t.status == "completed"]
+        in_progress = [t for t in self.tasks if t.status == "in_progress"]
+        pending = [t for t in self.tasks if t.status == "pending"]
+
+        lines = [
+            "---", f"plan_id: {self.plan_id}", f"created: {self.created_at}",
+            f"total_tasks: {len(self.tasks)}", f"completed: {len(completed)}", "---",
+            "", f"# Task Queue: {self.plan_id}", "",
+        ]
+
+        if completed:
+            lines.append("## Completed")
+            for task in completed:
+                agent_info = f" ({task.claimed_by})" if task.claimed_by else ""
+                lines.append(f"- [x] Task {task.id}: {task.description}{agent_info}")
+            lines.append("")
+
+        if in_progress:
+            lines.append("## In Progress")
+            for task in in_progress:
+                agent_info = f" ({task.claimed_by})" if task.claimed_by else ""
+                lines.append(f"- [/] Task {task.id}: {task.description}{agent_info}")
+            lines.append("")
+
+        if pending:
+            lines.append("## Pending")
+            for task in pending:
+                blocked_info = f" (blocked by: {', '.join(task.blocked_by)})" if task.blocked_by else ""
+                lines.append(f"- [ ] Task {task.id}: {task.description}{blocked_info}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    @classmethod
+    def from_markdown(cls, content: str, plan_id: str = None, plan_file: str = None) -> "TaskQueue":
+        """Parse markdown task queue into TaskQueue object."""
+        import re
+
+        lines = content.split("\n")
+        in_frontmatter = False
+        frontmatter = {}
+        tasks_section = []
+
+        for line in lines:
+            if line.strip() == "---":
+                if not in_frontmatter:
+                    in_frontmatter = True
+                    continue
+                else:
+                    in_frontmatter = False
+                    continue
+            if in_frontmatter:
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    frontmatter[key.strip()] = value.strip()
+            else:
+                tasks_section.append(line)
+
+        extracted_plan_id = plan_id or frontmatter.get("plan_id", "unknown")
+        extracted_plan_file = plan_file or frontmatter.get("plan_file", "")
+        created_at = frontmatter.get("created", datetime.now().isoformat())
+
+        tasks = []
+        task_pattern = re.compile(r"^-\s+\[([ x/])\]\s+Task\s+(\d+):\s+(.+?)(?:\s+\(([^)]+)\))?(?:\s+\(blocked by:\s+([^)]+)\))?$")
+
+        for line in tasks_section:
+            match = task_pattern.match(line.strip())
+            if match:
+                checkbox, task_id, description, claimed_by, blocked_by = match.groups()
+                if checkbox == "x":
+                    status = "completed"
+                elif checkbox == "/":
+                    status = "in_progress"
+                else:
+                    status = "pending"
+                blocked_list = [b.strip() for b in blocked_by.split(",")] if blocked_by else []
+                tasks.append(QueueTask(
+                    id=task_id, description=description.strip(),
+                    status=status, claimed_by=claimed_by, blocked_by=blocked_list,
+                ))
+
+        return cls(plan_id=extracted_plan_id, plan_file=extracted_plan_file, created_at=created_at, tasks=tasks)
+
+
+# =============================================================================
+# Work-Stealing Queue
+# =============================================================================
+
+class WorkStealingQueue:
+    """File-based work-stealing queue with atomic task claiming.
+
+    Location: {project}/.claude/task-queue-{plan-id}.json or .md
+    Uses file locking to prevent race conditions.
+    """
+
+    QUEUE_DIR = ".claude"
+    LOCK_SUFFIX = ".lock"
+
+    def __init__(self, plan_id: str, plan_file: str, base_dir: Optional[Path] = None, format: str = "markdown"):
+        self.plan_id = plan_id
+        self.plan_file = plan_file
+        self.base_dir = Path(base_dir) if base_dir else Path.cwd()
+        self.format = format
+
+        ext = ".md" if format == "markdown" else ".json"
+        self.queue_path = self.base_dir / self.QUEUE_DIR / f"task-queue-{plan_id}{ext}"
+        self.lock_path = self.base_dir / self.QUEUE_DIR / f"task-queue-{plan_id}{self.LOCK_SUFFIX}"
+
+    def _ensure_dir(self) -> None:
+        self.queue_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _acquire_lock(self) -> int:
+        self._ensure_dir()
+        fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        return fd
+
+    def _release_lock(self, fd: int) -> None:
+        if sys.platform == "win32":
+            import msvcrt
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+    def load(self) -> TaskQueue:
+        if self.queue_path.exists():
+            try:
+                if self.format == "markdown":
+                    content = self.queue_path.read_text(encoding="utf-8")
+                    return TaskQueue.from_markdown(content, self.plan_id, self.plan_file)
+                else:
+                    with open(self.queue_path) as f:
+                        return TaskQueue.from_dict(json.load(f))
+            except (json.JSONDecodeError, KeyError, ValueError):
+                pass
+        return TaskQueue(plan_id=self.plan_id, plan_file=self.plan_file, created_at=datetime.now().isoformat(), tasks=[])
+
+    def save(self, queue: TaskQueue) -> None:
+        self._ensure_dir()
+        if self.format == "markdown":
+            self.queue_path.write_text(queue.to_markdown(), encoding="utf-8")
+        else:
+            with open(self.queue_path, "w") as f:
+                json.dump(queue.to_dict(), f, indent=2)
+
+    def claim_next_task(self, agent_id: str) -> Optional[QueueTask]:
+        """Atomically claim the next available task."""
+        fd = self._acquire_lock()
+        try:
+            queue = self.load()
+            completed_ids = {t.id for t in queue.tasks if t.status == "completed"}
+            for task in queue.tasks:
+                if task.status != "pending" or task.claimed_by:
+                    continue
+                if not all(b in completed_ids for b in task.blocked_by):
+                    continue
+                task.claimed_by = agent_id
+                task.status = "in_progress"
+                task.started_at = datetime.now().isoformat()
+                task.iterations += 1
+                self.save(queue)
+                return task
+            return None
+        finally:
+            self._release_lock(fd)
+
+    def complete_task(self, task_id: str) -> bool:
+        fd = self._acquire_lock()
+        try:
+            queue = self.load()
+            for task in queue.tasks:
+                if task.id == task_id:
+                    task.status = "completed"
+                    task.completed_at = datetime.now().isoformat()
+                    self.save(queue)
+                    return True
+            return False
+        finally:
+            self._release_lock(fd)
+
+    def mark_task_complete(self, task_id: str, agent_id: str) -> bool:
+        fd = self._acquire_lock()
+        try:
+            queue = self.load()
+            for task in queue.tasks:
+                if task.id == task_id:
+                    task.status = "completed"
+                    task.completed_at = datetime.now().isoformat()
+                    self.save(queue)
+                    return True
+            return False
+        finally:
+            self._release_lock(fd)
+
+    def release_task(self, task_id: str) -> bool:
+        fd = self._acquire_lock()
+        try:
+            queue = self.load()
+            for task in queue.tasks:
+                if task.id == task_id:
+                    task.status = "pending"
+                    task.claimed_by = None
+                    self.save(queue)
+                    return True
+            return False
+        finally:
+            self._release_lock(fd)
+
+    def add_task(self, task_id: str, description: str = "", blocked_by: list = None) -> QueueTask:
+        fd = self._acquire_lock()
+        try:
+            queue = self.load()
+            task = QueueTask(id=task_id, description=description, status="pending", blocked_by=blocked_by or [])
+            queue.tasks.append(task)
+            self.save(queue)
+            return task
+        finally:
+            self._release_lock(fd)
+
+    def get_status(self) -> dict:
+        queue = self.load()
+        status_counts = {"pending": 0, "in_progress": 0, "completed": 0}
+        for task in queue.tasks:
+            status_counts[task.status] = status_counts.get(task.status, 0) + 1
+        return {"plan_id": queue.plan_id, "total_tasks": len(queue.tasks), **status_counts}
+
+    def reclaim_stale_tasks(self, timeout_seconds: int = 300) -> list:
+        fd = self._acquire_lock()
+        try:
+            queue = self.load()
+            reclaimed = []
+            now = datetime.now()
+            for task in queue.tasks:
+                if task.status != "in_progress" or not task.started_at:
+                    continue
+                try:
+                    started = datetime.fromisoformat(task.started_at)
+                    if (now - started).total_seconds() > timeout_seconds:
+                        task.status = "pending"
+                        task.claimed_by = None
+                        reclaimed.append(task.id)
+                except (ValueError, TypeError):
+                    continue
+            if reclaimed:
+                self.save(queue)
+            return reclaimed
+        finally:
+            self._release_lock(fd)
+
+
+# Convenience functions for work-stealing queue
+def claim_next_task(agent_id: str, plan_id: str, plan_file: str, base_dir: Optional[Path] = None) -> Optional[QueueTask]:
+    """Atomic task claiming with file lock."""
+    return WorkStealingQueue(plan_id, plan_file, base_dir).claim_next_task(agent_id)
+
+
+def release_task(task_id: str, plan_id: str, plan_file: str, base_dir: Optional[Path] = None) -> bool:
+    """Release uncompleted task back to queue."""
+    return WorkStealingQueue(plan_id, plan_file, base_dir).release_task(task_id)
+
+
+def mark_task_complete(task_id: str, agent_id: str, plan_id: str, plan_file: str, base_dir: Optional[Path] = None) -> bool:
+    """Mark task as done."""
+    return WorkStealingQueue(plan_id, plan_file, base_dir).mark_task_complete(task_id, agent_id)
+
 
 # Import transaction primitives from hooks
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -77,7 +547,6 @@ try:
 except ImportError:
     REDIS_AVAILABLE = False
     Redis = None  # type: ignore
-
 
 # =============================================================================
 # Redis Hybrid Context Injection
@@ -101,13 +570,11 @@ VERIFY_FIX_EFFORT: dict[str, str] = {
     "plan": "medium",     # Plan verification: moderate depth
 }
 
-
 # =============================================================================
 # Receipt Audit Trail System
 # =============================================================================
 
 RECEIPTS_DIR = Path.home() / ".claude" / ".claude" / "ralph" / "receipts"
-
 
 def write_receipt(
     agent_id: str,
@@ -187,7 +654,6 @@ def write_receipt(
         # Fail silently - receipts are best-effort audit logs
         return False
 
-
 def inject_context(context: str, agent_id: str | None = None) -> bool:
     """
     Inject context to running agents via Redis pub/sub with file fallback.
@@ -227,7 +693,6 @@ def inject_context(context: str, agent_id: str | None = None) -> bool:
         return True
     except OSError:
         return False
-
 
 def receive_context(agent_id: str, timeout: float = 0.1) -> str | None:
     """
@@ -298,7 +763,6 @@ def receive_context(agent_id: str, timeout: float = 0.1) -> str | None:
     except OSError:
         return None
 
-
 class LifecyclePhase(str, Enum):
     """Ralph session lifecycle phases."""
     PLAN = "plan"
@@ -307,20 +771,11 @@ class LifecyclePhase(str, Enum):
     REVIEW = "review"
     COMPLETE = "complete"
 
-
 class ModelMode(str, Enum):
     """Model routing modes for agent spawning."""
     OPUS = "opus"
     SONNET = "sonnet"
     SONNET_ALL = "sonnet_all"
-
-
-class SpawnBackend(str, Enum):
-    """Agent spawning backend."""
-    TASK = "task"
-    SUBPROCESS = "subprocess"
-    AUTO = "auto"  # Task for <=10, subprocess overflow
-
 
 class MessageType(str, Enum):
     """Inter-agent message types for Hybrid Gamma communication."""
@@ -334,7 +789,6 @@ class MessageType(str, Enum):
     DELEGATION = "delegation"
     PERMISSION_REQUEST = "permission_request"
     HEARTBEAT = "heartbeat"
-
 
 @dataclass
 class AgentMessage:
@@ -386,38 +840,7 @@ class AgentMessage:
         except (ValueError, TypeError):
             return False
 
-
 @dataclass
-class TeamConfig:
-    """Team configuration for a Ralph session."""
-    session_id: str
-    leader_agent: str = "agent-0"
-    agents: list = field(default_factory=list)
-    backend: str = SpawnBackend.AUTO.value
-    created_at: str = ""
-    env_vars: dict = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        return {
-            "session_id": self.session_id,
-            "leader_agent": self.leader_agent,
-            "agents": self.agents,
-            "backend": self.backend,
-            "created_at": self.created_at,
-            "env_vars": self.env_vars,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "TeamConfig":
-        return cls(
-            session_id=data["session_id"],
-            leader_agent=data.get("leader_agent", "agent-0"),
-            agents=data.get("agents", []),
-            backend=data.get("backend", SpawnBackend.AUTO.value),
-            created_at=data.get("created_at", ""),
-            env_vars=data.get("env_vars", {}),
-        )
-
 
 class AgentStatus(str, Enum):
     """Status of an individual agent."""
@@ -426,7 +849,6 @@ class AgentStatus(str, Enum):
     PENDING_VERIFY = "pending_verify"  # Awaiting per-task verify+fix
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 class ReviewSpecialty(str, Enum):
     """Review agent specialties - dynamically discovered from agents/ directory."""
@@ -438,7 +860,6 @@ class ReviewSpecialty(str, Enum):
     DATABASE = "database"
     COMMIT = "commit"
     GENERAL = "general"
-
 
 @dataclass
 class AgentState:
@@ -455,7 +876,6 @@ class AgentState:
     changed_files: list = field(default_factory=list)  # Files changed by this agent
     verify_fix_passed: Optional[bool] = None  # Result of per-task verify+fix
     verify_fix_agent_id: Optional[int] = None  # ID of scoped verify+fix agent
-
 
 @dataclass
 class StruggleMetrics:
@@ -475,7 +895,6 @@ class StruggleMetrics:
             "last_error": self.last_error[:200] if self.last_error else "",
             "struggling": self.struggling
         }
-
 
 class StruggleDetector:
     """
@@ -631,7 +1050,6 @@ class StruggleDetector:
             metrics.retry_count >= self.RETRY_THRESHOLD
         )
 
-
 @dataclass
 class RalphState:
     """Complete state for Ralph Protocol execution."""
@@ -707,7 +1125,6 @@ class RalphState:
             plan_verification_retries=data.get("plan_verification_retries", 0),
         )
 
-
 # =============================================================================
 # Work-Stealing Queue
 # =============================================================================
@@ -748,7 +1165,6 @@ class QueueTask:
             started_at=data.get("started_at"),
             completed_at=data.get("completed_at")
         )
-
 
 @dataclass
 class TaskQueue:
@@ -828,7 +1244,6 @@ class TaskQueue:
                 lines.append(f"- [/] Task {task.id}: {task.description}{agent_info}")
             lines.append("")
 
-
 class TaskQueueParser:
     """
     Parser for markdown task lists with priority-based format.
@@ -899,7 +1314,6 @@ class TaskQueueParser:
             ))
         
         return tasks
-
 
 class WorkStealingQueue:
     """
@@ -1165,260 +1579,10 @@ class WorkStealingQueue:
         finally:
             self._release_lock(fd)
 
-
 # =============================================================================
 # Agent Inbox (Hybrid Gamma Inter-Agent Communication)
 # =============================================================================
 
-class AgentInbox:
-    """
-    File-based per-agent inbox for Hybrid Gamma inter-agent communication.
-
-    Location: {project}/.claude/ralph/team-{session}/inbox/{agent-id}.json
-
-    Each agent has its own inbox file. Messages are JSON arrays with TTL
-    and ACK tracking. Uses file locking for atomic operations.
-    """
-
-    def __init__(self, session_id: str, agent_id: str, base_dir: Optional[Path] = None):
-        self.session_id = session_id
-        self.agent_id = agent_id
-        self.base_dir = Path(base_dir) if base_dir else Path.cwd()
-        self.team_dir = self.base_dir / ".claude" / "ralph" / f"team-{session_id}"
-        self.inbox_dir = self.team_dir / "inbox"
-        self.inbox_path = self.inbox_dir / f"{agent_id}.json"
-        self.config_path = self.team_dir / "config.json"
-        self.relay_path = self.team_dir / "relay.json"
-        self.heartbeat_dir = self.team_dir / "heartbeat"
-
-    def _ensure_dirs(self) -> None:
-        """Ensure all team directories exist."""
-        self.inbox_dir.mkdir(parents=True, exist_ok=True)
-        self.heartbeat_dir.mkdir(parents=True, exist_ok=True)
-
-    def _lock_file(self, path: Path) -> int:
-        """Acquire lock for file operations."""
-        lock_path = path.with_suffix(".lock")
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_EX)
-        return fd
-
-    def _unlock_file(self, fd: int) -> None:
-        """Release file lock."""
-        if sys.platform == "win32":
-            import msvcrt
-            os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
-
-    def read_messages(self) -> list[AgentMessage]:
-        """Read all non-expired messages from inbox."""
-        self._ensure_dirs()
-        if not self.inbox_path.exists():
-            return []
-        try:
-            with open(self.inbox_path) as f:
-                data = json.load(f)
-            messages = [AgentMessage.from_dict(m) for m in data]
-            return [m for m in messages if not m.is_expired()]
-        except (json.JSONDecodeError, OSError):
-            return []
-
-    def send_message(self, to_agent: str, msg_type: str, payload: dict | None = None) -> AgentMessage:
-        """
-        Send a message to another agent's inbox.
-
-        Args:
-            to_agent: Target agent ID or "*" for broadcast.
-            msg_type: MessageType value.
-            payload: Optional message payload.
-
-        Returns:
-            The sent AgentMessage.
-        """
-        import uuid
-        self._ensure_dirs()
-
-        msg = AgentMessage(
-            msg_id=str(uuid.uuid4())[:8],
-            msg_type=msg_type,
-            from_agent=self.agent_id,
-            to_agent=to_agent,
-            payload=payload or {},
-            created_at=datetime.now().isoformat(),
-        )
-
-        if to_agent == "*":
-            # Broadcast: write to all inboxes in team
-            for inbox_file in self.inbox_dir.glob("*.json"):
-                if inbox_file.stem == self.agent_id:
-                    continue  # Don't send to self
-                self._append_to_inbox(inbox_file, msg)
-        else:
-            target_path = self.inbox_dir / f"{to_agent}.json"
-            self._append_to_inbox(target_path, msg)
-
-        return msg
-
-    def _append_to_inbox(self, path: Path, msg: AgentMessage) -> None:
-        """Atomically append a message to an inbox file."""
-        fd = self._lock_file(path)
-        try:
-            messages = []
-            if path.exists():
-                try:
-                    with open(path) as f:
-                        messages = json.load(f)
-                except (json.JSONDecodeError, OSError):
-                    messages = []
-
-            messages.append(msg.to_dict())
-
-            # Prune expired messages
-            now = datetime.now()
-            messages = [
-                m for m in messages
-                if not AgentMessage.from_dict(m).is_expired()
-            ]
-
-            with open(path, "w") as f:
-                json.dump(messages, f, indent=2)
-        finally:
-            self._unlock_file(fd)
-
-    def ack_message(self, msg_id: str) -> bool:
-        """Mark a message as acknowledged."""
-        fd = self._lock_file(self.inbox_path)
-        try:
-            if not self.inbox_path.exists():
-                return False
-            with open(self.inbox_path) as f:
-                messages = json.load(f)
-            for m in messages:
-                if m.get("msg_id") == msg_id:
-                    m["acked"] = True
-                    with open(self.inbox_path, "w") as f:
-                        json.dump(messages, f, indent=2)
-                    return True
-            return False
-        except (json.JSONDecodeError, OSError):
-            return False
-        finally:
-            self._unlock_file(fd)
-
-    def write_heartbeat(self) -> None:
-        """Write heartbeat file for liveness detection."""
-        self._ensure_dirs()
-        hb_path = self.heartbeat_dir / f"{self.agent_id}.json"
-        hb_data = {
-            "agent_id": self.agent_id,
-            "timestamp": datetime.now().isoformat(),
-            "session_id": self.session_id,
-        }
-        try:
-            with open(hb_path, "w") as f:
-                json.dump(hb_data, f)
-        except OSError:
-            pass
-
-    def check_heartbeat(self, agent_id: str, timeout_seconds: int = 300) -> bool:
-        """
-        Check if an agent's heartbeat is recent.
-
-        Args:
-            agent_id: Agent to check.
-            timeout_seconds: Max heartbeat age (default 5 min).
-
-        Returns:
-            True if heartbeat is recent, False if stale/missing.
-        """
-        hb_path = self.heartbeat_dir / f"{agent_id}.json"
-        if not hb_path.exists():
-            return False
-        try:
-            with open(hb_path) as f:
-                data = json.load(f)
-            ts = datetime.fromisoformat(data["timestamp"])
-            return (datetime.now() - ts).total_seconds() < timeout_seconds
-        except (json.JSONDecodeError, OSError, KeyError, ValueError):
-            return False
-
-    def write_team_config(self, config: TeamConfig) -> None:
-        """Write team configuration."""
-        self._ensure_dirs()
-        with open(self.config_path, "w") as f:
-            json.dump(config.to_dict(), f, indent=2)
-
-    def read_team_config(self) -> Optional[TeamConfig]:
-        """Read team configuration."""
-        if not self.config_path.exists():
-            return None
-        try:
-            with open(self.config_path) as f:
-                return TeamConfig.from_dict(json.load(f))
-        except (json.JSONDecodeError, OSError):
-            return None
-
-    def write_relay(self, data: dict) -> None:
-        """Write to shared relay file (leader coordination)."""
-        fd = self._lock_file(self.relay_path)
-        try:
-            existing = {}
-            if self.relay_path.exists():
-                try:
-                    with open(self.relay_path) as f:
-                        existing = json.load(f)
-                except (json.JSONDecodeError, OSError):
-                    pass
-            existing.update(data)
-            existing["updated_at"] = datetime.now().isoformat()
-            with open(self.relay_path, "w") as f:
-                json.dump(existing, f, indent=2)
-        finally:
-            self._unlock_file(fd)
-
-    def read_relay(self) -> dict:
-        """Read shared relay file."""
-        if not self.relay_path.exists():
-            return {}
-        try:
-            with open(self.relay_path) as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
-
-    def cleanup_team(self) -> None:
-        """Remove team directory (teardown)."""
-        if self.team_dir.exists():
-            shutil.rmtree(self.team_dir, ignore_errors=True)
-
-    def request_shutdown(self) -> None:
-        """Leader sends shutdown request to all agents."""
-        self.send_message("*", MessageType.SHUTDOWN_REQUEST.value, {
-            "reason": "session_complete",
-            "grace_seconds": 30,
-        })
-
-    def approve_shutdown(self) -> None:
-        """Agent approves shutdown request."""
-        self.send_message("agent-0", MessageType.SHUTDOWN_APPROVED.value, {
-            "agent_id": self.agent_id,
-        })
-
-
-# =============================================================================
-# Structured Review Output
-# =============================================================================
-
-@dataclass
 class ReviewFinding:
     """A single review finding from a review agent."""
     severity: str = "info"  # critical, high, medium, low, info
@@ -1443,7 +1607,6 @@ class ReviewFinding:
     @classmethod
     def from_dict(cls, data: dict) -> "ReviewFinding":
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-
 
 @dataclass
 class ReviewSummary:
@@ -1522,7 +1685,6 @@ class ReviewSummary:
                 lines.append(f"")
 
         return "\n".join(lines)
-
 
 @dataclass
 class PlanCompletionSummary:
@@ -1662,7 +1824,6 @@ class PlanCompletionSummary:
         
         return "\n".join(lines)
 
-
 # =============================================================================
 # Activity Scheduling + Performance Tracking
 # =============================================================================
@@ -1708,7 +1869,6 @@ class ActivityScheduler:
         """Seconds since last activity."""
         return (datetime.now() - self._last_activity).total_seconds()
 
-
 @dataclass
 class AgentPerformanceRecord:
     """Per-agent performance metrics."""
@@ -1732,7 +1892,6 @@ class AgentPerformanceRecord:
             "completed_at": self.completed_at,
             "status": self.status,
         }
-
 
 class PerformanceTracker:
     """
@@ -1891,12 +2050,8 @@ class PerformanceTracker:
             return {}
         return self.struggle_indicators[agent_id].copy()
 
-
 # =============================================================================
 # Review Agent Discovery
-# =============================================================================
-# NOTE: Agent config functions moved to ralph_lib.py for reusability
-# Import them via: from ralph_lib import discover_agent_configs, load_agent_config, etc.
 # =============================================================================
 
 def discover_review_agents(agents_dir: str | None = None) -> list[str]:
@@ -1929,27 +2084,6 @@ def discover_review_agents(agents_dir: str | None = None) -> list[str]:
 
     return specialties if specialties else ["general"]
 
-
-def assign_review_specialty(agent_id: int, specialties: list[str] | None = None) -> str:
-    """
-    Assign a review specialty to an agent using round-robin.
-
-    Args:
-        agent_id: Numeric agent identifier.
-        specialties: List of available specialties (auto-discovered if None).
-
-    Returns:
-        Specialty name for this agent.
-    """
-    if specialties is None:
-        specialties = discover_review_agents()
-
-    if not specialties:
-        return "general"
-
-    return specialties[agent_id % len(specialties)]
-
-
 def get_review_agent_path(specialty: str, agents_dir: str | None = None) -> Optional[str]:
     """
     Get the full path to a review agent file.
@@ -1966,7 +2100,6 @@ def get_review_agent_path(specialty: str, agents_dir: str | None = None) -> Opti
     agent_path = Path(agents_dir) / f"{specialty}-reviewer.md"
     return str(agent_path) if agent_path.exists() else None
 
-
 # =============================================================================
 # Daily Cost Tracking
 # =============================================================================
@@ -1974,7 +2107,6 @@ def get_review_agent_path(specialty: str, agents_dir: str | None = None) -> Opti
 def _get_daily_cost_dir() -> Path:
     """Get path to daily cost directory."""
     return Path.home() / ".claude" / "daily-cost"
-
 
 def record_daily_cost(cost_usd: float) -> None:
     """
@@ -2026,7 +2158,6 @@ def record_daily_cost(cost_usd: float) -> None:
             fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
-
 # =============================================================================
 # Complexity Detection & Auto-Configuration
 # =============================================================================
@@ -2039,7 +2170,6 @@ class ComplexityConfig:
     model: str
     complexity_score: float
     complexity_label: str
-
 
 def calculate_complexity(task_description: str) -> float:
     """
@@ -2084,66 +2214,6 @@ def calculate_complexity(task_description: str) -> float:
     score += (word_count // 20) * 0.1
     
     return max(0.5, min(5.0, score))  # Clamp between 0.5 and 5.0
-
-
-def auto_configure(task_description: str = None, explicit_model: str = None) -> ComplexityConfig:
-    """
-    Auto-configure agent count and iterations based on task complexity.
-    
-    Model is ALWAYS Opus unless user explicitly specifies "sonnet" or "sonnet_all".
-    
-    Args:
-        task_description: Task to analyze for complexity
-        explicit_model: User-specified model override (sonnet/sonnet_all/opus)
-    
-    Returns:
-        ComplexityConfig with recommended settings
-    """
-    if not task_description:
-        # No task specified, use default
-        return ComplexityConfig(
-            agents=3,
-            iterations=3,
-            model=explicit_model or "opus",
-            complexity_score=1.0,
-            complexity_label="unknown"
-        )
-    
-    score = calculate_complexity(task_description)
-    
-    # Model is ALWAYS Opus unless explicit override
-    model = explicit_model if explicit_model else "opus"
-    
-    # Determine configuration based on score
-    if score < 1.5:  # Simple task
-        return ComplexityConfig(
-            agents=3,
-            iterations=1,
-            model=model,
-            complexity_score=score,
-            complexity_label="simple"
-        )
-    elif score < 2.5:  # Standard task
-        return ComplexityConfig(
-            agents=5,
-            iterations=2,
-            model=model,
-            complexity_score=score,
-            complexity_label="standard"
-        )
-    else:  # Complex task
-        return ComplexityConfig(
-            agents=10,
-            iterations=3,
-            model=model,
-            complexity_score=score,
-            complexity_label="complex"
-        )
-
-
-# =============================================================================
-# Ralph Protocol Implementation
-# =============================================================================
 
 class RalphProtocol:
     """
@@ -2554,7 +2624,6 @@ class RalphProtocol:
 
         # Write progress file for external consumers (statusline, etc.)
         self._write_progress_file()
-
 
     def signal_escalation(self, agent_id: int, reason: str) -> None:
         """Emit ESCALATION visual signal when agent needs human intervention."""
@@ -3341,7 +3410,7 @@ This will properly close the Ralph session."""
     def handle_hook_session_start(self, stdin_content: Optional[str] = None) -> dict:
         """
         Hook-session-start handler: Clean orphaned sessions, restore from checkpoint,
-        and provide Serena integration context.
+        and provide integration context.
 
         Orphan detection:
         1. Sessions older than 24 hours → cleanup
@@ -3352,7 +3421,7 @@ This will properly close the Ralph session."""
             stdin_content: Raw stdin from hook.
 
         Returns:
-            Hook response with restoration status and Serena context.
+            Hook response with restoration status.
         """
         response = {"restored": False}
 
@@ -3427,13 +3496,7 @@ This will properly close the Ralph session."""
                             "state": restored.to_dict()
                         }
 
-        # Generate Serena integration context
-        serena_context = self._generate_serena_context()
-        if serena_context:
-            response["hookSpecificOutput"] = {
-                "hookEventName": "SessionStart",
-                "additionalContext": serena_context
-            }
+        # Serena MCP removed (2026-02-13) — using CC native tools only
 
         return response
 
@@ -3647,1682 +3710,6 @@ This will properly close the Ralph session."""
             self.log_activity(f"Failed to queue agent for retry: {e}", level="ERROR")
             return False
 
-    def _generate_serena_context(self) -> str:
-        """
-        Generate Serena integration context for session start.
-
-        Returns:
-            Serena workflow guidance string if .serena/ exists, empty otherwise.
-        """
-        project_root = self.base_dir
-        serena_config = project_root / ".serena"
-
-        if serena_config.exists():
-            return f"""
-## Serena Integration Active
-
-Project configured: `{project_root}`
-
-### Recommended Serena Workflow:
-1. **Code exploration**: Use `mcp__serena__get_symbols_overview` before reading files
-2. **Symbol search**: Use `mcp__serena__find_symbol` instead of Grep for functions/classes
-3. **Reference finding**: Use `mcp__serena__find_referencing_symbols` for impact analysis
-4. **Code editing**: Use `mcp__serena__replace_symbol_body` for precise edits
-5. **Memory**: Use `mcp__serena__write_memory` for architectural decisions
-
-### Serena vs Native Tools:
-| Task | Use Serena | Use Native |
-|------|------------|------------|
-| Find function by name | `find_symbol` | - |
-| Find string in file | - | `Grep` |
-| Get file structure | `get_symbols_overview` | - |
-| Read full file | - | `Read` |
-| Edit symbol | `replace_symbol_body` | - |
-| Edit specific lines | - | `Edit` |
-
-### Memory Persistence:
-- Use `mcp__serena__write_memory` to save architectural decisions, symbol maps
-- Use `mcp__serena__read_memory` to recall project context across sessions
-- Use `mcp__serena__list_memories` to see available memory files
-- Run `/serena-workflow` for the full tool matrix and editing workflows
-
-### Reflection Checkpoints:
-- `mcp__serena__think_about_collected_information` - after gathering context
-- `mcp__serena__think_about_task_adherence` - before making changes
-- `mcp__serena__think_about_whether_you_are_done` - before reporting completion
-"""
-        else:
-            return """
-## Serena Available
-
-Serena provides LSP-powered semantic code analysis. To enable:
-- Run `mcp__serena__onboarding` for initial setup
-- Or `mcp__serena__activate_project` if already configured
-"""
-
-    # =========================================================================
-    # Serena Shell Command TTY Passthrough
-    # =========================================================================
-
-    def handle_serena_shell_ask(self, tool_input: dict) -> Optional[bool]:
-        """
-        Handle mcp__serena__execute_shell_command ask permission for subagents.
-
-        When a Ralph subagent triggers execute_shell_command, this forwards
-        the approval request to the main TTY session for user decision.
-
-        Args:
-            tool_input: The tool input containing the command.
-
-        Returns:
-            True if approved, False if denied, None to use default ask flow.
-        """
-        # Only intercept if we're in a subagent context
-        if not os.environ.get("RALPH_SUBAGENT"):
-            return None
-
-        command = tool_input.get("command", "")
-        main_tty = os.environ.get("RALPH_MAIN_TTY", "/dev/tty")
-
-        try:
-            # Write prompt to main TTY
-            with open(main_tty, 'w') as tty:
-                tty.write(f"\n[Ralph Subagent Request]\n")
-                tty.write(f"Command: {command}\n")
-                tty.write(f"Approve? [y/N]: ")
-                tty.flush()
-
-            # Read response from main TTY
-            with open(main_tty, 'r') as tty:
-                response = tty.readline().strip().lower()
-
-            approved = response in ('y', 'yes')
-            self.log_activity(
-                f"Serena shell command {'approved' if approved else 'denied'}: {command}"
-            )
-            return approved
-
-        except (IOError, OSError) as e:
-            self.log_activity(f"TTY passthrough failed: {e}", level="ERROR")
-            return None  # Fall back to default ask flow
-
-    # =========================================================================
-    # Agent Orchestration
-    # =========================================================================
-
-    def spawn_with_pty(self, command: list, session_token: str = "") -> tuple:
-        """
-        Spawn a subprocess with PTY allocation for TTY access.
-
-        This enables subagents to have access to a real TTY, allowing
-        "ask" permissions to work properly instead of auto-denying.
-
-        Args:
-            command: Command and arguments to execute.
-            session_token: Optional session token for security validation.
-
-        Returns:
-            Tuple of (process, master_fd) for PTY communication.
-            On Windows, master_fd is None (no PTY support).
-        """
-        env = os.environ.copy()
-        env["RALPH_SUBAGENT"] = "true"
-        if session_token:
-            env["RALPH_SESSION_TOKEN"] = session_token
-        # Inherit parent's permission mode
-        env["CLAUDE_CODE_PERMISSION_MODE"] = os.environ.get(
-            "CLAUDE_CODE_PERMISSION_MODE", "acceptEdits"
-        )
-
-        if sys.platform == "win32":
-            # Windows: no PTY support, use subprocess pipes
-            proc = subprocess.Popen(
-                command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-            )
-            return proc, None  # No master fd on Windows
-        else:
-            import pty
-            master, slave = pty.openpty()
-            proc = subprocess.Popen(
-                command,
-                stdin=slave,
-                stdout=slave,
-                stderr=slave,
-                env=env,
-                close_fds=True
-            )
-            os.close(slave)
-            return proc, master
-
-    # Maximum concurrent agents to prevent resource exhaustion
-    MAX_CONCURRENT_AGENTS = 5
-
-    async def spawn_agent(
-        self,
-        agent_state: AgentState,
-        task: Optional[str] = None,
-        semaphore: Optional[asyncio.Semaphore] = None
-    ) -> bool:
-        """
-        Spawn a single Claude agent asynchronously with concurrency control.
-
-        Args:
-            agent_state: State object for this agent.
-            task: Optional task description.
-            semaphore: Optional semaphore for concurrency limiting.
-
-        Returns:
-            True if agent completed successfully, False otherwise.
-        """
-        # Acquire semaphore if provided (limits concurrent agents)
-        if semaphore:
-            await semaphore.acquire()
-
-        try:
-            return await self._spawn_agent_impl(agent_state, task)
-        finally:
-            if semaphore:
-                semaphore.release()
-
-    async def _spawn_review_agent(
-        self,
-        agent_state: AgentState,
-        task: Optional[str] = None,
-        semaphore: Optional[asyncio.Semaphore] = None
-    ) -> bool:
-        """
-        Spawn a review agent that analyzes code changes without making edits.
-
-        Review agents:
-        - Analyze code quality, security, performance
-        - Leave TODO comments for issues found
-        - Report findings to .claude/review-agents.md
-        - Do NOT auto-fix issues
-
-        Args:
-            agent_state: State object for this review agent.
-            task: Original task description for context.
-            semaphore: Optional semaphore for concurrency limiting.
-
-        Returns:
-            True if review completed successfully, False otherwise.
-        """
-        if semaphore:
-            await semaphore.acquire()
-
-        try:
-            agent_state.status = AgentStatus.RUNNING.value
-            agent_state.started_at = datetime.now().isoformat()
-
-            # Track performance
-            self._perf_tracker.start_agent(agent_state.agent_id, f"review-{agent_state.agent_id}")
-
-            # Print start message
-            self._print_progress("STARTED", agent_state.agent_id, "Review")
-
-            # Build review-specific prompt
-            prompt = self._build_review_prompt(agent_state, task)
-
-            # Spawn subprocess (same mechanism as implementation agents)
-            try:
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(
-                    None,
-                    lambda: subprocess.run(
-                        ["claude", "--print", prompt],
-                        cwd=str(self.base_dir),
-                        capture_output=True,
-                        text=True,
-                        timeout=600,  # 10 min timeout for review
-                        env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli"},
-                    )
-                )
-
-                success = result.returncode == 0
-                cost = self._extract_cost_from_output(result.stdout + result.stderr)
-                turns = self._extract_turns_from_output(result.stdout + result.stderr)
-
-                self._perf_tracker.complete_agent(
-                    agent_state.agent_id,
-                    cost_usd=cost,
-                    num_turns=turns,
-                    success=success
-                )
-
-                # Update counters
-                if success:
-                    self._completed_count += 1
-                    self._total_cost += cost
-                    self._print_progress(
-                        "DONE", agent_state.agent_id,
-                        f"Review  ${cost:.2f}, {turns} turns"
-                    )
-                else:
-                    self._failed_count += 1
-                    self._print_progress("FAILED", agent_state.agent_id, "Review")
-
-                return success
-
-            except subprocess.TimeoutExpired:
-                self._failed_count += 1
-                self._print_progress("TIMEOUT", agent_state.agent_id, "Review")
-                return False
-            except Exception as e:
-                self._failed_count += 1
-                self.log_activity(f"Review agent {agent_state.agent_id} error: {e}", level="ERROR")
-                return False
-
-        finally:
-            if semaphore:
-                semaphore.release()
-
-    async def _spawn_verify_fix_agent(
-        self,
-        agent_state: AgentState,
-        task: Optional[str] = None,
-        semaphore: Optional[asyncio.Semaphore] = None
-    ) -> bool:
-        """
-        Spawn a verify-fix agent that checks build integrity and auto-fixes issues.
-
-        Verify-fix agents:
-        - Run build checks (pnpm build, type checks, linting)
-        - Use Serena to verify symbol integrity
-        - Auto-fix simple issues (imports, types, formatting)
-        - Escalate complex issues via AskUserQuestion
-        - Do NOT leave TODO comments
-
-        Args:
-            agent_state: State object for this verify-fix agent.
-            task: Original task description for context.
-            semaphore: Optional semaphore for concurrency limiting.
-
-        Returns:
-            True if verification completed successfully, False otherwise.
-        """
-        if semaphore:
-            await semaphore.acquire()
-
-        try:
-            agent_state.status = AgentStatus.RUNNING.value
-            agent_state.started_at = datetime.now().isoformat()
-
-            # Track performance
-            self._perf_tracker.start_agent(agent_state.agent_id, f"verify-fix-{agent_state.agent_id}")
-
-            # Print start message
-            self._print_progress("STARTED", agent_state.agent_id, "Verify+Fix")
-
-            # Build verify-fix-specific prompt
-            prompt = self._build_verify_fix_prompt(agent_state, task)
-
-            # Spawn subprocess with Opus model (VERIFY+FIX requires Opus)
-            try:
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(
-                    None,
-                    lambda: subprocess.run(
-                        ["claude", "--print", "--model", VERIFY_FIX_MODEL, prompt],
-                        cwd=str(self.base_dir),
-                        capture_output=True,
-                        text=True,
-                        timeout=600,  # 10 min timeout for verify-fix
-                        env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli", "CLAUDE_CODE_EFFORT_LEVEL": VERIFY_FIX_EFFORT["full"]},
-                    )
-                )
-
-                success = result.returncode == 0
-                cost = self._extract_cost_from_output(result.stdout + result.stderr)
-                turns = self._extract_turns_from_output(result.stdout + result.stderr)
-
-                self._perf_tracker.complete_agent(
-                    agent_state.agent_id,
-                    cost_usd=cost,
-                    num_turns=turns,
-                    success=success
-                )
-
-                # Update counters
-                if success:
-                    self._completed_count += 1
-                    self._total_cost += cost
-                    self._print_progress(
-                        "DONE", agent_state.agent_id,
-                        f"Verify+Fix  ${cost:.2f}, {turns} turns"
-                    )
-                else:
-                    self._failed_count += 1
-                    self._print_progress("FAILED", agent_state.agent_id, "Verify+Fix")
-
-                return success
-
-            except subprocess.TimeoutExpired:
-                self._failed_count += 1
-                self._print_progress("TIMEOUT", agent_state.agent_id, "Verify+Fix")
-                return False
-            except Exception as e:
-                self._failed_count += 1
-                self.log_activity(f"Verify-fix agent {agent_state.agent_id} error: {e}", level="ERROR")
-                return False
-
-        finally:
-            if semaphore:
-                semaphore.release()
-
-    def _get_agent_changed_files(self, initial_head: str) -> list[str]:
-        """Get list of files changed since the given commit (agent's initial HEAD).
-
-        Args:
-            initial_head: The git commit SHA when the agent started.
-
-        Returns:
-            List of file paths that were modified since initial_head.
-        """
-        if not initial_head:
-            return []
-
-        try:
-            result = subprocess.run(
-                ["git", "diff", "--name-only", initial_head, "HEAD"],
-                cwd=str(self.base_dir),
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
-        except Exception as e:
-            self.log_activity(f"Failed to get changed files: {e}", level="WARN")
-
-        return []
-
-    async def _spawn_scoped_verify_fix(
-        self,
-        parent_agent: AgentState,
-        changed_files: list[str],
-        task: Optional[str] = None
-    ) -> bool:
-        """Spawn a verify+fix agent scoped to specific files changed by parent agent.
-
-        This runs AFTER an implementation agent completes, checking only the files
-        that agent modified. Uses Opus model for thorough verification.
-
-        Args:
-            parent_agent: The implementation agent that just completed.
-            changed_files: List of files to verify (from _get_agent_changed_files).
-            task: Original task description for context.
-
-        Returns:
-            True if verification passed, False if issues found.
-        """
-        if not changed_files:
-            self.log_activity(f"Agent {parent_agent.agent_id}: No changed files, skipping scoped verify")
-            return True
-
-        self.log_activity(f"Agent {parent_agent.agent_id}: Running scoped verify+fix on {len(changed_files)} files")
-        self._print_progress("VERIFY", parent_agent.agent_id, f"checking {len(changed_files)} files")
-
-        # Build scoped verify prompt
-        files_list = "\n".join(f"- {f}" for f in changed_files[:50])  # Cap at 50 files
-        prompt = f"""You are a SCOPED VERIFY+FIX agent for Agent {parent_agent.agent_id}.
-
-## SCOPE (ONLY check these files):
-{files_list}
-
-## Checklist:
-1. **Build check**: Does the project compile/build? (pnpm build, npm run build, etc.)
-2. **Type check**: Any TypeScript/Python type errors in scoped files?
-3. **Lint check**: Run linter on scoped files only (biome check, eslint, etc.)
-4. **Import verification**: All imports in scoped files valid and resolved?
-5. **Symbol integrity**: Use Serena find_referencing_symbols to verify no broken references
-
-## On Issues Found:
-- Auto-fix simple issues (formatting, imports, type annotations)
-- Escalate complex issues via AskUserQuestion
-- Do NOT leave TODO comments - fix or escalate immediately
-
-## Output Format (REQUIRED):
-When complete, output exactly:
-SCOPED_VERIFY_COMPLETE: [PASS|FAIL]
-ISSUES_FOUND: [count]
-ISSUES_FIXED: [count]
-ISSUES_ESCALATED: [count]
-
-Then if all issues resolved:
-{self.RALPH_COMPLETE_SIGNAL}
-{self.EXIT_SIGNAL}
-
-## Original Task Context:
-{task or 'Implementation task'}
-
-Begin scoped verification of {len(changed_files)} files now.
-"""
-
-        try:
-            # Spawn with Opus model (user preference: thorough verification)
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ["claude", "--print", "--model", VERIFY_FIX_MODEL, prompt],
-                    cwd=str(self.base_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=600,  # 10 min timeout
-                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli", "CLAUDE_CODE_EFFORT_LEVEL": VERIFY_FIX_EFFORT["scoped"]},
-                )
-            )
-
-            output = result.stdout + result.stderr
-            success = result.returncode == 0
-
-            # Parse result
-            passed = "SCOPED_VERIFY_COMPLETE: PASS" in output
-            issues_found = 0
-            issues_fixed = 0
-
-            # Extract counts
-            import re
-            found_match = re.search(r"ISSUES_FOUND:\s*(\d+)", output)
-            fixed_match = re.search(r"ISSUES_FIXED:\s*(\d+)", output)
-            if found_match:
-                issues_found = int(found_match.group(1))
-            if fixed_match:
-                issues_fixed = int(fixed_match.group(1))
-
-            if passed:
-                self._print_progress(
-                    "VERIFIED", parent_agent.agent_id,
-                    f"passed ({issues_fixed} fixes)"
-                )
-                return True
-            else:
-                self._print_progress(
-                    "VERIFY_FAIL", parent_agent.agent_id,
-                    f"{issues_found} issues"
-                )
-                return False
-
-        except subprocess.TimeoutExpired:
-            self._print_progress("VERIFY_TIMEOUT", parent_agent.agent_id)
-            return False
-        except Exception as e:
-            self.log_activity(f"Scoped verify-fix error for agent {parent_agent.agent_id}: {e}", level="ERROR")
-            return False
-
-
-    async def _spawn_plan_verification_agent(self, task: Optional[str] = None) -> dict:
-        """Verify 100% plan completion before allowing RALPH_COMPLETE.
-        
-        Reads the plan file, verifies each task/requirement is implemented using
-        Serena symbol search, and returns verification status.
-        
-        Args:
-            task: Original task description for context.
-            
-        Returns:
-            dict with keys:
-                - verified (bool): True if all tasks completed
-                - missing_tasks (list): List of incomplete task descriptions
-                - verified_count (int): Number of verified tasks
-                - total_count (int): Total tasks in plan
-        """
-        self.log_activity("Starting plan verification phase")
-        self._print_progress("PLAN_VERIFY", -1, "checking plan completion")
-        
-        # Find plan file
-        plans_dir = self.base_dir / ".claude" / "plans"
-        if not plans_dir.exists():
-            self.log_activity("No plans directory found, skipping verification")
-            return {"verified": True, "missing_tasks": [], "verified_count": 0, "total_count": 0}
-        
-        # Get most recent plan file
-        plan_files = sorted(plans_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if not plan_files:
-            self.log_activity("No plan files found, skipping verification")
-            return {"verified": True, "missing_tasks": [], "verified_count": 0, "total_count": 0}
-        
-        plan_file = plan_files[0]
-        self.log_activity(f"Verifying plan: {plan_file.name}")
-        
-        # Build verification prompt with artifact checking
-        prompt = f"""You are a PLAN VERIFICATION agent. Your job is to verify that ALL tasks in the plan have been implemented, including checking referenced artifacts.
-
-## Instructions:
-
-1. Read the plan file: {plan_file}
-2. Scan for referenced artifacts (file:/// URLs, absolute paths, scratchpad references)
-3. Read each referenced artifact (HTML mockups, design specs, config files)
-4. For each task/requirement in the plan:
-   - Use Serena find_symbol to verify implementation exists
-   - Check for actual code, not TODOs or placeholders
-   - Cross-reference artifact values (colors, layout, config) against code
-   - Mark as ✅ DONE, ⚠️ PARTIAL, or ❌ MISSING
-5. Output a structured verification report
-
-## Artifact Verification:
-
-- **HTML mockups**: Extract CSS color hex values and compare against code constants (exact match)
-- **Design specs**: Check typography, spacing, layout rules are applied
-- **Config files**: Verify env vars, hook registrations, schema fields match
-- Read the plan-verifier agent config at ~/.claude/agents/plan-verifier.md for full protocol
-
-## Verification Rules:
-
-- A task is DONE if: code exists, matches plan AND artifacts, no TODOs remain
-- A task is PARTIAL if: implementation exists but doesn't match artifact values
-- A task is MISSING if: no implementation found, only TODOs, or incomplete
-- Use Serena find_referencing_symbols to verify integration
-- Check multiple files if a feature spans components
-
-## Output Format (REQUIRED):
-
-When complete, output exactly:
-
-PLAN_VERIFICATION_COMPLETE: [PASS|FAIL]
-VERIFIED_TASKS: [count]
-MISSING_TASKS: [count]
-PARTIAL_TASKS: [count]
-ARTIFACTS_CHECKED: [count]
-
-Then for each MISSING or PARTIAL task, output:
-MISSING: [Brief task description]
-GAP_FILL: [Specific action needed to complete]
-
-Then if verification passes:
-{self.RALPH_COMPLETE_SIGNAL}
-{self.EXIT_SIGNAL}
-
-## Original Task Context:
-{task or 'Implementation task'}
-
-Begin plan verification now. Be thorough - this is the final gate before review.
-"""
-        
-        try:
-            # Spawn with Opus model for thorough verification
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ["claude", "--print", "--model", VERIFY_FIX_MODEL, prompt],
-                    cwd=str(self.base_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=600,  # 10 min timeout
-                    env={**os.environ, "CLAUDE_CODE_ENTRY_POINT": "cli", "CLAUDE_CODE_EFFORT_LEVEL": VERIFY_FIX_EFFORT["plan"]},
-                )
-            )
-            
-            output = result.stdout + result.stderr
-            success = result.returncode == 0
-            
-            # Parse result
-            passed = "PLAN_VERIFICATION_COMPLETE: PASS" in output
-            verified_count = 0
-            missing_count = 0
-            missing_tasks = []
-            
-            # Extract counts
-            import re
-            verified_match = re.search(r"VERIFIED_TASKS:\s*(\d+)", output)
-            missing_match = re.search(r"MISSING_TASKS:\s*(\d+)", output)
-            
-            if verified_match:
-                verified_count = int(verified_match.group(1))
-            if missing_match:
-                missing_count = int(missing_match.group(1))
-            
-            # Extract missing task descriptions
-            missing_pattern = re.compile(r"MISSING:\s*(.+?)(?=\n(?:MISSING:|PLAN_VERIFICATION_COMPLETE:|$))", re.DOTALL)
-            for match in missing_pattern.finditer(output):
-                task_desc = match.group(1).strip()
-                if task_desc:
-                    missing_tasks.append(task_desc)
-            
-            total_count = verified_count + missing_count
-            
-            if passed:
-                self._print_progress(
-                    "PLAN_VERIFIED", -1,
-                    f"all {verified_count} tasks complete"
-                )
-                self.log_activity(f"Plan verification PASSED: {verified_count}/{total_count} tasks complete")
-            else:
-                self._print_progress(
-                    "PLAN_INCOMPLETE", -1,
-                    f"{missing_count} missing"
-                )
-                self.log_activity(
-                    f"Plan verification FAILED: {missing_count}/{total_count} tasks missing"
-                )
-                for i, task in enumerate(missing_tasks[:5], 1):  # Log first 5
-                    self.log_activity(f"  Missing task {i}: {task[:80]}")
-            
-            return {
-                "verified": passed,
-                "missing_tasks": missing_tasks,
-                "verified_count": verified_count,
-                "total_count": total_count,
-            }
-            
-        except subprocess.TimeoutExpired:
-            self._print_progress("PLAN_VERIFY_TIMEOUT", -1)
-            self.log_activity("Plan verification timed out", level="ERROR")
-            return {
-                "verified": False,
-                "missing_tasks": ["Verification timeout - unable to complete"],
-                "verified_count": 0,
-                "total_count": 0,
-            }
-        except Exception as e:
-            self.log_activity(f"Plan verification error: {e}", level="ERROR")
-            return {
-                "verified": False,
-                "missing_tasks": [f"Verification error: {str(e)}"],
-                "verified_count": 0,
-                "total_count": 0,
-            }
-
-    def _build_review_prompt(self, agent: AgentState, task: Optional[str]) -> str:
-        """Build prompt for a review agent."""
-        # Get list of changed files
-        try:
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD"],
-                cwd=str(self.base_dir),
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            changed_files = result.stdout.strip() if result.returncode == 0 else ""
-        except Exception:
-            changed_files = ""
-
-        # Try to load quality check results from VERIFY+FIX phase
-        quality_context = ""
-        quality_log_path = self.base_dir / ".claude" / "verify-fix-quality.log"
-        if quality_log_path.exists():
-            try:
-                quality_results = quality_log_path.read_text(encoding="utf-8")
-                quality_context = f"""
-QUALITY CHECK RESULTS (from VERIFY+FIX phase):
-{quality_results[:2000]}  # Limit to 2000 chars to avoid bloat
-"""
-            except Exception:
-                pass
-
-        # Assign review specialty based on agent ID
-        specialties = [
-            "security",      # Agent 0: Security vulnerabilities
-            "performance",   # Agent 1: Performance issues
-            "types",         # Agent 2: Type safety and design
-            "errors",        # Agent 3: Error handling
-            "quality",       # Agent 4: Code quality and style
-        ]
-        specialty = specialties[agent.agent_id % len(specialties)]
-
-        return f"""You are Review Agent {agent.agent_id} specializing in: {specialty.upper()}
-
-TASK CONTEXT: {task or 'Review recent code changes'}
-
-CHANGED FILES:
-{changed_files or '(Use git diff --name-only HEAD to find changes)'}
-{quality_context}
-REVIEW PROTOCOL:
-1. Focus on {specialty} issues in the changed files
-2. For each issue found, leave a TODO comment in the code with appropriate priority:
-   - P1: Critical issues (security, crashes)
-   - P2: Important issues (bugs, performance)
-   - P3: Improvements (refactoring, docs)
-
-3. Report findings to .claude/review-agents.md in this format:
-   | Severity | Category | File | Issue | Suggestion |
-   |----------|----------|------|-------|------------|
-   | 🔴 P1 | {specialty} | path/file.ts:42 | Description | Fix suggestion |
-
-4. Do NOT auto-fix issues - only identify and document them
-
-5. When done, output:
-   REVIEW_COMPLETE
-   {self.EXIT_SIGNAL}
-
-SPECIALTY FOCUS ({specialty}):
-"""
-        + self._get_specialty_instructions(specialty)
-
-    def _get_specialty_instructions(self, specialty: str) -> str:
-        """Get specialty-specific review instructions."""
-        instructions = {
-            "security": """
-- Check for injection vulnerabilities (SQL, XSS, command injection)
-- Verify authentication and authorization
-- Look for hardcoded secrets or credentials
-- Check for insecure data handling
-- Verify input validation and sanitization
-""",
-            "performance": """
-- Identify N+1 query patterns
-- Check for memory leaks or excessive allocations
-- Look for blocking operations in async code
-- Verify efficient data structures are used
-- Check for unnecessary re-renders in React
-""",
-            "types": """
-- Check for proper TypeScript types (no `any`)
-- Verify function signatures are complete
-- Look for missing null checks
-- Check interface/type consistency
-- Verify proper use of generics
-""",
-            "errors": """
-- Check for proper error handling
-- Verify try/catch blocks are appropriate
-- Look for swallowed exceptions
-- Check for proper error messages
-- Verify error recovery paths
-""",
-            "quality": """
-- Check code follows project conventions
-- Look for code duplication
-- Verify proper naming conventions
-- Check for dead code
-- Verify documentation completeness
-""",
-        }
-        return instructions.get(specialty, "Review for general code quality issues.")
-
-    def _extract_cost_from_output(self, output: str) -> float:
-        """Extract cost from Claude output."""
-        import re
-        match = re.search(r'\$(\d+\.?\d*)', output)
-        return float(match.group(1)) if match else 0.0
-
-    def _extract_turns_from_output(self, output: str) -> int:
-        """Extract turn count from Claude output."""
-        import re
-        match = re.search(r'(\d+)\s*turns?', output, re.IGNORECASE)
-        return int(match.group(1)) if match else 1
-
-    async def _spawn_agent_impl(self, agent_state: AgentState, task: Optional[str] = None) -> bool:
-        """Internal implementation of agent spawning via subprocess.
-
-        Spawns a separate `claude --print` process for each agent.
-        Each process has its own context window and MCP servers.
-        """
-        agent_state.status = AgentStatus.RUNNING.value
-        agent_state.started_at = datetime.now().isoformat()
-        
-        # Start struggle tracking
-        agent_id_str = f"agent-{agent_state.agent_id}"
-        if hasattr(self, '_struggle_detector') and self._struggle_detector:
-            self._struggle_detector.start_tracking(agent_id_str)
-
-        # Update main state (with lock to prevent race conditions)
-        async with self._state_lock:
-            state = self.read_state()
-            if state:
-                for i, a in enumerate(state.agents):
-                    a_id = a.agent_id if isinstance(a, AgentState) else a.get("agent_id")
-                    if a_id == agent_state.agent_id:
-                        state.agents[i] = agent_state
-                        break
-                self.write_state(state)
-                self.create_checkpoint(state)
-
-        return await self._spawn_agent_subprocess(agent_state, task)
-
-    async def _spawn_agent_subprocess(self, agent_state: AgentState, task: Optional[str] = None) -> bool:
-        """Spawn agent as an independent subprocess with its own context window."""
-        agent_id_str = f"agent-{agent_state.agent_id}"
-        
-        # Write agent start receipt
-        state = self.read_state()
-        session_id = state.session_id if state else "unknown"
-        write_receipt(
-            agent_id_str,
-            "agent_start",
-            {
-                "task": task or "general",
-                "started_at": agent_state.started_at,
-                "max_iterations": agent_state.max_iterations
-            },
-            session_id
-        )
-        
-        self.log_activity(f"Agent {agent_state.agent_id} started")
-        self._print_progress("STARTED", agent_state.agent_id)
-        # Track performance start
-        if hasattr(self, '_perf_tracker') and self._perf_tracker:
-            self._perf_tracker.start_agent(agent_state.agent_id)
-        if hasattr(self, '_scheduler') and self._scheduler:
-            self._scheduler.record_activity()
-
-        spawned_pid = None
-        proc = None
-        try:
-            prompt = self._build_agent_prompt(agent_state, task)
-
-            env = os.environ.copy()
-            # Core Ralph env vars
-            env["RALPH_SUBAGENT"] = "true"
-            env["RALPH_AGENT_ID"] = str(agent_state.agent_id)
-            env["CLAUDE_CODE_PERMISSION_MODE"] = os.environ.get(
-                "CLAUDE_CODE_PERMISSION_MODE", "acceptEdits"
-            )
-
-            # Gist-compatible env vars (Step 6)
-            state = self.read_state()
-            session_id = state.session_id if state else "unknown"
-            env["CLAUDE_CODE_TEAM_NAME"] = os.environ.get(
-                "CLAUDE_CODE_TEAM_NAME", f"ralph-{session_id}"
-            )
-            # Generate structured agent name based on phase and specialty
-            current_phase = state.phase if state else "implementation"
-            assigned_config = match_agent_to_task(task or "", None) if task else "general"
-            structured_name = generate_agent_name(current_phase, assigned_config, agent_state.agent_id)
-
-            env["CLAUDE_CODE_AGENT_ID"] = f"agent-{agent_state.agent_id}"
-            env["CLAUDE_CODE_AGENT_NAME"] = structured_name
-            env["RALPH_AGENT_TYPE"] = current_phase
-
-            # Review agents get read-only sandbox (plan mode)
-            if current_phase == LifecyclePhase.REVIEW.value:
-                env["CLAUDE_CODE_PERMISSION_MODE"] = "plan"
-                env["RALPH_AGENT_TYPE"] = "review"
-            env["RALPH_PARENT_SESSION_ID"] = session_id
-
-            # Record HEAD at agent start for push gate comparison
-            # Review agents that make no commits won't be blocked on exit
-            initial_head = None  # Store locally for per-task verify+fix
-            try:
-                head_result = subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
-                    capture_output=True, text=True,
-                    cwd=str(self.base_dir), timeout=5
-                )
-                if head_result.returncode == 0:
-                    initial_head = head_result.stdout.strip()
-                    env["RALPH_INITIAL_HEAD"] = initial_head
-            except Exception:
-                pass
-
-            # Use start_new_session to detach from parent process group
-            # --output-format json gives us total_cost_usd in the result
-            # Apply model routing if specified
-            cmd = ["claude", "--print", "--output-format", "json"]
-            model_override = env.get("RALPH_MODEL_MODE", "")
-            if model_override and model_override != ModelMode.OPUS.value:
-                cmd.extend(["--model", model_override])
-            cmd.extend(["-p", prompt])
-
-            # Budget guard: check cost before spawning
-            if hasattr(self, '_perf_tracker') and self._perf_tracker:
-                budget_limit = float(env.get("RALPH_MAX_BUDGET_USD", "0") or "0")
-                if budget_limit > 0 and self._perf_tracker.total_cost >= budget_limit:
-                    self.log_activity(
-                        f"Budget limit ${budget_limit:.2f} reached (spent ${self._perf_tracker.total_cost:.2f}), "
-                        f"skipping agent {agent_state.agent_id}",
-                        level="WARN"
-                    )
-                    agent_state.status = AgentStatus.FAILED.value
-                    agent_state.completed_at = datetime.now().isoformat()
-                    self._failed_count += 1
-                    self._print_progress("BUDGET", agent_state.agent_id, f"limit ${budget_limit:.2f} exceeded")
-                    await self._update_final_state(agent_state, None)
-                    return False
-
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                start_new_session=True
-            )
-
-            spawned_pid = proc.pid
-            if spawned_pid:
-                async with self._state_lock:
-                    state = self.read_state()
-                    if state:
-                        if spawned_pid not in state.process_pids:
-                            state.process_pids.append(spawned_pid)
-                        state.last_heartbeat = datetime.now().isoformat()
-                        self.write_state(state)
-                self.log_activity(f"Agent {agent_state.agent_id} spawned with PID {spawned_pid}")
-
-            stdout_chunks = []
-            stderr_chunks = []
-
-            async def read_stream(stream, chunks, max_size=1024*1024):
-                total = 0
-                while True:
-                    chunk = await stream.read(8192)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total <= max_size:
-                        chunks.append(chunk)
-
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(
-                        read_stream(proc.stdout, stdout_chunks),
-                        read_stream(proc.stderr, stderr_chunks),
-                        proc.wait()
-                    ),
-                    timeout=900
-                )
-            except asyncio.TimeoutError:
-                self.log_activity(f"Agent {agent_state.agent_id} timed out, terminating...", level="WARN")
-                try:
-                    proc.terminate()
-                    await asyncio.wait_for(proc.wait(), timeout=10)
-                except asyncio.TimeoutError:
-                    proc.kill()
-                    await proc.wait()
-                agent_state.status = AgentStatus.FAILED.value
-                agent_state.completed_at = datetime.now().isoformat()
-                self._failed_count += 1
-                self._print_progress("TIMEOUT", agent_state.agent_id, "killed after 15m")
-                await self._update_final_state(agent_state, spawned_pid)
-                return False
-            except asyncio.CancelledError:
-                self.log_activity(f"Agent {agent_state.agent_id} cancelled, cleaning up...", level="WARN")
-                if proc and proc.returncode is None:
-                    proc.terminate()
-                    try:
-                        await asyncio.wait_for(proc.wait(), timeout=5)
-                    except asyncio.TimeoutError:
-                        proc.kill()
-                raise
-
-            # Parse JSON result for cost data (--output-format json)
-            stdout_text = b"".join(stdout_chunks).decode(errors="replace").strip()
-            stderr_text = b"".join(stderr_chunks).decode(errors="replace").strip()
-
-            if proc.returncode == 0:
-                agent_state.status = AgentStatus.COMPLETED.value
-                agent_state.ralph_complete = True
-                agent_state.exit_signal = True
-                agent_state.completed_at = datetime.now().isoformat()
-                
-                # Stop tracking on success
-                agent_id_str = f"agent-{agent_state.agent_id}"
-                if hasattr(self, '_struggle_detector') and self._struggle_detector:
-                    self._struggle_detector.stop_tracking(agent_id_str)
-                
-                # Write agent complete receipt
-                state = self.read_state()
-                session_id = state.session_id if state else "unknown"
-                write_receipt(
-                    agent_id_str,
-                    "agent_complete",
-                    {
-                        "completed_at": agent_state.completed_at,
-                        "iterations": agent_state.current_iteration,
-                        "ralph_complete": True
-                    },
-                    session_id
-                )
-
-                # Extract cost from JSON result
-                cost_usd = 0
-                num_turns = 0
-                try:
-                    result_json = json.loads(stdout_text)
-                    cost_usd = result_json.get("total_cost_usd", 0) or 0
-                    num_turns = result_json.get("num_turns", 0) or 0
-                    if cost_usd > 0:
-                        self.log_activity(
-                            f"Agent {agent_state.agent_id} completed (${cost_usd:.4f}, {num_turns} turns)"
-                        )
-                        try:
-                            record_daily_cost(cost_usd)
-                        except Exception as e:
-                            self.log_activity(f"Failed to record cost: {e}", level="WARN")
-                    else:
-                        self.log_activity(f"Agent {agent_state.agent_id} completed successfully")
-                except (json.JSONDecodeError, TypeError):
-                    self.log_activity(f"Agent {agent_state.agent_id} completed successfully")
-
-                self._completed_count += 1
-                self._total_cost += cost_usd
-                # Record performance metrics
-                if hasattr(self, '_perf_tracker') and self._perf_tracker:
-                    self._perf_tracker.complete_agent(
-                        agent_state.agent_id, cost_usd=cost_usd, num_turns=num_turns, success=True
-                    )
-                if hasattr(self, '_scheduler') and self._scheduler:
-                    self._scheduler.record_activity()
-                detail_parts = []
-                if cost_usd > 0:
-                    detail_parts.append(f"${cost_usd:.2f}")
-                if num_turns > 0:
-                    detail_parts.append(f"{num_turns} turns")
-                self._print_progress("DONE", agent_state.agent_id, ", ".join(detail_parts) if detail_parts else "")
-
-                # Per-task verify+fix for implementation phase agents
-                # Skip review/verify-fix agents to avoid infinite loops
-                is_implementation_phase = (
-                    current_phase == LifecyclePhase.IMPLEMENT.value or
-                    env.get("RALPH_AGENT_TYPE") == LifecyclePhase.IMPLEMENT.value
-                )
-                
-                if is_implementation_phase and initial_head:
-                    # Get files changed by this agent
-                    changed_files = self._get_agent_changed_files(initial_head)
-                    agent_state.changed_files = changed_files
-                    
-                    if changed_files:
-                        # Spawn scoped verify+fix agent
-                        verify_passed = await self._spawn_scoped_verify_fix(
-                            agent_state, changed_files, task
-                        )
-                        agent_state.verify_fix_passed = verify_passed
-                        
-                        if not verify_passed:
-                            self.log_activity(
-                                f"Agent {agent_state.agent_id}: Verify+fix found issues (agent still marked complete)",
-                                level="WARN"
-                            )
-            else:
-                agent_state.status = AgentStatus.FAILED.value
-                error_msg = stderr_text[:200] if stderr_text else stdout_text[:200]
-                
-                # Record struggle on failure
-                agent_id_str = f"agent-{agent_state.agent_id}"
-                if hasattr(self, '_struggle_detector') and self._struggle_detector:
-                    self._struggle_detector.record_error(agent_id_str, error_msg)
-                
-                self.log_activity(
-                    f"Agent {agent_state.agent_id} failed (exit {proc.returncode}): {error_msg}",
-                    level="ERROR"
-                )
-                if hasattr(self, '_perf_tracker') and self._perf_tracker:
-                    self._perf_tracker.complete_agent(
-                        agent_state.agent_id, cost_usd=0, num_turns=0, success=False
-                    )
-                self._failed_count += 1
-                self._print_progress("FAILED", agent_state.agent_id, f"exit {proc.returncode}")
-
-        except asyncio.CancelledError:
-            agent_state.status = AgentStatus.FAILED.value
-            self._failed_count += 1
-            raise
-        except Exception as e:
-            agent_state.status = AgentStatus.FAILED.value
-            self._failed_count += 1
-            self.log_activity(f"Agent {agent_state.agent_id} error: {e}", level="ERROR")
-            
-            # Write agent error receipt
-            agent_id_str = f"agent-{agent_state.agent_id}"
-            state = self.read_state()
-            session_id = state.session_id if state else "unknown"
-            write_receipt(
-                agent_id_str,
-                "agent_error",
-                {
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "iteration": agent_state.current_iteration,
-                    "failed_at": datetime.now().isoformat()
-                },
-                session_id
-            )
-
-        agent_state.completed_at = datetime.now().isoformat()
-        await self._update_final_state(agent_state, spawned_pid)
-        return agent_state.status == AgentStatus.COMPLETED.value
-
-    async def _update_final_state(self, agent_state: AgentState, spawned_pid: Optional[int] = None) -> bool:
-        """Update final agent state after completion/failure."""
-        async with self._state_lock:
-            state = self.read_state()
-            if state:
-                for i, a in enumerate(state.agents):
-                    a_id = a.agent_id if isinstance(a, AgentState) else a.get("agent_id")
-                    if a_id == agent_state.agent_id:
-                        state.agents[i] = agent_state
-                        break
-                if spawned_pid and spawned_pid in state.process_pids:
-                    state.process_pids.remove(spawned_pid)
-                state.last_heartbeat = datetime.now().isoformat()
-                self.write_state(state)
-        
-        # Write build intelligence after each agent finishes
-        if hasattr(self, '_struggle_detector') and self._struggle_detector:
-            self._struggle_detector.write_intelligence()
-
-        return agent_state.status == AgentStatus.COMPLETED.value
-
-    async def run_loop(
-        self,
-        num_agents: int,
-        max_iterations: int,
-        task: Optional[str] = None,
-        review_agents: int = 5,
-        review_iterations: int = 2,
-        skip_review: bool = False,
-        plan_file: Optional[str] = None,
-        max_concurrent: Optional[int] = None,
-        backend: str = SpawnBackend.AUTO.value,
-        model_mode: str = ModelMode.OPUS.value,
-        max_budget_usd: Optional[float] = None,
-    ) -> RalphState:
-        """
-        Run the full Ralph loop with N agents × M iterations.
-
-        Uses a semaphore to limit concurrent agents and prevent resource exhaustion.
-        Supports multiple spawn backends: task (Claude Task tool), subprocess, or auto.
-
-        Args:
-            num_agents: Number of agents to spawn.
-            max_iterations: Maximum iterations per agent.
-            task: Optional task description.
-            review_agents: Number of review agents (default 5).
-            review_iterations: Iterations per review agent (default 2).
-            skip_review: Whether to skip post-implementation review.
-            plan_file: Path to the plan file being executed.
-            max_concurrent: Maximum concurrent agents (default: MAX_CONCURRENT_AGENTS).
-            backend: Spawn backend - "task", "subprocess", or "auto".
-
-        Returns:
-            Final RalphState after execution.
-        """
-        # Initialize progress tracking
-        self._loop_start_time = datetime.now()
-        self._completed_count = 0
-        self._failed_count = 0
-        self._total_cost = 0.0
-        self._total_agents_in_loop = num_agents
-        
-        # Phase tracking for statusline
-        self._current_phase = "implementation"
-        self._impl_total = num_agents
-        self._impl_completed = 0
-        self._impl_failed = 0
-        self._review_total = 0
-        self._review_completed = 0
-        self._review_failed = 0
-        self._model_mode = model_mode
-
-        # Initialize performance tracking and adaptive scheduling
-        self._perf_tracker = PerformanceTracker()
-        self._scheduler = ActivityScheduler()
-
-        # Initialize state
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        agents = [
-            AgentState(
-                agent_id=i,
-                max_iterations=max_iterations,
-                status=AgentStatus.PENDING.value
-            )
-            for i in range(num_agents)
-        ]
-
-        state = RalphState(
-            session_id=session_id,
-            task=task,
-            total_agents=num_agents,
-            max_iterations=max_iterations,
-            agents=agents,
-            started_at=datetime.now().isoformat()
-        )
-
-        self.write_state(state)
-        self.create_checkpoint(state)
-
-        # Determine concurrency limit
-        concurrent_limit = max_concurrent or self.MAX_CONCURRENT_AGENTS
-        concurrent_limit = min(concurrent_limit, num_agents)  # Don't exceed agent count
-
-        self.log_activity(
-            f"Ralph loop started: {num_agents} agents × {max_iterations} iterations "
-            f"(max {concurrent_limit} concurrent)"
-        )
-
-        # Print startup banner to stdout
-        print(flush=True)
-        print(
-            f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-            flush=True
-        )
-        print(
-            f"  {self._C_BOLD}Ralph Loop{self._C_RESET}  "
-            f"{num_agents} agents x {max_iterations} iterations  "
-            f"{self._C_DIM}(max {concurrent_limit} concurrent){self._C_RESET}",
-            flush=True
-        )
-        if task:
-            # Truncate long tasks for the banner
-            task_display = task[:70] + "..." if len(task) > 70 else task
-            print(f"  {self._C_DIM}Task:{self._C_RESET} {task_display}", flush=True)
-        print(
-            f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-            flush=True
-        )
-        print(flush=True)
-
-        # Write initial progress file
-        self._write_progress_file()
-
-        # Initialize team infrastructure for Hybrid Gamma
-        inbox = AgentInbox(session_id, "agent-0", self.base_dir)
-        team_config = TeamConfig(
-            session_id=session_id,
-            leader_agent="agent-0",
-            agents=[{"id": f"agent-{i}", "status": "pending"} for i in range(num_agents)],
-            backend=backend,
-            created_at=datetime.now().isoformat(),
-            env_vars={"CLAUDE_CODE_TEAM_NAME": f"ralph-{session_id}"},
-        )
-        try:
-            inbox.write_team_config(team_config)
-            for i in range(num_agents):
-                agent_inbox = inbox.inbox_dir / f"agent-{i}.json"
-                if not agent_inbox.exists():
-                    agent_inbox.parent.mkdir(parents=True, exist_ok=True)
-                    with open(agent_inbox, "w") as f:
-                        json.dump([], f)
-        except OSError:
-            pass  # Non-fatal: agents work without inbox
-
-        # Batching strategy (Step 4):
-        # For <=10 agents: single batch with semaphore
-        # For >10 agents: batch in groups of BATCH_SIZE
-        BATCH_SIZE = 10
-        results = []
-
-        if num_agents <= BATCH_SIZE:
-            # Single batch - standard semaphore approach
-            semaphore = asyncio.Semaphore(concurrent_limit)
-            spawn_tasks = [
-                self.spawn_agent(agent, task, semaphore)
-                for agent in agents
-            ]
-            results = await asyncio.gather(*spawn_tasks, return_exceptions=True)
-        else:
-            # Multi-batch for large agent counts
-            self.log_activity(
-                f"Batching {num_agents} agents in groups of {BATCH_SIZE}"
-            )
-            for batch_start in range(0, num_agents, BATCH_SIZE):
-                batch_end = min(batch_start + BATCH_SIZE, num_agents)
-                batch_agents = agents[batch_start:batch_end]
-                batch_num = (batch_start // BATCH_SIZE) + 1
-                total_batches = (num_agents + BATCH_SIZE - 1) // BATCH_SIZE
-
-                self._print_progress(
-                    "BATCH", -1,
-                    f"{batch_num}/{total_batches} (agents {batch_start}-{batch_end - 1})"
-                )
-
-                semaphore = asyncio.Semaphore(min(concurrent_limit, len(batch_agents)))
-                spawn_tasks = [
-                    self.spawn_agent(agent, task, semaphore)
-                    for agent in batch_agents
-                ]
-                batch_results = await asyncio.gather(*spawn_tasks, return_exceptions=True)
-                results.extend(batch_results)
-
-                # Reclaim stale tasks between batches (Step 4)
-                if plan_file:
-                    try:
-                        plan_id = Path(plan_file).stem if plan_file else session_id
-                        queue = WorkStealingQueue(plan_id, plan_file or "", self.base_dir)
-                        reclaimed = queue.reclaim_stale_tasks(timeout_seconds=300)
-                        if reclaimed:
-                            self.log_activity(
-                                f"Reclaimed {len(reclaimed)} stale tasks: {reclaimed}"
-                            )
-                    except Exception:
-                        pass  # Non-fatal
-
-        # Update final state
-        state = self.read_state()
-        if state:
-            state.completed_at = datetime.now().isoformat()
-            self.write_state(state)
-
-        # Count results
-        successful = sum(1 for r in results if r is True)
-        failed = sum(1 for r in results if r is False or isinstance(r, Exception))
-        exceptions = [r for r in results if isinstance(r, Exception)]
-
-        if exceptions:
-            for exc in exceptions[:3]:  # Log first 3 exceptions
-                self.log_activity(f"Agent exception: {exc}", level="ERROR")
-
-        self.log_activity(
-            f"Ralph loop completed: {successful}/{num_agents} successful, {failed} failed"
-        )
-
-        # Print implementation summary
-        self._print_summary(successful, failed, exceptions)
-
-        # =====================================================================
-        # VERIFY+FIX PHASE - Run build checks and auto-fix issues
-        # =====================================================================
-        verify_fix_successful = 0
-        verify_fix_failed = 0
-        verify_fix_exceptions: list[Exception] = []
-
-        # Static config: 3 agents, 2 iterations
-        VERIFY_FIX_AGENTS = 3
-        VERIFY_FIX_ITERATIONS = 2
-
-        if successful > 0:
-            print(flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(
-                f"  {self._C_BOLD}Verify+Fix Phase{self._C_RESET}  "
-                f"{VERIFY_FIX_AGENTS} agents x {VERIFY_FIX_ITERATIONS} iterations",
-                flush=True
-            )
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(flush=True)
-
-            # Reset counters for verify-fix phase
-            self._loop_start_time = datetime.now()
-            self._completed_count = 0
-            self._failed_count = 0
-            self._total_agents_in_loop = VERIFY_FIX_AGENTS
-
-            # Create verify-fix agent states
-            verify_fix_agent_states = [
-                AgentState(
-                    agent_id=i,
-                    max_iterations=VERIFY_FIX_ITERATIONS,
-                    status=AgentStatus.PENDING.value
-                )
-                for i in range(VERIFY_FIX_AGENTS)
-            ]
-
-            # Spawn verify-fix agents
-            verify_fix_semaphore = asyncio.Semaphore(min(self.MAX_CONCURRENT_AGENTS, VERIFY_FIX_AGENTS))
-            verify_fix_tasks = [
-                self._spawn_verify_fix_agent(agent, task, verify_fix_semaphore)
-                for agent in verify_fix_agent_states
-            ]
-            verify_fix_results = await asyncio.gather(*verify_fix_tasks, return_exceptions=True)
-
-            # Count verify-fix results
-            verify_fix_successful = sum(1 for r in verify_fix_results if r is True)
-            verify_fix_failed = sum(1 for r in verify_fix_results if r is False or isinstance(r, Exception))
-            verify_fix_exceptions = [r for r in verify_fix_results if isinstance(r, Exception)]
-
-            self.log_activity(
-                f"Verify+Fix phase completed: {verify_fix_successful}/{VERIFY_FIX_AGENTS} successful"
-            )
-
-            # Print verify-fix summary
-            print(flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(f"{self._C_BOLD}  Verify+Fix Phase Complete{self._C_RESET}", flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(
-                f"  Verify+Fix Agents: {self._C_GREEN}{verify_fix_successful}{self._C_RESET} succeeded, "
-                f"{self._C_DIM}{verify_fix_failed}{self._C_RESET} failed",
-                flush=True
-            )
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-
-        # =====================================================================
-        # PLAN VERIFICATION PHASE - Verify 100% plan completion
-        # =====================================================================
-        plan_verified = True
-        plan_verification_result = None
-        
-        if successful > 0 and plan_file:
-            # Run plan verification
-            plan_verification_result = await self._spawn_plan_verification_agent(task)
-            plan_verified = plan_verification_result["verified"]
-            missing_tasks = plan_verification_result["missing_tasks"]
-            verified_count = plan_verification_result["verified_count"]
-            total_count = plan_verification_result["total_count"]
-            
-            # Print verification summary
-            print(flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(f"{self._C_BOLD}  Plan Verification Complete{self._C_RESET}", flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            
-            if plan_verified:
-                print(
-                    f"  Status: {self._C_GREEN}PASS{self._C_RESET} - All {verified_count} tasks completed",
-                    flush=True
-                )
-            else:
-                print(
-                    f"  Status: {self._C_DIM}INCOMPLETE{self._C_RESET} - {len(missing_tasks)} tasks missing",
-                    flush=True
-                )
-                print(
-                    f"  Verified: {self._C_GREEN}{verified_count}{self._C_RESET}/{total_count}",
-                    flush=True
-                )
-                
-                # Check if we should retry
-                state = self.read_state()
-                if state and state.plan_verification_retries < 2:
-                    print(
-                        f"  {self._C_DIM}Retry {state.plan_verification_retries + 1}/2 - queuing missing tasks{self._C_RESET}",
-                        flush=True
-                    )
-                    
-                    # Queue missing tasks and increment retry counter
-                    state.plan_verification_retries += 1
-                    self.write_state(state)
-
-                    # Generate gap-fill prompts for the /start skill to spawn
-                    gap_fill_prompts = []
-                    for i, missing_task in enumerate(missing_tasks[:5], 1):
-                        gap_prompt = (
-                            f"RALPH GAP-FILL Agent {i}/{min(len(missing_tasks), 5)}: "
-                            f"Complete this missing plan task:\n\n"
-                            f"**Missing task:** {missing_task}\n\n"
-                            f"**Plan file:** {plan_file}\n\n"
-                            f"Read the plan for full context. Implement ONLY this specific "
-                            f"missing task. When complete, mark your task as completed via "
-                            f"TaskUpdate(status='completed') and SendMessage to team-lead."
-                        )
-                        gap_fill_prompts.append(gap_prompt)
-
-                    # Write gap-fill prompts for /start to pick up
-                    gap_fill_path = self.base_dir / ".claude" / "ralph" / "gap-fill-prompts.json"
-                    try:
-                        gap_fill_path.write_text(
-                            json.dumps(gap_fill_prompts, indent=2),
-                            encoding="utf-8"
-                        )
-                    except OSError:
-                        pass
-
-                    self.log_activity(
-                        f"Plan incomplete - {len(missing_tasks)} tasks missing "
-                        f"(retry {state.plan_verification_retries}/2, "
-                        f"{len(gap_fill_prompts)} gap-fill prompts generated)"
-                    )
-                    for i, missing_task in enumerate(missing_tasks[:5], 1):
-                        self.log_activity(f"  Missing: {missing_task[:100]}")
-
-                    print(
-                        f"  {self._C_DIM}Gap-fill prompts written to .claude/ralph/gap-fill-prompts.json{self._C_RESET}",
-                        flush=True
-                    )
-                else:
-                    max_retries_msg = " (max retries reached)" if state and state.plan_verification_retries >= 2 else ""
-                    print(
-                        f"  {self._C_DIM}Proceeding to review{max_retries_msg}{self._C_RESET}",
-                        flush=True
-                    )
-            
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-
-        # =====================================================================
-        # REVIEW PHASE - Spawn review agents after implementation
-        # =====================================================================
-        review_successful = 0
-        review_failed = 0
-        review_exceptions: list[Exception] = []
-
-        if not skip_review and successful > 0:
-            print(flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(
-                f"  {self._C_BOLD}Review Phase{self._C_RESET}  "
-                f"{review_agents} agents x {review_iterations} iterations",
-                flush=True
-            )
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(flush=True)
-
-            # Snapshot implementation results before resetting counters
-            self._impl_completed = self._completed_count
-            self._impl_failed = self._failed_count
-
-            # Transition to review phase
-            self._current_phase = "review"
-            self._write_progress_file()  # Persist impl snapshot before counter reset
-
-            # Reset counters for review phase
-            self._loop_start_time = datetime.now()
-            self._completed_count = 0
-            self._failed_count = 0
-            self._total_agents_in_loop = review_agents
-            self._review_total = review_agents
-
-            # Create review agent states
-            review_agent_states = [
-                AgentState(
-                    agent_id=i,
-                    max_iterations=review_iterations,
-                    status=AgentStatus.PENDING.value
-                )
-                for i in range(review_agents)
-            ]
-
-            # Spawn review agents
-            review_semaphore = asyncio.Semaphore(min(self.MAX_CONCURRENT_AGENTS, review_agents))
-            review_tasks = [
-                self._spawn_review_agent(agent, task, review_semaphore)
-                for agent in review_agent_states
-            ]
-            review_results = await asyncio.gather(*review_tasks, return_exceptions=True)
-
-            # Count review results
-            review_successful = sum(1 for r in review_results if r is True)
-            review_failed = sum(1 for r in review_results if r is False or isinstance(r, Exception))
-            review_exceptions = [r for r in review_results if isinstance(r, Exception)]
-
-            self.log_activity(
-                f"Review phase completed: {review_successful}/{review_agents} successful"
-            )
-
-            # Print review summary
-            print(flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(f"{self._C_BOLD}  Review Phase Complete{self._C_RESET}", flush=True)
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-            print(
-                f"  Review Agents: {self._C_GREEN}{review_successful}{self._C_RESET} succeeded, "
-                f"{self._C_DIM}{review_failed}{self._C_RESET} failed",
-                flush=True
-            )
-            print(
-                f"{self._C_DIM}{'=' * 60}{self._C_RESET}",
-                flush=True
-            )
-
-            # Generate review summary
-            self._generate_review_summary()
-
-            # Snapshot review results before transitioning to complete
-            self._review_completed = self._completed_count
-            self._review_failed = self._failed_count
-
-        elif skip_review:
-            self.log_activity("Review phase skipped (--skip-review)")
-            # If review skipped, snapshot impl results now
-            self._impl_completed = self._completed_count
-            self._impl_failed = self._failed_count
-            # Review counters remain 0 since review was skipped
-
-        else:
-            # Review not run (no successful impl agents) - snapshot impl results
-            self._impl_completed = self._completed_count
-            self._impl_failed = self._failed_count
-            # Review counters remain 0 since review wasn't attempted
-
-        # Mark completion phase
-        self._current_phase = "complete"
-        self._write_progress_file()  # Persist phase snapshot before cleanup
-        
-        # Clean up progress file (loop is done)
-        self._cleanup_progress_file()
-
-        return state
-
-    # =========================================================================
-    # CLI Commands
-    # =========================================================================
-
-    def cmd_status(self) -> None:
-        """Show current Ralph state."""
-        state = self.read_state()
-
-        if state is None:
-            print("No active Ralph session")
-            return
-
-        print(f"Session ID: {state.session_id}")
-        print(f"Task: {state.task or 'None'}")
-        print(f"Started: {state.started_at}")
-        print(f"Agents: {state.total_agents} × {state.max_iterations} iterations")
-        print()
         print("Agent Status:")
         for agent in state.agents:
             if isinstance(agent, AgentState):
@@ -5336,43 +3723,6 @@ SPECIALTY FOCUS ({specialty}):
                 AgentStatus.FAILED.value: "❌"
             }.get(a.status, "❓")
             print(f"  Agent {a.agent_id}: {status_icon} {a.status} (iteration {a.current_iteration}/{a.max_iterations})")
-
-    def cmd_resume(self) -> None:
-        """Resume from latest checkpoint."""
-        if not self.checkpoint_dir.exists():
-            print("No checkpoints found")
-            return
-
-        checkpoints = sorted(self.checkpoint_dir.glob("checkpoint_*.json"))
-        if not checkpoints:
-            print("No checkpoints found")
-            return
-
-        latest = checkpoints[-1]
-        print(f"Resuming from: {latest}")
-
-        state = self.restore_from_checkpoint(str(latest))
-        if state:
-            self.write_state(state)
-            print(f"Restored session: {state.session_id}")
-
-            # Find incomplete agents and resume
-            incomplete = [
-                AgentState(**a) if isinstance(a, dict) else a
-                for a in state.agents
-                if (a.get("status") if isinstance(a, dict) else a.status) != AgentStatus.COMPLETED.value
-            ]
-
-            if incomplete:
-                print(f"Resuming {len(incomplete)} incomplete agents...")
-                asyncio.run(self._resume_agents(incomplete, state.task))
-            else:
-                print("All agents already completed")
-
-    async def _resume_agents(self, agents: list, task: Optional[str]) -> None:
-        """Resume incomplete agents."""
-        tasks = [self.spawn_agent(agent, task) for agent in agents]
-        await asyncio.gather(*tasks, return_exceptions=True)
 
     def cleanup_ralph_session(self, keep_activity_log: bool = True) -> dict:
         """
@@ -5538,221 +3888,6 @@ SPECIALTY FOCUS ({specialty}):
     # Setup / Teardown (Step 1: Hybrid Architecture)
     # =========================================================================
 
-    def cmd_setup(
-        self,
-        num_agents: int,
-        max_iterations: int,
-        task: Optional[str] = None,
-        backend: str = SpawnBackend.AUTO.value,
-        plan_file: Optional[str] = None,
-    ) -> dict:
-        """
-        Initialize Ralph session infrastructure without spawning agents.
-
-        Creates:
-        - State file (.claude/ralph/state.json)
-        - Team config (.claude/ralph/team-{session}/config.json)
-        - Agent inboxes (.claude/ralph/team-{session}/inbox/)
-        - Heartbeat directory (.claude/ralph/team-{session}/heartbeat/)
-        - Checkpoint directory
-
-        Returns:
-            Setup result dict with session_id and paths.
-        """
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Determine effective backend
-        effective_backend = backend
-        if backend == SpawnBackend.AUTO.value:
-            effective_backend = (
-                SpawnBackend.TASK.value if num_agents <= 10
-                else SpawnBackend.AUTO.value  # Will batch Task + subprocess overflow
-            )
-
-        # Create agent states
-        agents = [
-            AgentState(
-                agent_id=i,
-                max_iterations=max_iterations,
-                status=AgentStatus.PENDING.value,
-            )
-            for i in range(num_agents)
-        ]
-
-        # Create Ralph state
-        state = RalphState(
-            session_id=session_id,
-            task=task,
-            total_agents=num_agents,
-            max_iterations=max_iterations,
-            agents=agents,
-            started_at=datetime.now().isoformat(),
-            checkpoint_path=plan_file,
-        )
-        self.write_state(state)
-        self.create_checkpoint(state)
-
-        # Create team config with gist-compatible env vars (Step 6)
-        team_name = os.environ.get("CLAUDE_CODE_TEAM_NAME", f"ralph-{session_id}")
-        team_config = TeamConfig(
-            session_id=session_id,
-            leader_agent="agent-0",
-            agents=[
-                {
-                    "id": f"agent-{i}",
-                    "role": assign_review_specialty(i) if i > 0 else "leader",
-                    "status": "pending",
-                }
-                for i in range(num_agents)
-            ],
-            backend=effective_backend,
-            created_at=datetime.now().isoformat(),
-            env_vars={
-                "CLAUDE_CODE_TEAM_NAME": team_name,
-                "RALPH_PARENT_SESSION_ID": session_id,
-                "RALPH_SUBAGENT": "true",
-            },
-        )
-
-        # Initialize inbox system
-        inbox = AgentInbox(session_id, "agent-0", self.base_dir)
-        inbox.write_team_config(team_config)
-
-        # Create empty inboxes for all agents
-        for i in range(num_agents):
-            agent_inbox_path = inbox.inbox_dir / f"agent-{i}.json"
-            if not agent_inbox_path.exists():
-                with open(agent_inbox_path, "w") as f:
-                    json.dump([], f)
-
-        result = {
-            "session_id": session_id,
-            "backend": effective_backend,
-            "num_agents": num_agents,
-            "max_iterations": max_iterations,
-            "team_dir": str(inbox.team_dir),
-            "state_path": str(self.state_path),
-            "task": task,
-        }
-
-        self.log_activity(f"Setup complete: {session_id} ({effective_backend} backend, {num_agents} agents)")
-        print(json.dumps(result, indent=2))
-        return result
-
-    def cmd_teardown(self, keep_logs: bool = True) -> dict:
-        """
-        Clean up Ralph session after completion.
-
-        Performs:
-        - Structured shutdown (sends shutdown_request to all agents)
-        - Cleans up team directory (inboxes, heartbeats, relay)
-        - Preserves activity log and final state if keep_logs=True
-        - Archives results to context-relay.json
-
-        Returns:
-            Teardown result dict.
-        """
-        state = self.read_state()
-        results = {"cleaned": [], "preserved": [], "errors": []}
-
-        if state:
-            session_id = state.session_id
-
-            # Send shutdown request via leader inbox
-            try:
-                inbox = AgentInbox(session_id, "agent-0", self.base_dir)
-                inbox.request_shutdown()
-                results["cleaned"].append("shutdown_request_sent")
-            except Exception as e:
-                results["errors"].append(f"shutdown_request: {e}")
-
-            # Write context relay summary
-            try:
-                relay_path = self.base_dir / ".claude" / "ralph" / "context-relay.json"
-                relay_data = {
-                    "session_id": session_id,
-                    "task": state.task,
-                    "completed_at": datetime.now().isoformat(),
-                    "total_agents": state.total_agents,
-                    "agents": [
-                        {
-                            "id": (a.agent_id if isinstance(a, AgentState) else a.get("agent_id")),
-                            "status": (a.status if isinstance(a, AgentState) else a.get("status")),
-                        }
-                        for a in state.agents
-                    ],
-                    "phase": state.phase,
-                }
-                relay_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(relay_path, "w") as f:
-                    json.dump(relay_data, f, indent=2)
-                results["preserved"].append(str(relay_path))
-            except Exception as e:
-                results["errors"].append(f"context_relay: {e}")
-
-            # Clean team directory
-            team_dir = self.base_dir / ".claude" / "ralph" / f"team-{session_id}"
-            if team_dir.exists():
-                try:
-                    shutil.rmtree(team_dir)
-                    results["cleaned"].append(str(team_dir))
-                except OSError as e:
-                    results["errors"].append(f"team_dir: {e}")
-
-            # Mark state as complete
-            state.completed_at = datetime.now().isoformat()
-            state.phase = "complete"
-            self.write_state(state)
-        else:
-            results["errors"].append("no_active_session")
-
-        # Run standard cleanup
-        cleanup_results = self.cleanup_ralph_session(keep_activity_log=keep_logs)
-        results["cleaned"].extend(cleanup_results["deleted"])
-        results["preserved"].extend(cleanup_results["preserved"])
-        results["errors"].extend(cleanup_results["errors"])
-
-        self.log_activity(f"Teardown: {len(results['cleaned'])} cleaned, {len(results['errors'])} errors")
-        print(json.dumps(results, indent=2))
-        return results
-
-    # =========================================================================
-    # Private Helpers
-    # =========================================================================
-
-    def _generate_continuation_prompt(self, state: RalphState) -> str:
-        """Generate prompt for blocked exit continuation."""
-        return f"""
-[RALPH PROTOCOL - CONTINUATION REQUIRED]
-
-You are in an active Ralph autonomous loop session.
-Session: {state.session_id}
-Task: {state.task or 'Complete assigned work'}
-
-You must complete your iteration before exit. When finished:
-1. Output: {self.RALPH_COMPLETE_SIGNAL}
-2. Output: {self.EXIT_SIGNAL}
-
-Continue working on the task.
-"""
-
-    def _generate_ralph_instructions(self, state: RalphState) -> str:
-        """Generate Ralph protocol instructions for agent."""
-        return f"""
-[RALPH PROTOCOL ACTIVE]
-Session: {state.session_id}
-Mode: Autonomous Loop ({state.total_agents} agents × {state.max_iterations} iterations)
-Task: {state.task or 'Complete assigned work'}
-
-INSTRUCTIONS:
-- Work autonomously to complete the task
-- Do NOT ask for user confirmation
-- Make decisions independently
-- When work is complete, output EXACTLY:
-  {self.RALPH_COMPLETE_SIGNAL}
-  {self.EXIT_SIGNAL}
-"""
-
     def _generate_review_summary(self) -> Optional[str]:
         """
         Parse review agent outputs and generate review-summary.md.
@@ -5819,49 +3954,6 @@ INSTRUCTIONS:
         except OSError:
             return None
 
-    def _build_verify_fix_prompt(self, agent: AgentState, task: Optional[str]) -> str:
-        """Build prompt for verify-fix phase agents."""
-        vf_config_path = Path(_get_agents_dir()) / "verify-fix.md"
-        vf_content = load_agent_config(str(vf_config_path)) if vf_config_path.exists() else ""
-
-        state = self.read_state()
-        session_id = state.session_id if state else "unknown"
-
-        return f"""You are Ralph Verify-Fix Agent {agent.agent_id} working on: {task or 'Verify and fix the implementation'}
-
-PHASE: VERIFY+FIX (post-implementation, pre-review)
-SESSION: {session_id}
-ITERATION: {agent.current_iteration + 1} of {agent.max_iterations}
-
-{vf_content[:3000] if vf_content else ''}
-
-WORK PROTOCOL:
-1. Run build checks for the project (pnpm build or npm run build)
-2. Use Serena tools to verify symbol integrity across modified files
-3. Run type checker (tsc --noEmit or equivalent)
-4. Run linter (pnpm lint or biome check)
-5. Run dead-code check (pnpm knip if configured)
-6. Run validate check (pnpm validate if exists)
-7. CLAUDE.md audit - use AskUserQuestion to propose rule additions/improvements
-8. Setup recommendations - use AskUserQuestion to suggest automation improvements
-9. Design review - verify UI/UX consistency if frontend changes present
-10. Auto-fix simple issues (imports, types, formatting)
-11. Use AskUserQuestion for complex issues requiring human decision
-12. Do NOT leave TODO comments - fix or escalate
-13. IMPORTANT: Write summary of quality check results (steps 1-9) to .claude/verify-fix-quality.log
-    - Include: build status, type errors, lint issues, dead code, validation results
-    - Format as concise bullet list for review phase context
-14. Use mcp__serena__think_about_whether_you_are_done before completion
-15. Push ALL commits before signaling completion
-16. When all verification is done, output EXACTLY:
-   {self.RALPH_COMPLETE_SIGNAL}
-   {self.EXIT_SIGNAL}
-
-TOOLS: All standard tools + Serena MCP + Context7 MCP
-
-Begin verification now.
-"""
-
     def _build_agent_prompt(self, agent: AgentState, task: Optional[str]) -> str:
         """Build the initial prompt for an agent with agent config loading (Step 3)."""
         # Read team state for session info
@@ -5869,7 +3961,7 @@ Begin verification now.
         session_id = state.session_id if state else "unknown"
         total = state.total_agents if state else 1
 
-        # Use ralph_lib.build_agent_prompt for consistent prompt generation
+        # Use build_agent_prompt for consistent prompt generation
         return build_agent_prompt(
             agent_id=agent.agent_id,
             total_agents=total,
@@ -5882,7 +3974,6 @@ Begin verification now.
             assigned_config=None,  # Use round-robin assignment
         )
 
-
 def _debug_exit(reason: str, code: int = 0) -> None:
     """Exit with optional debug logging.
 
@@ -5893,7 +3984,6 @@ def _debug_exit(reason: str, code: int = 0) -> None:
         import sys as _sys
         _sys.stderr.write(f"[ralph agent-tracker] exit({code}): {reason}\n")
     sys.exit(code)
-
 
 def agent_tracker() -> None:
     """Track Ralph agent completion and enforce phase transitions.
@@ -6034,7 +4124,7 @@ Task(subagent_type: "general-purpose", prompt: "RALPH Verify-Fix Agent 2/{vf_age
 
 Verify-Fix agents should:
 1. Run build checks (`pnpm build` / `python -m py_compile`)
-2. Use Serena to verify symbol integrity
+2. Verify symbol integrity via Grep/Read
 3. Run type checks where applicable
 4. Auto-fix simple issues (imports, types, formatting)
 5. Use AskUserQuestion for complex issues
@@ -6137,7 +4227,6 @@ This will allow the session to exit properly.
 
     _debug_exit(f"tracked completion #{completed} in phase={phase}", 0)
 
-
 def preflight_check() -> None:
     """Pre-session preflight: archive/remove stale state files (Fix D).
 
@@ -6188,19 +4277,14 @@ def preflight_check() -> None:
     except (ValueError, TypeError, OSError):
         pass
 
-
 def print_usage():
     """Print CLI usage information."""
     print("""
-Ralph Protocol - Autonomous Agent Loop Manager
+Ralph Protocol - Hook Handlers and Utilities
 
 Usage:
-    ralph.py loop N M [OPTIONS] [task]  - Run N agents × M iterations
     ralph.py prompt N [task]            - Generate N agent prompts for Task tool spawning
-    ralph.py setup N M [OPTIONS] [task] - Initialize session (no spawning)
-    ralph.py teardown [--no-logs]       - Clean up after session
     ralph.py status                     - Show current Ralph state
-    ralph.py resume                     - Resume from latest checkpoint
     ralph.py cleanup                    - Clean up all state files
     ralph.py cleanup --auto             - Auto-cleanup old files (default: 7 days)
     ralph.py cleanup --auto --max-age N - Auto-cleanup files older than N days
@@ -6212,41 +4296,19 @@ Usage:
     ralph.py hook-subagent-start        - Handle SubagentStart hook (reads stdin)
     ralph.py hook-subagent-stop         - Handle SubagentStop hook (reads stdin)
 
-Loop / Setup Options:
-    --review-agents RN      Number of post-review agents (default: 5)
-    --review-iterations RM  Iterations per review agent (default: 2)
-    --skip-review           Skip post-implementation review
-    --plan FILE             Path to plan file being executed
-    --backend BACKEND       Spawn backend: task|subprocess|auto (default: auto)
-                            NOTE: 'task' backend requires manual Task() spawning in parent session.
-                            Use 'ralph.py prompt N' to generate prompts, then spawn via Task tool.
-    --model MODE            Model routing: opus|sonnet|sonnet_all (default: opus)
-    --budget USD            Max budget in USD (stop spawning when exceeded)
-
 Cleanup Options:
     --auto                  Run age-based cleanup instead of full cleanup
     --max-age N             Days threshold for auto-cleanup (default: 7)
 
 Examples:
-    ralph.py loop 3 3 "Implement feature X"
-    ralph.py loop 50 15 --review-agents 15 --review-iterations 10 "Big feature"
-    ralph.py loop 10 5 --skip-review "Quick fix"
-    ralph.py loop 30 10 --plan /path/to/plan.md "Execute plan"
     ralph.py prompt 5 "Implement auth system"  # Generate prompts for parent Task spawning
-    ralph.py setup 10 3 --backend task "Initialize only"
-    ralph.py teardown
     ralph.py status
-    ralph.py resume
     ralph.py cleanup --auto --max-age 3
 
-Task Backend Workflow:
-    1. Run: ralph.py prompt 5 "implement feature"
-    2. In parent Claude session, spawn returned prompts via Task tool:
-       Task(prompt="...agent 1 prompt...")
-       Task(prompt="...agent 2 prompt...")
-       ...
+NOTE: Subprocess orchestration (loop, setup, teardown, resume commands) has been removed.
+      All orchestration now uses Claude Code native Agent Teams via Task() tool.
+      See /start skill for team-based orchestration.
 """)
-
 
 def main():
     """Main CLI entry point."""
@@ -6257,103 +4319,7 @@ def main():
     command = sys.argv[1]
     protocol = RalphProtocol()
 
-    if command == "loop":
-        if len(sys.argv) < 4:
-            print("Usage: ralph.py loop N M [OPTIONS] [task]")
-            sys.exit(1)
-
-        try:
-            num_agents = int(sys.argv[2])
-            max_iterations = int(sys.argv[3])
-        except ValueError:
-            print("Error: N and M must be integers")
-            sys.exit(1)
-
-        # Parse options and task from remaining args
-        review_agents = 5
-        review_iterations = 2
-        skip_review = False
-        plan_file = None
-        backend = SpawnBackend.AUTO.value
-        model_mode = ModelMode.OPUS.value
-        max_budget_usd = None
-        task_parts = []
-
-        i = 4
-        while i < len(sys.argv):
-            arg = sys.argv[i]
-            if arg == "--review-agents" and i + 1 < len(sys.argv):
-                review_agents = int(sys.argv[i + 1])
-                i += 2
-            elif arg == "--review-iterations" and i + 1 < len(sys.argv):
-                review_iterations = int(sys.argv[i + 1])
-                i += 2
-            elif arg == "--skip-review":
-                skip_review = True
-                i += 1
-            elif arg == "--plan" and i + 1 < len(sys.argv):
-                plan_file = sys.argv[i + 1]
-                i += 2
-            elif arg == "--backend" and i + 1 < len(sys.argv):
-                backend = sys.argv[i + 1]
-                if backend not in [b.value for b in SpawnBackend]:
-                    print(f"Error: --backend must be one of: task, subprocess, auto")
-                    sys.exit(1)
-                i += 2
-            elif arg == "--model" and i + 1 < len(sys.argv):
-                model_mode = sys.argv[i + 1]
-                valid_modes = [m.value for m in ModelMode]
-                if model_mode not in valid_modes:
-                    print(f"Error: --model must be one of: {', '.join(valid_modes)}")
-                    sys.exit(1)
-                i += 2
-            elif arg == "--budget" and i + 1 < len(sys.argv):
-                try:
-                    max_budget_usd = float(sys.argv[i + 1])
-                except ValueError:
-                    print("Error: --budget must be a number (USD)")
-                    sys.exit(1)
-                i += 2
-            else:
-                task_parts.append(arg)
-                i += 1
-
-        task = " ".join(task_parts) if task_parts else None
-
-        # Set model/budget env vars for subprocess agents
-        if model_mode != ModelMode.OPUS.value:
-            os.environ["RALPH_MODEL_MODE"] = model_mode
-        if max_budget_usd is not None:
-            os.environ["RALPH_MAX_BUDGET_USD"] = str(max_budget_usd)
-
-        # Preflight: archive stale state files before starting new session (Fix D)
-        preflight_check()
-
-        print(f"Starting Ralph loop: {num_agents} agents × {max_iterations} iterations")
-        print(f"Backend: {backend}")
-        if not skip_review:
-            print(f"Post-review: {review_agents} agents × {review_iterations} iterations")
-        else:
-            print("Post-review: SKIPPED")
-        if plan_file:
-            print(f"Plan file: {plan_file}")
-        if task:
-            print(f"Task: {task}")
-
-        asyncio.run(protocol.run_loop(
-            num_agents,
-            max_iterations,
-            task,
-            review_agents=review_agents,
-            review_iterations=review_iterations,
-            skip_review=skip_review,
-            plan_file=plan_file,
-            backend=backend,
-            model_mode=model_mode,
-            max_budget_usd=max_budget_usd,
-        ))
-
-    elif command == "prompt":
+    if command == "prompt":
         # Generate agent prompts for parent session Task spawning
         if len(sys.argv) < 3:
             print("Usage: ralph.py prompt N [task]")
@@ -6408,51 +4374,8 @@ def main():
         # Clean up temporary state
         protocol.cleanup_ralph_session(keep_activity_log=False)
 
-    elif command == "setup":
-        # Step 1: Initialize session infrastructure without spawning
-        if len(sys.argv) < 4:
-            print("Usage: ralph.py setup N M [OPTIONS] [task]")
-            sys.exit(1)
-        try:
-            num_agents = int(sys.argv[2])
-            max_iterations = int(sys.argv[3])
-        except ValueError:
-            print("Error: N and M must be integers")
-            sys.exit(1)
-
-        # Parse setup options
-        setup_backend = SpawnBackend.AUTO.value
-        setup_plan = None
-        setup_task_parts = []
-        j = 4
-        while j < len(sys.argv):
-            arg = sys.argv[j]
-            if arg == "--backend" and j + 1 < len(sys.argv):
-                setup_backend = sys.argv[j + 1]
-                j += 2
-            elif arg == "--plan" and j + 1 < len(sys.argv):
-                setup_plan = sys.argv[j + 1]
-                j += 2
-            else:
-                setup_task_parts.append(arg)
-                j += 1
-        setup_task = " ".join(setup_task_parts) if setup_task_parts else None
-
-        protocol.cmd_setup(
-            num_agents, max_iterations,
-            task=setup_task, backend=setup_backend, plan_file=setup_plan
-        )
-
-    elif command == "teardown":
-        # Step 1: Clean up after session completion
-        keep_logs = "--no-logs" not in sys.argv
-        protocol.cmd_teardown(keep_logs=keep_logs)
-
     elif command == "status":
         protocol.cmd_status()
-
-    elif command == "resume":
-        protocol.cmd_resume()
 
     elif command == "cleanup":
         # Check for --auto flag
@@ -6520,7 +4443,6 @@ def main():
         print(f"Unknown command: {command}")
         print_usage()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     try:

@@ -86,7 +86,7 @@ When committing directly to `main` or `master`, the skill automatically:
 | `perf` | Performance improvements | `perf: parallelize git status queries` |
 
 For large commits spanning multiple scopes, pick the dominant one or use a general scope:
-- `config: Windows migration + Serena workflow integration`
+- `config: Windows migration + workflow integration`
 - `cleanup: browser removal + statusline restructure`
 
 ## File Precedence & Migration
@@ -720,61 +720,3 @@ Check encryption status: `python ~/.claude/skills/commit/scripts/commit-helper.p
 
 ---
 
-## Serena-Powered Semantic Diff Analysis
-
-Leverage Serena MCP tools for richer commit message generation.
-
-### Enhanced Diff Analysis Workflow
-
-Before generating commit message:
-
-```
-1. For each changed file:
-   mcp__serena__get_symbols_overview(relative_path=<file>)
-   → Identify which symbols were modified
-
-2. For each modified symbol:
-   mcp__serena__find_referencing_symbols(name_path=<symbol>)
-   → Identify impact scope (how many callers affected)
-```
-
-### Impact-Aware Commit Messages
-
-Serena enables more descriptive bullet entries:
-
-| Without Serena | With Serena |
-|----------------|-------------|
-| `- Updated auth.ts` | `- Fixed token validation in validateJWT (affects 5 endpoints)` |
-| `- Updated api.ts` | `- Changed handleRequest to processAPICall (12 callers updated)` |
-| `- Added UserAvatar.tsx` | `- Added UserAvatar component with Suspense boundary` |
-
-### Semantic Commit Body
-
-Use Serena to generate detailed commit body:
-
-```markdown
-## Changes
-
-### Modified Symbols
-- `validateToken` → Renamed to `verifyJWT`
-- `AuthMiddleware.handle` → Added rate limiting check
-
-### Impact Analysis
-- 5 API endpoints affected
-- 3 test files updated
-- No breaking changes (backward compatible)
-
-### Files
-- src/auth/jwt.ts (modify)
-- src/middleware/auth.ts (modify)
-- tests/auth.test.ts (modify)
-```
-
-### Serena Memory for Commit Context
-
-Store commit conventions for consistency:
-
-```
-mcp__serena__write_memory("commit-conventions", <project commit style>)
-mcp__serena__read_memory("commit-conventions") - Recall for message generation
-```

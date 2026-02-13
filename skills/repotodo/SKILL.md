@@ -323,7 +323,7 @@ Phase 4: VERIFY+FIX agents (2 agents, 2 iterations)
     ├─ Lint check (timeout: 3min) - biome check --write
     ├─ Dead-code check (timeout: 5min) - pnpm knip
     ├─ Validate check (timeout: 10min) - pnpm validate if exists
-    ├─ Serena symbol integrity (no timeout - fast)
+    ├─ Symbol integrity check (no timeout - fast)
     ├─ Import verification (no timeout - fast)
     └─ Auto-fix or AskUserQuestion for complex issues
     ↓

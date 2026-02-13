@@ -39,7 +39,7 @@ Displays usage information and examples.
 /review N M sonnet               → N agents, M iterations, Sonnet 4.5
 /review N M haiku                → N agents, M iterations, Haiku
 /review working                  → 10 agents, working tree only (R1)
-/review impact                   → 10 agents, working tree + Serena impact radius (R2)
+/review impact                   → 10 agents, working tree + impact radius (R2)
 /review branch                   → 10 agents, full branch diff since main (R3)
 /review 5 2 sonnet branch        → 5 agents, 2 iter, Sonnet, full branch diff
 /review src/                     → 10 agents, 3 iter, review src/ directory only
@@ -77,8 +77,7 @@ Agents review ONLY files with uncommitted modifications.
 ### R2: Impact Radius (`impact`)
 ```
 Scope: git diff files
-     + files that import/reference changed files (1-hop via Serena)
-     + mcp__serena__find_referencing_symbols for changed symbols
+     + files that import/reference changed files (1-hop via native code search)
 ```
 
 ### R3: Full Branch Diff (`branch`)
@@ -187,8 +186,8 @@ Review agents check these items and leave TODO comments where issues are found:
    - Verify hook registrations match settings.json (if modified)
    - TODO-P2 if deviating from documented patterns
 
-6. **Symbol Integrity (Serena)**
-   - Use `mcp__serena__find_referencing_symbols` to check for broken references
+6. **Symbol Integrity**
+   - Use code search to check for broken references
    - Verify changed symbols don't break downstream code
    - TODO-P1 if symbol changes break references
 
@@ -288,7 +287,7 @@ FILES=$(git diff --cached --name-only 2>/dev/null | grep -E "$CODE_EXTS")
 
 # For impact scope
 FILES=$(git diff --name-only 2>/dev/null | grep -E "$CODE_EXTS")
-# PLUS: Use mcp__serena__find_referencing_symbols for each changed symbol
+# PLUS: Use code search for each changed symbol
 
 # For branch scope (with fallback for detached HEAD)
 MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
@@ -456,7 +455,7 @@ Includes summary of existing PR discussion and unresolved comments.
 # Review only staged files
 /review 5 2 staged
 
-# Impact-radius review (working + Serena dependency analysis)
+# Impact-radius review (working + dependency analysis)
 /review impact
 
 # Full branch review
@@ -475,66 +474,6 @@ Includes summary of existing PR discussion and unresolved comments.
 /review pr 123
 ```
 
-## Serena-Powered Semantic Analysis
-
-Leverage Serena MCP tools for deeper code understanding:
-
-### Pre-Review Setup
-
-```
-1. mcp__serena__activate_project - Ensure project is active
-2. mcp__serena__get_symbols_overview - Get file structure before reading
-```
-
-### Symbol Analysis Workflow
-
-For each modified file:
-
-```
-1. mcp__serena__get_symbols_overview(relative_path=<file>)
-   → Understand class/function structure
-
-2. For each modified symbol:
-   mcp__serena__find_symbol(name_path=<symbol>, include_body=True)
-   → Get full implementation context
-
-3. mcp__serena__find_referencing_symbols(name_path=<symbol>)
-   → Find all callers to assess impact
-```
-
-### Impact Assessment Checklist
-
-Use Serena to verify:
-
-- [ ] All modified public APIs have updated callers
-- [ ] Renamed symbols are updated across codebase
-- [ ] Deleted symbols have no remaining references
-- [ ] New symbols follow existing naming conventions
-
-### Dead Code Detection
-
-Cross-reference symbols with no references:
-
-```
-1. mcp__serena__get_symbols_overview(depth=2) - Get all symbols
-2. For each symbol: mcp__serena__find_referencing_symbols
-3. Report symbols with 0 references as potential dead code
-```
-
-### Coupling Analysis
-
-Use `mcp__serena__find_referencing_symbols` to detect:
-
-- Highly coupled modules (>20 references)
-- Circular dependencies (A→B→A)
-- Orphan code (0 references)
-
-### Serena Memory for Review Context
-
-```
-mcp__serena__write_memory("review-context", <architectural decisions>)
-mcp__serena__read_memory("review-context") - Recall for subsequent reviews
-```
 
 ## Emoji Review Output Format (MANDATORY)
 
@@ -569,7 +508,6 @@ All review report tables MUST use emoji-prefixed headers for visual scanning:
 - TODO comments use standardized format with agent attribution
 - Use `/repotodo` to process findings after review
 - Re-run `/review` after fixes to verify
-- Prefer Serena tools for semantic code analysis
 - Hard cap: 10 agents maximum
 - Default model: Opus 4.5 (comprehensive analysis with security + design)
 - Use `sonnet` or `haiku` override for faster/cheaper scans

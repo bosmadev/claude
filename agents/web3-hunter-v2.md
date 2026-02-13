@@ -88,15 +88,15 @@ When you receive a `shutdown_request` message (JSON with `type: "shutdown_reques
 
 ## Code Analysis
 
-For blockchain code analysis, use Serena semantic tools:
+For blockchain code analysis, use native code search tools:
 
-| Task | Serena Tool |
-|------|-------------|
-| Find contract/function | `mcp__serena__find_symbol` |
-| Get contract structure | `mcp__serena__get_symbols_overview` |
-| Find all callers | `mcp__serena__find_referencing_symbols` |
-| Rename symbol safely | `mcp__serena__rename_symbol` |
-| Replace function body | `mcp__serena__replace_symbol_body` |
+| Task | Tool |
+|------|------|
+| Find contract/function | Grep with symbol name |
+| Get contract structure | Read file to understand layout |
+| Find all callers | Grep for function name usage |
+| Rename symbol safely | Edit with replace_all flag |
+| Replace function body | Edit tool for targeted changes |
 
 ## Key Responsibilities
 

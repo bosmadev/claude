@@ -54,7 +54,7 @@ HOME_CLAUDE_SYMLINK = Path.home() / ".claude"
 ROOT_CLAUDE_SYMLINK = None if sys.platform == "win32" else Path("/root/.claude")
 
 # MCP servers to check connectivity
-MCP_SERVERS = ["serena", "context7", "playwriter"]
+MCP_SERVERS = ["context7", "playwriter"]
 
 
 # =============================================================================

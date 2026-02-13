@@ -677,7 +677,7 @@ All work MUST follow these four phases:
 
 ## MCP Availability for Agents
 
-Spawned agents have access to: `context7` (docs), `serena` (semantic code analysis).
+Spawned agents have access to: `context7` (docs).
 
 For web research, see CLAUDE.md "Web Research Fallback Chain" - agents MUST use the full browser fallback chain, not just WebFetch.
 
@@ -857,25 +857,103 @@ After parsing arguments and creating/validating the plan, you MUST create a nati
 1. Parse `$ARGUMENTS` per Decision Tree
 2. Echo parsed values for confirmation
 3. If task provided: Create/update plan file with Ralph Configuration block
-4. **Initialize Ralph state** via `ralph.py setup` (state files only, no spawning)
-5. **Create native team** via `TeamCreate(team_name="ralph-impl")`
-6. **Create tasks** via TaskCreate for each work unit
-7. **Spawn ALL agents in PARALLEL** via multiple Task() calls with `team_name="ralph-impl"` (includes implementation agents + git-coordinator)
-8. Each implementation agent:
-   - Joins the native team as a teammate
-   - Receives agent number and total count in prompt
-   - Gets phase name and specific task assignment
-   - Uses correct model (opus/sonnet based on modelMode)
-   - Loads plan file for context
-   - Coordinates via SendMessage and shared TaskList
-   - Follows anti-hallucination standard
-   - **NO git operations** - git-coordinator handles ALL commits/pushes
-   - Signals completion via `TaskUpdate(status="completed")` + `SendMessage(recipient="team-lead")`
-9. **Monitor progress** — As team lead, watch for idle notifications and completed tasks
-10. After all agents complete: Check `.claude/ralph/retry-queue.json` for failed tasks
-11. If retry queue has entries: Spawn additional agents for retries
-12. **Shutdown team** — Send shutdown_request to each agent, then TeamDelete()
-13. Report completion summary
+4. **Create native team** via `TeamCreate(team_name="ralph-impl")`
+5. **Create tasks** via TaskCreate for each work unit
+6. **Spawn ALL impl agents in PARALLEL** via multiple Task() calls with `team_name="ralph-impl"` (includes implementation agents + git-coordinator)
+7. **Enter Team Lead Orchestration Loop** (see State Machine below)
+
+### Team Lead Orchestration Loop (MANDATORY — State Machine)
+
+After spawning impl agents, the team lead (main conversation) MUST follow this **rigid state machine**. Do NOT skip states. Do NOT report completion until SHUTDOWN state is reached.
+
+```
+IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE
+```
+
+**State 1: IMPL_ACTIVE**
+- Monitor TaskList + incoming SendMessage from agents
+- When an agent goes idle after completing work, check if unclaimed tasks remain in TaskList
+  - If unclaimed tasks exist AND iteration budget remains: send agent a message to claim next task
+  - If no unclaimed tasks: agent is done, note it
+- **Exit condition:** ALL impl TaskList items show `status: "completed"`
+- **Watchdog:** After each agent completes, check TaskList. If unclaimed tasks remain but no active agents, spawn fresh agents (up to iteration budget M) to claim remaining work
+- **Transition:** → RETRY_CHECK
+
+**State 2: RETRY_CHECK**
+- Read `.claude/ralph/retry-queue.json` (if exists)
+- If entries exist: spawn retry agents via Task() with same team, include `(Retry 1)` in prompt
+- Wait for retry agents to complete
+- If no retry queue or retries succeed: proceed
+- **Transition:** → VERIFY_FIX (if `postReviewEnabled=true`, default) OR → SHUTDOWN (if `noreview` flag)
+
+**State 3: VERIFY_FIX**
+- Output: `"Implementation complete! Starting verify-fix phase..."`
+- Send `shutdown_request` to ALL implementation agents (free resources)
+- Spawn verify-fix agents via Task() with `team_name="ralph-impl"`:
+  - Count: 3 agents (default) or `postReviewAgents` from args
+  - Agent prompt: Use `agents/verify-fix.md` protocol
+  - Tasks: build check, type check, lint, dead code, symbol integrity
+- Monitor until all verify-fix tasks complete
+- If issues found and auto-fixed: git-coordinator commits fixes
+- If issues found and NOT fixable: report to team lead via SendMessage
+- **Exit condition:** All verify-fix agents signal completion
+- **Transition:** → REVIEW
+
+**State 4: REVIEW**
+- Output: `"Verify-fix complete! Starting review phase..."`
+- Send `shutdown_request` to all verify-fix agents
+- Spawn review agents via Task() with `team_name="ralph-impl"`:
+  - Count: 5 agents (default) or `postReviewAgents` from args
+  - Iterations: 2 (default) or `postReviewIterations` from args
+  - Agent prompt: Use `skills/review/SKILL.md` protocol
+  - Set `disallowedTools: [Write, Edit, MultiEdit]` — read-only review
+- Review agents leave TODO-P1/P2/P3 comments and report to `.claude/review-agents.md`
+- Monitor until all review agents signal completion
+- **Exit condition:** All review agents signal completion
+- **Transition:** → SHUTDOWN
+
+**State 5: SHUTDOWN**
+- Send `shutdown_request` to ALL remaining agents (review + git-coordinator)
+- Wait for all `shutdown_response` messages (approve=true)
+- Call `TeamDelete()` to clean up team resources
+- **Auto-cleanup:** Grep source files for remaining `TODO-P[123]:` (exclude `skills/`, `agents/`). If zero remain, delete `.claude/review-agents.md`
+- Report completion summary with:
+  - Tasks completed count
+  - Verify-fix results (pass/fail)
+  - Review findings count (P1/P2/P3 breakdown)
+  - Total agents spawned across all phases
+- **Transition:** → DONE (return control to user)
+
+**CRITICAL ENFORCEMENT RULES:**
+1. **NEVER skip to SHUTDOWN** after impl agents finish — verify-fix catches real build errors
+2. **NEVER report "done"** before reaching SHUTDOWN state
+3. If `noreview` flag: skip VERIFY_FIX and REVIEW, go directly RETRY_CHECK → SHUTDOWN
+4. If stuck in any state for >10 minutes with no progress: report status and ask user
+
+### Iteration Budget (Hybrid Work-Loop + Watchdog)
+
+The iteration count M from `/start N M` controls the **total work rounds** per agent:
+
+**Agent-side (work-loop in prompt):**
+Each agent receives iteration budget in their prompt and loops internally:
+```
+Work loop (up to {M} iterations):
+1. Check TaskList for unclaimed tasks
+2. Claim task via TaskUpdate(owner="{agent_name}")
+3. Do the work
+4. Mark task completed via TaskUpdate(status="completed")
+5. SendMessage(recipient="team-lead", content="Completed: [summary]")
+6. If iterations remaining AND unclaimed tasks exist: go to step 1
+7. Otherwise: signal done
+```
+
+**Team-lead side (watchdog):**
+After each round of agent completions, team lead checks:
+- Are there unclaimed tasks remaining in TaskList?
+- Did any agent fail or get stuck?
+- Is the iteration budget exhausted?
+
+If unclaimed tasks remain and budget allows, spawn fresh agents to pick them up. This prevents tasks from being orphaned if an agent stops early.
 
 ### Team Creation (MANDATORY)
 
@@ -1047,6 +1125,15 @@ RALPH Agent {X}/{N} ({agent_name}) - Phase {phase_number}: {phase_name}
 - Signal team-lead: SendMessage(recipient="team-lead", content="Task X completed: [summary]")
 - When you receive a shutdown_request message (JSON with type "shutdown_request"), respond by calling SendMessage with type="shutdown_response", request_id=(from the message), approve=true
 
+**Work loop (up to {M} iterations):**
+1. Check TaskList for unclaimed tasks (status: "pending", no owner)
+2. Claim task via TaskUpdate(owner="{agent_name}", status="in_progress")
+3. Do the work (read plan, implement, test)
+4. Mark task completed: TaskUpdate(status="completed")
+5. SendMessage(recipient="team-lead", content="Completed task [ID]: [summary]")
+6. If unclaimed tasks remain in TaskList: go to step 1 (next iteration)
+7. If no unclaimed tasks: SendMessage(recipient="team-lead", content="All tasks claimed/done, going idle")
+
 **Specifically:**
 {detailed_steps_or_requirements}
 
@@ -1167,46 +1254,17 @@ SendMessage({
 
 ---
 
-### Retry Queue Check (MANDATORY)
+### Retry Queue and Post-Implementation Phases
 
-After all agent tasks show `status: "completed"` in TaskList, check for retries:
+**These phases are now enforced by the Team Lead Orchestration Loop (State Machine) above.**
 
-```bash
-# Check if retry queue exists
-if [ -f .claude/ralph/retry-queue.json ]; then
-    # Parse JSON and spawn agents for failed tasks
-    # Use same Task() pattern as initial spawn
-    # Include retry count in agent prompt: "RALPH Agent X/N (Retry 1)"
-fi
-```
+The state machine guarantees: `IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE`
 
-### Post-Review Phase (If Enabled)
-
-After implementation completes, run PLAN VERIFICATION then optionally REVIEW:
-
-**Phase 2.5: Plan Verification (always runs)**
-1. Output: "Implementation complete! Running plan verification..."
-2. `ralph.py` spawns plan-verifier agent (uses `agents/plan-verifier.md` protocol)
-3. Verifier reads plan file AND referenced artifacts (HTML mockups, design specs)
-4. Cross-references plan tasks against actual code changes via git diff + Serena
-5. If gaps found: writes gap-fill prompts to `.claude/ralph/gap-fill-prompts.json`
-6. Team lead reads gap-fill prompts and spawns targeted IMPL agents for missing tasks
-7. Re-verifies after gap-fill (up to 3 iterations)
-8. Proceeds to review only when plan verification PASSES
-
-**Phase 3: Review (if `postReviewEnabled = true`, default)**
-1. Send `shutdown_request` to all implementation agents
-2. Spawn review agents using same Task() pattern with `team_name="ralph-impl"`
-3. Set agent prompts to review mode (see skills/review/SKILL.md)
-4. Review agents use `disallowedTools: [Write, Edit, MultiEdit]`
-5. Review agents leave TODO-P1/P2/P3 comments
-6. Review agents report findings to `.claude/review-agents.md`
-7. After review complete: Send `shutdown_request` to review agents, then `TeamDelete()`
-8. **Auto-cleanup**: After TeamDelete, grep source files for remaining `TODO-P[123]:`. If **zero** remain, delete `.claude/review-agents.md` (stale report — all findings resolved). If TODOs remain, keep the report as reference.
-
-**Review agent counts:**
-- Default: 5 review agents, 2 iterations
-- Custom: Use `postReviewAgents` and `postReviewIterations` from parsing
+- Retry queue: Checked automatically in RETRY_CHECK state
+- Verify-fix: Spawned automatically in VERIFY_FIX state (3 agents default)
+- Review: Spawned automatically in REVIEW state (5 agents, 2 iterations default)
+- Shutdown: Enforced — team lead CANNOT report completion without reaching SHUTDOWN
+- `noreview` flag: Skips VERIFY_FIX and REVIEW, goes RETRY_CHECK → SHUTDOWN directly
 
 ## Related Skills
 

@@ -163,7 +163,7 @@ STATE_EOF
 
 ### Step 4: Create Native Team and Spawn Agents
 
-**CRITICAL:** Use native Agent Teams (TeamCreate + Task with team_name) for agent spawning. Do NOT use ralph.py subprocess spawning.
+**CRITICAL:** Use native Agent Teams (TeamCreate + Task with team_name) for agent spawning. Ralph.py provides utilities only — it does NOT spawn agents.
 
 #### 4a. Initialize Ralph State (utility only)
 
@@ -176,7 +176,7 @@ python ~/.claude/scripts/ralph.py setup [AGENTS] [ITERATIONS] \
     "[TASK_DESCRIPTION]"
 ```
 
-This creates state files only (`.claude/ralph/state.json`, `.claude/ralph/loop.local.md`). It does NOT spawn agents.
+This creates state files only (`.claude/ralph/state.json`, `.claude/ralph/loop.local.md`). It does NOT spawn agents. Agent spawning is handled by the team lead via native `Task()` calls.
 
 #### 4b. Create Native Team
 
@@ -224,17 +224,39 @@ Task(
 )
 ```
 
-#### 4e. Orchestration via SendMessage
+#### 4e. State Machine Orchestration via SendMessage
 
-As team lead, monitor agent progress:
-- Agents send status updates via `SendMessage(type="message", recipient="team-lead")`
-- Use `TaskList` to track overall progress
-- Use `SendMessage(type="message", recipient="{agent-name}")` to redirect stuck agents
-- When all IMPL tasks complete, spawn VERIFY+FIX agents
-- When VERIFY+FIX completes, run PLAN VERIFICATION (checks plan + artifacts)
-- If plan verification finds gaps: read `.claude/ralph/gap-fill-prompts.json` and spawn gap-fill agents
-- When plan verification passes, spawn review agents (if enabled)
-- Send `SendMessage(type="shutdown_request")` to each agent when done
+As team lead, monitor agent progress and enforce state transitions:
+
+**State Machine:**
+```
+IMPL → VERIFY_FIX → REVIEW → SHUTDOWN
+```
+
+**Orchestration Loop:**
+
+1. **IMPL Phase:**
+   - Agents send status updates via `SendMessage(type="message", recipient="team-lead")`
+   - Use `TaskList` to track overall progress
+   - Use `SendMessage(type="message", recipient="{agent-name}")` to redirect stuck agents
+   - When all IMPL agents signal `RALPH_COMPLETE` → transition to VERIFY_FIX
+
+2. **VERIFY_FIX Phase:**
+   - Spawn VERIFY+FIX agents via `Task()` (separate from IMPL agents)
+   - VERIFY+FIX agents run validation, fix issues, signal completion
+   - When VERIFY+FIX completes → run PLAN VERIFICATION (checks plan + artifacts)
+   - If plan verification finds gaps: read `.claude/ralph/gap-fill-prompts.json` and spawn gap-fill agents
+   - When plan verification passes → transition to REVIEW (or SHUTDOWN if `--skip-review`)
+
+3. **REVIEW Phase:**
+   - Spawn review agents via `Task()` (if `--skip-review` not set)
+   - Review agents analyze code, add TODO comments, signal completion
+   - When all review agents signal `AGENT_COMPLETE` → transition to SHUTDOWN
+
+4. **SHUTDOWN Phase:**
+   - Send `SendMessage(type="shutdown_request")` to each agent
+   - Wait for `SendMessage(type="shutdown_response", approve=true)` from each
+   - After all agents shut down → proceed to teardown
 
 #### 4f. Teardown
 
@@ -273,35 +295,68 @@ Before signaling completion, verify:
 - Confirm all file paths and function names exist
 - Verify no hallucinated APIs or configurations
 
-**COMPLETION PROTOCOL (Multi-Signal Exit)**
+**COMPLETION PROTOCOL**
 
-Output BOTH of these when ALL conditions are met:
+The team lead orchestrates state transitions through the state machine:
+
+```
+IMPL → VERIFY_FIX → REVIEW → SHUTDOWN
+```
+
+**Per-Agent Completion Signals:**
+
+Individual agents signal completion of their assigned tasks:
 
 ```
 <promise>RALPH_COMPLETE</promise>
 EXIT_SIGNAL: true
 ```
 
-**IMPORTANT:** The promise ALONE will NOT trigger loop exit. You MUST include `EXIT_SIGNAL: true` to confirm completion. This prevents premature exits when heuristics detect completion patterns but work is still in progress.
+**IMPORTANT:** These signals are per-agent completion, NOT session-level completion. The team lead monitors these signals and enforces state transitions:
+
+- When all IMPL agents signal completion → spawn VERIFY+FIX agents
+- When VERIFY+FIX completes → run plan verification
+- When plan verification passes → spawn review agents (if enabled)
+- When review completes → send shutdown requests to all agents
+
+The promise ALONE will NOT trigger state transitions. Agents MUST include `EXIT_SIGNAL: true` to confirm their work is complete. This prevents premature transitions when heuristics detect completion patterns but work is still in progress.
 
 ## Work Iteration Protocol
 
-Each iteration using TaskList/TaskUpdate:
+**Hybrid Work-Loop Model:**
+
+Each agent loops internally up to M iterations, claiming tasks from the shared TaskList. The team lead watches agent progress and respawns agents if needed.
+
+**Agent Internal Loop (per iteration):**
 
 1. Read `.claude/ralph/state.json` for context
 2. Call `TaskList` to see all tasks and their status
 3. Find next task with `status: "pending"` and empty `blockedBy`
-4. Use `TaskUpdate` to mark it `status: "in_progress"`
+4. Use `TaskUpdate` to mark it `status: "in_progress"` and set `owner` to your agent name
 5. Work on that ONE task
 6. Run relevant validation (`pnpm tsc`, `pnpm check:fix`, etc.)
-7. If success: Use `TaskUpdate` to mark `status: "completed"`, move to next
-8. If failure: Log error, attempt fix
-9. When all tasks complete: Run full `pnpm validate`
-10. If validate passes: Output BOTH:
+7. If success: Use `TaskUpdate` to mark `status: "completed"`, send status to team lead via `SendMessage(recipient="team-lead", content="Task X completed")`, move to next
+8. If failure: Log error, attempt fix, send status update to team lead
+9. Repeat until M iterations exhausted or no more tasks available
+10. When your assigned tasks complete: Run full `pnpm validate`
+11. If validate passes: Output BOTH:
     ```
     <promise>RALPH_COMPLETE</promise>
     EXIT_SIGNAL: true
     ```
+
+**Team Lead Orchestration:**
+
+1. Monitor agent status messages via `SendMessage` inbox
+2. Call `TaskList` periodically to track overall progress
+3. Detect stuck agents (no progress messages for N minutes)
+4. Respawn stuck agents with redirected prompts via `Task()`
+5. When all IMPL agents signal completion → spawn VERIFY+FIX agents
+6. When VERIFY+FIX completes → run plan verification
+7. If plan verification finds gaps → read `.claude/ralph/gap-fill-prompts.json` and spawn gap-fill agents
+8. When plan verification passes → spawn review agents (if `--skip-review` not set)
+9. When review completes → send `SendMessage(type="shutdown_request")` to all agents
+10. After all agents shut down → call `TeamDelete()`
 
 ## Stuck Detection
 

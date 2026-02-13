@@ -67,7 +67,7 @@ All implementation agents must push their work to remote before completion (Push
 | `/review [N] [M] opus` | N agents, M iterations, Opus 4.5 |
 | `/review [N] [M] haiku` | N agents, M iterations, Haiku |
 | `/review working` | Working tree only (R1 scope) |
-| `/review impact` | Working tree + Serena impact radius (R2) |
+| `/review impact` | Working tree + impact radius (R2) |
 | `/review branch` | Full branch diff since main (R3) |
 | `/review pr [number]` | Review specific PR |
 | `/review security` | Security-focused OWASP audit |
@@ -239,9 +239,6 @@ Automated X/Twitter outreach with four modes:
 
 Shows available skills and usage information.
 
-### /serena-workflow - Serena Tool Reference
-
-Shows the complete Serena semantic code tools workflow and editing guide.
 
 ---
 
@@ -475,25 +472,33 @@ Ralph is the multi-agent orchestration system invoked via `/start`:
 5. **Review** — Sonnet agents review all changes (TODO-P1/P2/P3 comments)
 6. **Git** — Dedicated git-coordinator commits and pushes
 
+**State machine (enforced in SKILL.md):**
+
+```
+IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE
+```
+
+Team lead follows rigid state transitions — no skipping phases. `noreview` flag skips VERIFY_FIX + REVIEW, goes RETRY_CHECK → SHUTDOWN directly.
+
 #### Ralph Safety Layers
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     DEFENSE IN DEPTH (7 LAYERS)                  │
 ├─────────────────────────────────────────────────────────────────┤
-│ Layer 1: External Script → Orchestrates loop, creates state      │
-│ Layer 2: Skill → Invokes script, spawns agents                   │
-│ Layer 3: Hook  → Validates protocol, injects reminders           │
-│ Layer 4: Context → Always-visible protocol rules                 │
-│ Layer 5: Push Gate → MUST push before completion allowed         │
-│ Layer 6: Exit  → Validates completion signals                    │
-│ Layer 7: VERIFY+FIX → Build/type/lint checks + auto-fix         │
+│ Layer 1: Skill   → SKILL.md state machine, spawns agents         │
+│ Layer 2: Hook    → Validates protocol, injects reminders         │
+│ Layer 3: Context → Always-visible protocol rules                 │
+│ Layer 4: Push Gate → MUST push before completion allowed         │
+│ Layer 5: Exit    → Validates completion signals                  │
+│ Layer 6: VERIFY+FIX → Build/type/lint checks + auto-fix         │
+│ Layer 7: Review  → Sonnet agents audit all changes               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Push Gate (Layer 5):** Agents MUST push before `TaskUpdate(completed)`. Check: `git log origin/branch..HEAD`. Read-only agents bypass. Hook validation in `ralph.py` blocks completion if push required.
+**Push Gate (Layer 4):** Agents MUST push before `TaskUpdate(completed)`. Check: `git log origin/branch..HEAD`. Read-only agents bypass. Hook validation in `ralph.py` blocks completion if push required.
 
-**VERIFY+FIX (Layer 7):** `PLAN → IMPLEMENT → VERIFY+FIX → REVIEW → COMPLETE`. Auto-fix imports/types/lint. Escalate complex issues. Config: `agents/verify-fix.md`.
+**VERIFY+FIX (Layer 6):** Auto-fix imports/types/lint after implementation. Escalate complex issues. Config: `agents/verify-fix.md`.
 
 #### Work-Stealing Queue
 
@@ -705,28 +710,9 @@ Token refresh uses defense-in-depth with 4 layers to survive laptop shutdown/sle
 |--------|------|---------|
 | `playwriter` | stdio | Browser automation via Playwright — auth flows, sessions, visual testing |
 | `context7` | stdio | Up-to-date documentation and code examples for any library |
-| `serena` | stdio | LSP-powered semantic code analysis — find symbols, rename, impact analysis |
 | `claude-in-chrome` | stdio | Chrome DevTools integration — debug, inspect, console access |
 
 Configured in `.claude.json` under `mcpServers`. See `.claude.json.example` for reference configuration.
-
-### Serena Semantic Code Tools
-
-Serena provides LSP-powered semantic code analysis. **Prefer Serena over Grep/Read** for code understanding.
-
-| Task | Serena Tool | Instead of |
-|------|-------------|------------|
-| Find function/class by name | `find_symbol` | `Grep` |
-| Get file structure overview | `get_symbols_overview` | `Read` full file |
-| Find all callers of a function | `find_referencing_symbols` | `Grep` for name |
-| Rename symbol across codebase | `rename_symbol` | Multi-file `Edit` |
-| Replace function body | `replace_symbol_body` | `Edit` tool |
-| Insert code after symbol | `insert_after_symbol` | `Edit` tool |
-| Search with code context | `search_for_pattern` | `Grep` |
-
-**Workflow:** `get_symbols_overview` → `find_symbol` → `find_referencing_symbols` → edit → verify with `think_about_*` tools.
-
-**Memory tools:** `write_memory` / `read_memory` / `list_memories` / `edit_memory` for persistent architectural context.
 
 ---
 
@@ -825,4 +811,4 @@ Experimental feature enabling parallel Claude Code instances within a session.
 
 ## For Claude Code
 
-See [CLAUDE.md](./CLAUDE.md) for behavioral patterns and conventions. Reference tables (hook registration, model routing matrix, Ralph internals, Agent Teams, Serena, CHANGELOG) are in this README — CLAUDE.md contains compact summaries with links back here.
+See [CLAUDE.md](./CLAUDE.md) for behavioral patterns and conventions. Reference tables (hook registration, model routing matrix, Ralph internals, Agent Teams, CHANGELOG) are in this README — CLAUDE.md contains compact summaries with links back here.

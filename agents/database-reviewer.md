@@ -210,8 +210,6 @@ After database review, suggest running `/review` if TypeScript issues are detect
 - `Grep` - Search for query patterns
 - `Glob` - Find database-related files
 - `Bash` - Run database analysis commands
-- `mcp__serena__find_symbol` - Find ORM model definitions
-- `mcp__serena__search_for_pattern` - Search for query patterns
 
 ## Query Pattern Detection Commands
 
@@ -254,7 +252,7 @@ Use priority-tagged comments with agent attribution:
 ### Insertion Rules
 
 1. **Insert at the exact location** of the issue (above the problematic line)
-2. **Use the Edit tool or Serena tools** (`mcp__serena__replace_symbol_body`, `mcp__serena__insert_before_symbol`) to insert comments
+2. **Use the Edit tool** to insert comments
 3. **Use the correct comment syntax** for the file type:
    - TypeScript/JavaScript: `// TODO-P1: ...`
    - Python: `# TODO-P1: ...`

@@ -297,7 +297,7 @@ For all social media, comments, replies, and public-facing content:
 
 For complete skill command tables with all argument combinations, see [README.md &gt; Skills Reference](./README.md#skills-reference).
 
-17 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/serena-workflow`, `/x`
+16 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`
 
 ### /x Environment Variables
 
@@ -337,7 +337,7 @@ When fetching web content (research, scouting, documentation), use this fallback
 | Playwriter MCP   | Yes  | Yes | Auth flows, sessions |
 | claude-in-chrome | Yes  | Yes | DevTools, inspection |
 
-**Note:** Serena is for CODE ANALYSIS only - NOT a browser. For subagents fetching web content, always include this fallback chain in prompts.
+**Note:** For subagents fetching web content, always include this fallback chain in prompts.
 
 ## Work-Stealing Queue
 
@@ -345,7 +345,9 @@ Ralph agents use atomic task claiming with `FileLock` to prevent idle agents. Qu
 
 ## Ralph Safety Layers
 
-7 defense layers: Script → Skill → Hook → Context → **Push Gate** → Exit → **VERIFY+FIX**. Push Gate: agents MUST push before `TaskUpdate(completed)` — check with `git log origin/branch..HEAD`. Read-only agents bypass. VERIFY+FIX: `PLAN → IMPLEMENT → VERIFY+FIX → REVIEW → COMPLETE` — auto-fix imports/types/lint, escalate complex issues. See [README.md > Ralph Safety](./README.md#ralph-safety-layers) for full architecture.
+7 defense layers: Skill → Hook → Context → **Push Gate** → Exit → **VERIFY+FIX** → **Review**. Push Gate: agents MUST push before `TaskUpdate(completed)` — check with `git log origin/branch..HEAD`. Read-only agents bypass. VERIFY+FIX: auto-fix imports/types/lint, escalate complex issues.
+
+**State machine (enforced in SKILL.md):** `IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE`. Team lead follows rigid state transitions — no skipping phases. `noreview` flag skips VERIFY_FIX + REVIEW, goes RETRY_CHECK → SHUTDOWN directly. See [README.md > Ralph Safety](./README.md#ralph-safety-layers) for full architecture.
 
 ## Hook System
 
@@ -370,10 +372,6 @@ Agent config files (`agents/*.md`) support these frontmatter fields:
 
 Ralph tracks cost, turns, and duration per agent in `.claude/ralph/progress.json`. Budget guard: `--budget 5.00` caps total spending. See [README.md > Performance Tracking](./README.md#performance-tracking) for metrics and budget details.
 
-## Serena Semantic Code Tools
-
-Serena provides LSP-powered semantic code analysis. **Prefer Serena over Grep/Read** for: `find_symbol` (by name), `get_symbols_overview` (file structure), `find_referencing_symbols` (callers), `rename_symbol` (cross-file), `replace_symbol_body` (edits). Workflow: overview → find → impact → edit → verify. Use `think_about_*` tools at checkpoints. See [README.md > Serena](./README.md#serena-semantic-code-tools) for full reference.
-
 ## Agent Teams (In-Process)
 
 Enabled via `"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"` in `settings.json` env. In-process mode only (no tmux on Windows). Shortcuts: `Shift+Tab` (delegate), `Shift+Up/Down` (message teammate), `Ctrl+T` (task list). Cleanup: shut down teammates via SendMessage, then `TeamDelete()`. Idle notifications are auto-delivered system messages — NOT hookable events. See [README.md > Agent Teams](./README.md#agent-teams) for full details.
@@ -396,14 +394,3 @@ Claude Code automatically persists learnings across conversations.
 - Record: problem constraints, strategies that worked/failed, lessons learned
 - Update or remove memories that become wrong or outdated
 
-### vs Serena Memories
-
-| Feature  | Auto Memory                      | Serena Memory                  |
-| -------- | -------------------------------- | ------------------------------ |
-| Storage  | `~/.claude/projects/*/memory/` | Serena's internal memory store |
-| Scope    | Per-project, auto-loaded         | Per-project, manual read       |
-| Access   | System prompt (always visible)   | `mcp__serena__read_memory`   |
-| Write    | `Edit`/`Write` tools         | `mcp__serena__write_memory`  |
-| Use case | Quick-reference patterns         | Detailed architectural notes   |
-
-Both systems are complementary — use Auto Memory for high-frequency patterns, Serena for deep architectural context.
