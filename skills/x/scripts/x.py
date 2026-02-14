@@ -3,13 +3,23 @@
 Unified X skill script -- all X/Twitter operations in one file.
 
 API Operations (requires curl_cffi + beautifulsoup4 + x-client-transaction-id):
-  python x.py test [--verbose]              # Verify auth works
-  python x.py cookies CT0 AUTH              # Set cookies manually
-  python x.py search "query" [--count N]    # Search tweets (JSON output)
-  python x.py post TWEET_ID TEXT            # Reply to a tweet
-  python x.py tweet TEXT                    # Post original tweet
-  python x.py delete TWEET_ID              # Delete a tweet
-  python x.py config [--set KEY VALUE]      # Show or set config
+  python x.py test [--verbose]                      # Verify auth works
+  python x.py cookies CT0 AUTH                      # Set cookies manually
+  python x.py search "query" [--count N] [--min-engagement N]  # Search tweets (JSON output)
+  python x.py post TWEET_ID TEXT [--allow-original] # Reply to a tweet
+  python x.py quote TWEET_ID REPLY_TO TEXT [--allow-original]  # Quote tweet as reply
+  python x.py analytics TWEET_ID                    # Show engagement metrics
+  python x.py thread REPLY_TO TEXT1 TEXT2 [...]     # Post thread of replies
+  python x.py tweet TEXT                            # Post original tweet
+  python x.py delete TWEET_ID                       # Delete a tweet
+  python x.py config [--set KEY VALUE]              # Show or set config
+
+Exit Codes:
+  0 = Success
+  1 = API error (rate limit, auth failure, network)
+  2 = Validation error (blocked text, too long, missing params)
+  3 = Profile wall violation (attempted original post without reply_to)
+  4 = Self-reply violation (attempted reply to own post)
 
 Scraping (stdlib only, zero LLM cost):
   python x.py scrape                        # Full scrape -> feed.json
@@ -522,8 +532,14 @@ async def cmd_test(verbose=False):
     await s.close()
 
 
-async def cmd_search(query: str, count: int = 20):
-    """Search tweets and return JSON results"""
+async def cmd_search(query: str, count: int = 20, min_engagement: int = 0):
+    """Search tweets and return JSON results
+
+    Args:
+        query: Search query
+        count: Max results to return
+        min_engagement: Minimum engagement score (views + likes*5 + retweets*10 + replies*13.5)
+    """
     s, ct, csrf = await init_session()
 
     variables = {
@@ -594,6 +610,15 @@ async def cmd_search(query: str, count: int = 20):
     except Exception as e:
         print(json.dumps({"error": f"Parse error: {e}", "tweets": [], "raw_status": r.status_code}))
         sys.exit(1)
+
+    # Filter by min_engagement if specified
+    if min_engagement > 0:
+        filtered = []
+        for t in results:
+            engagement = t['views'] + (t['likes'] * 5) + (t['retweets'] * 10) + (t['replies'] * 13.5)
+            if engagement >= min_engagement:
+                filtered.append(t)
+        results = filtered
 
     print(json.dumps({"tweets": results, "count": len(results)}, indent=2))
     await s.close()
@@ -756,8 +781,40 @@ def sanitize_reply_text(text: str) -> str:
     return text.strip()
 
 
-async def cmd_post(tweet_id: str, text: str):
-    """Post a reply to a specific tweet"""
+async def cmd_post(tweet_id: str, text: str, allow_original: bool = False):
+    """Post a reply to a specific tweet
+
+    Args:
+        tweet_id: Tweet ID to reply to (REQUIRED - no standalone posts allowed)
+        text: Reply text
+        allow_original: Override profile wall protection (manual use only)
+
+    Exit codes:
+        0: Success
+        1: API error (rate limit, auth failure, network)
+        2: Validation error (blocked text, too long, missing params)
+        3: Profile wall violation (attempted original post - no reply_to)
+        4: Self-reply violation (attempted reply to own post)
+    """
+    # Profile wall guard: reply_to is MANDATORY
+    if not tweet_id:
+        print(_red("ERROR: Profile wall violation - reply_to parameter required"))
+        print(_red("This account NEVER posts original tweets, only replies"))
+        sys.exit(3)
+
+    # Self-reply guard: check if replying to own post
+    if not allow_original:
+        config = load_config()
+        my_handle = config.get("handle", "").lstrip("@") if config else ""
+
+        if my_handle:
+            tweet_info = await get_tweet_details(tweet_id)
+            if tweet_info and tweet_info.get("author", "").lstrip("@") == my_handle:
+                print(_red(f"ERROR: Self-reply violation - cannot reply to own post"))
+                print(_red(f"Target tweet author: @{tweet_info.get('author')}"))
+                print(_red(f"Your handle: @{my_handle}"))
+                sys.exit(4)
+
     # Fix literal \n from shell arguments → actual newlines
     text = text.replace("\\n", "\n")
     # Enforce reply quality rules
@@ -765,7 +822,7 @@ async def cmd_post(tweet_id: str, text: str):
     max_chars = 4000  # X Premium limit
     if len(text) > max_chars:
         print(_red(f"ERROR: Reply exceeds {max_chars} character limit ({len(text)} chars)"))
-        sys.exit(1)
+        sys.exit(2)
     s, ct, csrf = await init_session()
 
     path = "/i/api/graphql/a1p9RWpkYKBjWv_I3WzS-A/CreateTweet"
@@ -815,6 +872,68 @@ async def cmd_post(tweet_id: str, text: str):
     await s.close()
 
 
+async def get_tweet_details(tweet_id: str):
+    """Fetch tweet details including author
+
+    Args:
+        tweet_id: Tweet ID to fetch
+
+    Returns:
+        dict with keys: id, text, author, author_name, likes, retweets, replies, views, url
+        or None if fetch fails
+    """
+    try:
+        s, ct, csrf = await init_session()
+
+        # Use TweetDetail GraphQL endpoint
+        path = "/i/api/graphql/rePnxwe9LZ51nQ7Sn_xN_A/TweetDetail"
+        variables = {
+            "focalTweetId": tweet_id,
+            "with_rux_injections": False,
+            "includePromotedContent": True,
+            "withCommunity": True,
+            "withQuickPromoteEligibilityTweetFields": True,
+            "withBirdwatchNotes": True,
+            "withVoice": True,
+            "withV2Timeline": True,
+        }
+        params = urllib.parse.urlencode({
+            "variables": json.dumps(variables, separators=(",", ":")),
+            "features": json.dumps(GRAPHQL_FEATURES, separators=(",", ":")),
+        })
+
+        headers = build_headers(ct, csrf, "GET", path)
+        r = await s.get(f"https://x.com{path}?{params}", headers=headers)
+
+        if r.status_code != 200:
+            await s.close()
+            return None
+
+        data = r.json()
+        # Navigate the TweetDetail response structure
+        instructions = (
+            data.get("data", {})
+            .get("threaded_conversation_with_injections_v2", {})
+            .get("instructions", [])
+        )
+
+        for inst in instructions:
+            entries = inst.get("entries", [])
+            for entry in entries:
+                if entry.get("entryId", "").startswith("tweet-"):
+                    content = entry.get("content", {})
+                    item = content.get("itemContent", {})
+                    tweet = _parse_tweet_result(item)
+                    if tweet and tweet.get("id") == tweet_id:
+                        await s.close()
+                        return tweet
+
+        await s.close()
+        return None
+    except Exception as e:
+        return None
+
+
 async def cmd_tweet(text: str):
     """Post an original tweet (not a reply) for compose mode"""
     # Fix literal \n from shell arguments → actual newlines
@@ -825,7 +944,7 @@ async def cmd_tweet(text: str):
     max_chars = 4000
     if len(text) > max_chars:
         print(_red(f"ERROR: Tweet exceeds {max_chars} character limit ({len(text)} chars)"))
-        sys.exit(1)
+        sys.exit(2)
     s, ct, csrf = await init_session()
 
     path = "/i/api/graphql/a1p9RWpkYKBjWv_I3WzS-A/CreateTweet"
@@ -893,6 +1012,260 @@ async def cmd_delete(tweet_id: str):
         sys.exit(1)
 
     await s.close()
+
+
+async def cmd_quote(tweet_id: str, text: str, reply_to: str, allow_original: bool = False):
+    """Create a quote tweet with commentary, posted as a reply
+
+    Args:
+        tweet_id: Tweet ID to quote
+        text: Commentary text
+        reply_to: REQUIRED - tweet ID to reply to (quote is always posted as a reply)
+        allow_original: Override profile wall protection (manual use only)
+
+    Exit codes:
+        0: Success
+        1: API error (rate limit, auth failure, network)
+        2: Validation error (blocked text, too long, missing params)
+        3: Profile wall violation (no reply_to specified)
+        4: Self-reply violation (attempted reply to own post)
+    """
+    # Profile wall guard: reply_to is MANDATORY
+    if not reply_to:
+        print(_red("ERROR: Profile wall violation - reply_to parameter required for quote tweets"))
+        print(_red("Quote tweets MUST be posted as replies, not standalone"))
+        sys.exit(3)
+
+    # Self-reply guard: check if replying to own post
+    if not allow_original:
+        config = load_config()
+        my_handle = config.get("handle", "").lstrip("@") if config else ""
+
+        if my_handle:
+            tweet_info = await get_tweet_details(reply_to)
+            if tweet_info and tweet_info.get("author", "").lstrip("@") == my_handle:
+                print(_red(f"ERROR: Self-reply violation - cannot reply to own post"))
+                print(_red(f"Target tweet author: @{tweet_info.get('author')}"))
+                print(_red(f"Your handle: @{my_handle}"))
+                sys.exit(4)
+
+    # Append quoted tweet URL to the text (X's quote tweet format)
+    quoted_tweet_info = await get_tweet_details(tweet_id)
+    if quoted_tweet_info:
+        quoted_url = quoted_tweet_info.get("url", f"https://x.com/i/status/{tweet_id}")
+    else:
+        quoted_url = f"https://x.com/i/status/{tweet_id}"
+
+    # Add quote URL at the end (X will render it as embedded quote)
+    full_text = f"{text}\n\n{quoted_url}"
+
+    # Fix literal \n from shell arguments → actual newlines
+    full_text = full_text.replace("\\n", "\n")
+    # Enforce reply quality rules
+    full_text = sanitize_reply_text(full_text)
+    max_chars = 4000
+    if len(full_text) > max_chars:
+        print(_red(f"ERROR: Quote tweet exceeds {max_chars} character limit ({len(full_text)} chars)"))
+        sys.exit(2)
+
+    s, ct, csrf = await init_session()
+
+    path = "/i/api/graphql/a1p9RWpkYKBjWv_I3WzS-A/CreateTweet"
+    headers = build_headers(ct, csrf, "POST", path)
+
+    payload = {
+        "variables": {
+            "tweet_text": full_text,
+            "reply": {
+                "in_reply_to_tweet_id": reply_to,
+                "exclude_reply_user_ids": [],
+            },
+            "dark_request": False,
+            "media": {"media_entities": [], "possibly_sensitive": False},
+            "semantic_annotation_ids": [],
+        },
+        "features": GRAPHQL_FEATURES,
+        "queryId": "a1p9RWpkYKBjWv_I3WzS-A",
+    }
+
+    r = await s.post(f"https://x.com{path}", headers=headers, json=payload)
+
+    if r.status_code == 200:
+        data = r.json()
+        result = (
+            data.get("data", {})
+            .get("create_tweet", {})
+            .get("tweet_results", {})
+            .get("result", {})
+        )
+        new_id = result.get("rest_id", "")
+        print(json.dumps({
+            "success": True,
+            "tweet_id": new_id,
+            "reply_to": reply_to,
+            "quoted_tweet": tweet_id,
+            "text": full_text,
+        }))
+    else:
+        print(json.dumps({
+            "success": False,
+            "error": f"Status {r.status_code}: {r.text[:200]}",
+            "reply_to": reply_to,
+            "quoted_tweet": tweet_id,
+            "text": full_text,
+        }))
+        sys.exit(1)
+
+    await s.close()
+
+
+async def cmd_analytics(tweet_id: str):
+    """Fetch and display engagement metrics for a tweet
+
+    Exit codes:
+        0: Success
+        1: API error or tweet not found
+    """
+    tweet = await get_tweet_details(tweet_id)
+
+    if not tweet:
+        print(json.dumps({"success": False, "error": "Tweet not found or API error"}))
+        sys.exit(1)
+
+    # Calculate engagement score
+    engagement_score = (
+        tweet['views'] +
+        (tweet['likes'] * 5) +
+        (tweet['retweets'] * 10) +
+        (tweet['replies'] * 13.5)
+    )
+
+    # Format as table
+    print(f"\n{_bold('Tweet Analytics')}: {tweet['url']}")
+    print(f"\n{_cyan('Author:')} @{tweet['author']} ({tweet['author_name']})")
+    print(f"{_cyan('Text:')} {tweet['text'][:100]}{'...' if len(tweet['text']) > 100 else ''}")
+    print(f"\n{_bold('Engagement Metrics:')}")
+    print(f"  {'Views:':<12} {tweet['views']:>10,}")
+    print(f"  {'Likes:':<12} {tweet['likes']:>10,}  (weight: 5x)")
+    print(f"  {'Retweets:':<12} {tweet['retweets']:>10,}  (weight: 10x)")
+    print(f"  {'Replies:':<12} {tweet['replies']:>10,}  (weight: 13.5x)")
+    print(f"\n  {_green('Total Score:')} {_bold(f'{engagement_score:>10,.1f}')}")
+    print()
+
+    # Also output JSON for machine parsing
+    analytics_data = {
+        "success": True,
+        "tweet_id": tweet_id,
+        "metrics": {
+            "views": tweet['views'],
+            "likes": tweet['likes'],
+            "retweets": tweet['retweets'],
+            "replies": tweet['replies'],
+            "engagement_score": engagement_score,
+        },
+        "author": tweet['author'],
+        "url": tweet['url'],
+    }
+    print(json.dumps(analytics_data, indent=2))
+
+
+async def cmd_thread(reply_to: str, texts: list, allow_original: bool = False):
+    """Post a thread of replies (each replying to the previous)
+
+    Implements the two-tweet pattern: main reply + self-reply with link
+
+    Args:
+        reply_to: First tweet ID to reply to (REQUIRED)
+        texts: List of reply texts (each becomes a tweet in the thread)
+        allow_original: Override profile wall protection (manual use only)
+
+    Exit codes:
+        0: Success
+        1: API error
+        2: Validation error
+        3: Profile wall violation
+        4: Self-reply violation
+    """
+    # Profile wall guard: reply_to is MANDATORY
+    if not reply_to:
+        print(_red("ERROR: Profile wall violation - reply_to parameter required"))
+        sys.exit(3)
+
+    # Self-reply guard on FIRST tweet only (subsequent are self-replies by design)
+    if not allow_original:
+        config = load_config()
+        my_handle = config.get("handle", "").lstrip("@") if config else ""
+
+        if my_handle:
+            tweet_info = await get_tweet_details(reply_to)
+            if tweet_info and tweet_info.get("author", "").lstrip("@") == my_handle:
+                print(_red(f"ERROR: Self-reply violation - cannot reply to own post"))
+                print(_red(f"Target tweet author: @{tweet_info.get('author')}"))
+                sys.exit(4)
+
+    s, ct, csrf = await init_session()
+    path = "/i/api/graphql/a1p9RWpkYKBjWv_I3WzS-A/CreateTweet"
+
+    thread_ids = []
+    current_reply_to = reply_to
+
+    for i, text in enumerate(texts):
+        # Fix literal \n and sanitize
+        text = text.replace("\\n", "\n")
+        text = sanitize_reply_text(text)
+        max_chars = 4000
+        if len(text) > max_chars:
+            print(_red(f"ERROR: Thread item {i+1} exceeds {max_chars} chars ({len(text)} chars)"))
+            sys.exit(2)
+
+        headers = build_headers(ct, csrf, "POST", path)
+        payload = {
+            "variables": {
+                "tweet_text": text,
+                "reply": {
+                    "in_reply_to_tweet_id": current_reply_to,
+                    "exclude_reply_user_ids": [],
+                },
+                "dark_request": False,
+                "media": {"media_entities": [], "possibly_sensitive": False},
+                "semantic_annotation_ids": [],
+            },
+            "features": GRAPHQL_FEATURES,
+            "queryId": "a1p9RWpkYKBjWv_I3WzS-A",
+        }
+
+        r = await s.post(f"https://x.com{path}", headers=headers, json=payload)
+
+        if r.status_code != 200:
+            print(json.dumps({
+                "success": False,
+                "error": f"Thread item {i+1} failed: status {r.status_code}",
+                "failed_at": i+1,
+                "posted": thread_ids,
+            }))
+            await s.close()
+            sys.exit(1)
+
+        data = r.json()
+        result = (
+            data.get("data", {})
+            .get("create_tweet", {})
+            .get("tweet_results", {})
+            .get("result", {})
+        )
+        new_id = result.get("rest_id", "")
+        thread_ids.append(new_id)
+        current_reply_to = new_id  # Next tweet replies to this one
+
+    await s.close()
+
+    print(json.dumps({
+        "success": True,
+        "thread": thread_ids,
+        "count": len(thread_ids),
+        "first_reply_to": reply_to,
+    }))
+
 
 
 async def cmd_cookies(ct0: str, auth_token: str):
@@ -2439,11 +2812,28 @@ Examples:
     search_p = subparsers.add_parser("search", help="Search tweets (JSON output)")
     search_p.add_argument("query", help="Search query")
     search_p.add_argument("--count", type=int, default=20, help="Max results (default: 20)")
+    search_p.add_argument("--min-engagement", type=int, default=0, help="Minimum engagement score filter (default: 0)")
 
     post_p = subparsers.add_parser("post", help="Post reply to a tweet")
     post_p.add_argument("tweet_id", help="Tweet ID to reply to")
     post_p.add_argument("text", nargs="?", default=None, help="Reply text (or use --stdin)")
     post_p.add_argument("--stdin", action="store_true", help="Read reply text from stdin (avoids shell expansion of $ signs)")
+    post_p.add_argument("--allow-original", action="store_true", help="Override profile wall protection (manual use only)")
+
+    quote_p = subparsers.add_parser("quote", help="Create quote tweet with commentary (posted as reply)")
+    quote_p.add_argument("tweet_id", help="Tweet ID to quote")
+    quote_p.add_argument("reply_to", help="Tweet ID to reply to (REQUIRED)")
+    quote_p.add_argument("text", nargs="?", default=None, help="Commentary text (or use --stdin)")
+    quote_p.add_argument("--stdin", action="store_true", help="Read commentary from stdin")
+    quote_p.add_argument("--allow-original", action="store_true", help="Override profile wall protection (manual use only)")
+
+    analytics_p = subparsers.add_parser("analytics", help="Show engagement metrics for a tweet")
+    analytics_p.add_argument("tweet_id", help="Tweet ID to analyze")
+
+    thread_p = subparsers.add_parser("thread", help="Post a thread of replies")
+    thread_p.add_argument("reply_to", help="First tweet ID to reply to")
+    thread_p.add_argument("texts", nargs="+", help="Reply texts (each becomes a tweet in thread)")
+    thread_p.add_argument("--allow-original", action="store_true", help="Override profile wall protection (manual use only)")
 
     tweet_p = subparsers.add_parser("tweet", help="Post original tweet")
     tweet_p.add_argument("text", help="Tweet text")
@@ -2518,15 +2908,27 @@ Examples:
     elif cmd == "cookies":
         asyncio.run(cmd_cookies(args.ct0, args.auth_token))
     elif cmd == "search":
-        asyncio.run(cmd_search(args.query, args.count))
+        asyncio.run(cmd_search(args.query, args.count, args.min_engagement))
     elif cmd == "post":
         text = args.text
         if args.stdin or text is None:
             text = sys.stdin.read().strip()
         if not text:
             print(_red("ERROR: No reply text provided (use positional arg or --stdin)"))
-            sys.exit(1)
-        asyncio.run(cmd_post(args.tweet_id, text))
+            sys.exit(2)
+        asyncio.run(cmd_post(args.tweet_id, text, args.allow_original))
+    elif cmd == "quote":
+        text = args.text
+        if args.stdin or text is None:
+            text = sys.stdin.read().strip()
+        if not text:
+            print(_red("ERROR: No commentary text provided (use positional arg or --stdin)"))
+            sys.exit(2)
+        asyncio.run(cmd_quote(args.tweet_id, text, args.reply_to, args.allow_original))
+    elif cmd == "analytics":
+        asyncio.run(cmd_analytics(args.tweet_id))
+    elif cmd == "thread":
+        asyncio.run(cmd_thread(args.reply_to, args.texts, args.allow_original))
     elif cmd == "tweet":
         asyncio.run(cmd_tweet(args.text))
     elif cmd == "delete":
