@@ -3,6 +3,23 @@
 
 ---
 
+## [![v1.10.2](https://img.shields.io/badge/v1.10.2-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/248e3b2787f421bf21be08ca67edd4b9cced2434) | Build 23
+
+docs: full consistency audit + GitHub ruleset + Chrome MCP fix
+
+- [x] Fix counts: scripts 28→32, hooks 30→15 handlers/10 stages/34-row table, model routing 40→43-row
+- [x] Remove duplicate /init-repo from model routing table
+- [x] Fix agent category counts: Specialist (7)→(18), Ops (6)→(10)
+- [x] Disambiguate two "7 layers" definitions (Ralph Safety vs Runtime Security)
+- [x] Add ClaudeCodeChange hooks to README hook registration table
+- [x] Sanitize pulsona references, update Gemini models to 2.5/3.x
+- [x] GitHub: create main-protection ruleset (force push + PR + linear history, admin bypass)
+- [x] Chrome MCP: set claudeInChromeDefaultEnabled=false (use Node.js custom config)
+- [x] VSCode: disable terminal bell (stops Windows BEL on permission prompts)
+
+
+---
+
 ## [![v1.10.1](https://img.shields.io/badge/v1.10.1-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/667145fea01e3725573abbd0db0ca16c2c5358f3) | Build 22
 
 docs: README/CLAUDE.md full audit — fix counts, ghost hooks, model routing, image styling
