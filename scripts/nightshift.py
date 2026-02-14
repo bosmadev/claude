@@ -252,8 +252,9 @@ def stop_agents() -> bool:
     Returns:
         True if successful, False otherwise
     """
-    state = load_state()
-    active_agents = [a for a in state["agents"] if a["status"] in ["PENDING", "ACTIVE"]]
+    state = load_state() or {"agents": [], "repos": {}}
+    agents_list = state.get("agents") or []
+    active_agents = [a for a in agents_list if a.get("status") in ["PENDING", "ACTIVE"]]
 
     if not active_agents:
         print("No active nightshift agents.")
@@ -311,8 +312,9 @@ def show_status() -> bool:
     Returns:
         True if successful, False otherwise
     """
-    state = load_state()
-    active_agents = [a for a in state["agents"] if a["status"] in ["PENDING", "ACTIVE"]]
+    state = load_state() or {"agents": [], "repos": {}}
+    agents_list = state.get("agents") or []
+    active_agents = [a for a in agents_list if a.get("status") in ["PENDING", "ACTIVE"]]
 
     if not active_agents:
         print("No active nightshift agents.")
