@@ -1,7 +1,7 @@
 ---
 name: nightshift
 description: "Autonomous maintenance skill for nighttime development cycles -- spawns scout agents in night-dev worktrees to research, implement features, and submit PRs to dev branches."
-argument-hint: "init <repo> | start <repo> [task] [--agents N] [--budget $X] | stop | status | help"
+argument-hint: "init <repo> | start <repo> [task] [--agents N] [--budget $X] [--model sonnet|gemini] | stop | status | help"
 user-invocable: true
 context: fork
 ---
@@ -73,7 +73,23 @@ From `$ARGUMENTS`, parse subcommands:
 |------|---------|-------------|
 | `--agents N` | 3 | Number of parallel agents |
 | `--budget $X` | $5.00 | Maximum total spending (triggers BUDGET_EXCEEDED, doesn't stop agents) |
-| `--model opus\|sonnet\|gemini` | sonnet | Agent model: opus (expensive), sonnet (default), gemini (via GSwarm, future) |
+| `--model sonnet\|gemini` | sonnet | Agent model. Opus BLOCKED (burns weekly quota). |
+
+**Model routing — subscription isolation:**
+
+| Model | Routing | Subscription Impact |
+|-------|---------|-------------------|
+| `sonnet` (default) | Anthropic API direct | Uses Anthropic subscription (cheapest) |
+| `gemini` | GSwarm at localhost:4000 | Zero Anthropic usage — all API calls route through GSwarm |
+| `opus` | BLOCKED | Auto-downgraded to sonnet with warning |
+
+When `--model gemini` is specified:
+1. Script checks if GSwarm is running (`localhost:4000/health`)
+2. If running: sets `ANTHROPIC_BASE_URL=http://localhost:4000` per-agent env
+3. All API calls from those agents route through GSwarm → Gemini
+4. If GSwarm not running: falls back to sonnet with warning
+
+This prevents accidental Opus/subscription usage. Skills invoked BY nightshift agents (like `/commit`) inherit `ANTHROPIC_BASE_URL` from agent env, so they also route through GSwarm.
 
 **Examples:**
 
@@ -81,6 +97,7 @@ From `$ARGUMENTS`, parse subcommands:
 /nightshift init pulsona
 /nightshift start pulsona "research Next.js 15 features + implement"
 /nightshift start gswarm lint-fix --agents 5 --budget $10.00
+/nightshift start pulsona --model gemini --agents 3   # Zero Anthropic usage
 /nightshift status
 /nightshift stop
 ```

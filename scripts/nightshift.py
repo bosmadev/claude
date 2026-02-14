@@ -151,12 +151,18 @@ def start_agents(
     Agents run CONTINUOUSLY until /nightshift stop is invoked.
     They loop: research → implement → commit → push → research → ...
 
+    Model routing:
+        - 'sonnet' (default): Uses Anthropic Sonnet — cheapest subscription option
+        - 'opus': BLOCKED for nightshift — use sonnet instead (opus burns weekly quota)
+        - 'gemini': Routes through GSwarm (ANTHROPIC_BASE_URL override per-agent)
+          Requires GSwarm running at localhost:4000. Zero Anthropic subscription usage.
+
     Args:
         repo_name: Name of the repository
         task: Task description for agents (focus area)
         num_agents: Number of parallel agents to spawn
         budget: Maximum total spending in USD (soft limit, triggers warning)
-        model: Agent model ('opus', 'sonnet', or 'gemini')
+        model: Agent model ('sonnet' or 'gemini'). Opus blocked for nightshift.
 
     Returns:
         True if successful, False otherwise
@@ -164,6 +170,24 @@ def start_agents(
     if repo_name not in SUPPORTED_REPOS:
         print(f"❌ Unknown repo: {repo_name}")
         return False
+
+    # Model validation: block Opus for nightshift (burns weekly quota)
+    is_gemini = model.startswith("gemini")
+    if model == "opus":
+        print("⚠️  Opus blocked for nightshift (burns weekly quota). Downgrading to sonnet.")
+        model = "sonnet"
+
+    # GSwarm routing: check if GSwarm is available when gemini requested
+    gswarm_url = "http://localhost:4000"
+    if is_gemini:
+        import urllib.request
+        try:
+            urllib.request.urlopen(f"{gswarm_url}/health", timeout=3)
+            print(f"✓ GSwarm detected at {gswarm_url} — routing to Gemini (zero Anthropic usage)")
+        except Exception:
+            print(f"⚠️  GSwarm not running at {gswarm_url}. Falling back to sonnet.")
+            model = "sonnet"
+            is_gemini = False
 
     # Check if repo is initialized
     state = load_state()
@@ -181,7 +205,7 @@ def start_agents(
 
     print(f"Spawning {num_agents} nightshift agents in {worktree_path}")
     print(f"Budget: ${budget:.2f} (soft limit)")
-    print(f"Model: {model}")
+    print(f"Model: {model}" + (" (via GSwarm)" if is_gemini else ""))
     if task:
         print(f"Task focus: {task}")
     print("\n⚠️  Agents will run CONTINUOUSLY until /nightshift stop\n")
@@ -244,7 +268,10 @@ Begin continuous operation now. Start by researching: {task or "autonomous maint
             "env": {
                 "NIGHTSHIFT_AGENT": "1",
                 "NIGHTSHIFT_WORKTREE": str(worktree_path),
+                # GSwarm routing: override API base URL for Gemini models
+                **({"ANTHROPIC_BASE_URL": gswarm_url} if is_gemini else {}),
             },
+            "is_gemini": is_gemini,
         })
         print(f"Agent {i}: {agent_id} [PENDING - continuous mode]")
 
@@ -381,9 +408,8 @@ def main():
     start_parser.add_argument("--budget", type=float, default=5.00, help="Budget in USD - soft limit (default: $5.00)")
     start_parser.add_argument(
         "--model",
-        choices=["opus", "sonnet", "gemini"],
         default="sonnet",
-        help="Agent model: opus (expensive), sonnet (default), gemini (via GSwarm, future)"
+        help="Agent model: sonnet (default), gemini (via GSwarm — zero Anthropic usage). Opus blocked."
     )
 
     # Stop subcommand

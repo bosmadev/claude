@@ -266,7 +266,7 @@ Query multiple AI models in parallel for comparison, consensus, or code review. 
 | `/nightshift start <repo> [task]` | Spawn autonomous agents in night-dev worktree |
 | `/nightshift start <repo> [task] --agents N` | N parallel agents (default: 3) |
 | `/nightshift start <repo> [task] --budget $X` | Budget cap in USD (default: $5.00) |
-| `/nightshift start <repo> [task] --model opus\|sonnet` | Agent model (default: sonnet) |
+| `/nightshift start <repo> [task] --model sonnet\|gemini` | Agent model (default: sonnet, opus blocked) |
 | `/nightshift stop` | Send shutdown to all active agents, create PR |
 | `/nightshift status` | Show active agents and progress |
 | `/nightshift help` | Show usage |
