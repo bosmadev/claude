@@ -35,6 +35,8 @@ research/
 image-cache/
 skills/x/data/
 skills/*/.claude/
+skills/*/scripts/~/
+skills/*/data/~/
 ${TMPDIR}/
 
 # Temp files (any location — ALL scratch/notes/install artifacts)
@@ -88,3 +90,4 @@ nul
 
 # Keep markers
 !.gitkeep
+sounds-enabled*

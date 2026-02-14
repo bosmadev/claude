@@ -3,18 +3,18 @@
 Audio feedback hook handler for Claude Code events.
 
 Usage:
-    python sounds.py session-start
-    python sounds.py session-stop
-    python sounds.py post-tool
-    python sounds.py notification
+    python sounds.py <event>
+
+Events: session-start, session-stop, post-tool, notification, setup,
+        pre-compact, user-prompt-submit, subagent-start, subagent-stop,
+        stop, permission-request, task-completed, teammate-idle
 
 Plays audio only if:
 1. ~/.claude/sounds-enabled marker file exists
 2. NOT running as subagent (no CLAUDE_CODE_TASK_LIST_ID or CLAUDE_CODE_SUBAGENT)
 
-Uses in-memory WAV generation played through system audio (speakers/headphones).
-winsound.Beep() is NOT used — it targets the PC speaker which is disabled/muted
-on most modern PCs and doesn't work in VSCode terminals.
+Hybrid approach: Voice WAVs (from shanraisshan/claude-code-voice-hooks)
+for most events, generated tones for high-frequency events.
 """
 
 import json
@@ -30,6 +30,8 @@ try:
 except ImportError:
     WINSOUND_AVAILABLE = False
 
+SOUNDS_DIR = Path(__file__).parent / "sounds"
+
 
 def should_play_sound() -> bool:
     """Check if audio feedback should play."""
@@ -44,19 +46,12 @@ def should_play_sound() -> bool:
 
 
 def _generate_wav(frequency: int, duration_ms: int, volume: float = 0.3) -> bytes:
-    """Generate a mono 16-bit PCM WAV tone in memory.
-
-    Args:
-        frequency: Tone frequency in Hz (200-2000 recommended)
-        duration_ms: Duration in milliseconds
-        volume: Volume 0.0-1.0 (0.3 default — not too loud)
-    """
-    sample_rate = 22050  # CD-quality not needed for beeps
+    """Generate a mono 16-bit PCM WAV tone in memory."""
+    sample_rate = 22050
     num_samples = int(sample_rate * duration_ms / 1000)
     samples = bytearray()
     for i in range(num_samples):
         t = i / sample_rate
-        # Apply fade-in/fade-out envelope (first/last 5ms) to avoid clicks
         fade_samples = int(sample_rate * 0.005)
         if i < fade_samples:
             envelope = i / fade_samples
@@ -68,7 +63,6 @@ def _generate_wav(frequency: int, duration_ms: int, volume: float = 0.3) -> byte
         samples.extend(struct.pack("<h", max(-32768, min(32767, value))))
 
     data = bytes(samples)
-    # WAV header: RIFF + fmt + data chunks
     header = struct.pack(
         "<4sI4s4sIHHIIHH4sI",
         b"RIFF", 36 + len(data), b"WAVE",
@@ -78,37 +72,105 @@ def _generate_wav(frequency: int, duration_ms: int, volume: float = 0.3) -> byte
     return header + data
 
 
+def play_wav(name: str):
+    """Play a WAV file from the sounds directory."""
+    if not WINSOUND_AVAILABLE:
+        return
+    try:
+        wav_path = SOUNDS_DIR / f"{name}.wav"
+        if wav_path.exists():
+            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
+    except Exception:
+        pass
+
+
 def play_tone(frequency: int, duration_ms: int, volume: float = 0.3):
-    """Play a tone through system audio (speakers/headphones)."""
+    """Play a generated tone through system audio."""
     if not WINSOUND_AVAILABLE:
         return
     try:
         wav_data = _generate_wav(frequency, duration_ms, volume)
         winsound.PlaySound(wav_data, winsound.SND_MEMORY)
     except Exception:
-        pass  # Silently fail if audio unavailable
+        pass
 
 
-def play_chord(tones: list[tuple[int, int]]):
-    """Play a sequence of tones (frequency, duration_ms)."""
-    for freq, dur in tones:
-        play_tone(freq, dur)
-
+# --- Event Handlers ---
 
 def handle_session_start():
-    """Rising two-note chord: session starting."""
+    """Voice: session starting."""
     if should_play_sound():
-        play_chord([(523, 120), (659, 180)])  # C5 → E5
+        play_wav("sessionstart")
 
 
 def handle_session_stop():
-    """Falling tone: session ending."""
+    """Voice: session ending."""
     if should_play_sound():
-        play_chord([(659, 120), (440, 250)])  # E5 → A4
+        play_wav("sessionend")
+
+
+def handle_stop():
+    """Voice: process stopping."""
+    if should_play_sound():
+        play_wav("stop")
+
+
+def handle_setup():
+    """Voice: initial setup."""
+    if should_play_sound():
+        play_wav("setup")
+
+
+def handle_pre_compact():
+    """Voice: context compression."""
+    if should_play_sound():
+        play_wav("precompact")
+
+
+def handle_user_prompt_submit():
+    """Voice: user pressed Enter."""
+    if should_play_sound():
+        play_wav("userpromptsubmit")
+
+
+def handle_notification():
+    """Voice: notification/attention."""
+    if should_play_sound():
+        play_wav("notification")
+
+
+def handle_permission_request():
+    """Voice: permission needed."""
+    if should_play_sound():
+        play_wav("permissionrequest")
+
+
+def handle_subagent_start():
+    """Voice: subagent spawned."""
+    if should_play_sound():
+        play_wav("subagentstart")
+
+
+def handle_subagent_stop():
+    """Voice: subagent finished."""
+    if should_play_sound():
+        play_wav("subagentstop")
+
+
+def handle_task_completed():
+    """Voice: task completed."""
+    if should_play_sound():
+        play_wav("taskcompleted")
+
+
+def handle_teammate_idle():
+    """Voice: teammate went idle."""
+    if should_play_sound():
+        play_wav("teammateidle")
 
 
 def handle_post_tool():
-    """Different sounds for success/error/commit."""
+    """Hybrid: voice WAVs for error/commit, generated tone for success."""
     if not should_play_sound():
         return
 
@@ -133,23 +195,15 @@ def handle_post_tool():
         )
 
         if is_git_commit:
-            # Triumphant three-note: C5 → E5 → G5
-            play_chord([(523, 100), (659, 100), (784, 200)])
+            play_wav("pretooluse-git-committing")
         elif is_error:
-            # Low descending: error
-            play_chord([(349, 200), (262, 300)])  # F4 → C4
+            play_wav("posttoolusefailure")
         else:
-            # Quick single tick: tool success (subtle, not annoying)
-            play_tone(880, 60, volume=0.15)  # A5, very short + quiet
+            # Quick generated tone for success (voice WAV too verbose for every tool)
+            play_tone(880, 250, volume=0.4)
 
     except Exception:
         pass
-
-
-def handle_notification():
-    """Double-tap attention sound for permission prompts."""
-    if should_play_sound():
-        play_chord([(698, 100), (698, 100)])  # F5 × 2
 
 
 def main():
@@ -160,8 +214,17 @@ def main():
     handlers = {
         "session-start": handle_session_start,
         "session-stop": handle_session_stop,
+        "stop": handle_stop,
+        "setup": handle_setup,
+        "pre-compact": handle_pre_compact,
+        "user-prompt-submit": handle_user_prompt_submit,
         "post-tool": handle_post_tool,
         "notification": handle_notification,
+        "permission-request": handle_permission_request,
+        "subagent-start": handle_subagent_start,
+        "subagent-stop": handle_subagent_stop,
+        "task-completed": handle_task_completed,
+        "teammate-idle": handle_teammate_idle,
     }
     handler = handlers.get(event)
     if handler:

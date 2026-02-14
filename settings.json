@@ -301,6 +301,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py setup",
+            "timeout": 5,
+            "async": true
+          }
+        ]
       }
     ],
     "Stop": [
@@ -399,6 +409,16 @@
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/ralph.py pre-compact",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py pre-compact",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
@@ -640,6 +660,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py user-prompt-submit",
+            "timeout": 5,
+            "async": true
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -656,6 +686,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py subagent-start",
+            "timeout": 5,
+            "async": true
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -665,6 +705,52 @@
             "type": "command",
             "command": "python %USERPROFILE%/.claude/scripts/ralph.py hook-subagent-stop",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py subagent-stop",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py permission-request",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py task-completed",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py teammate-idle",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
