@@ -3,7 +3,7 @@
 
 ---
 
-## [![v1.9.2](https://img.shields.io/badge/v1.9.2-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/667145fea01e3725573abbd0db0ca16c2c5358f3) | Build 22
+## [![v1.10.1](https://img.shields.io/badge/v1.10.1-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/667145fea01e3725573abbd0db0ca16c2c5358f3) | Build 22
 
 docs: README/CLAUDE.md full audit — fix counts, ghost hooks, model routing, image styling
 
