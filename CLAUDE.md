@@ -11,7 +11,7 @@
 ├── agents/                     # Agent configuration files (42 files)
 ├── hooks/                      # Claude Code hook handlers (15 files)
 ├── output-styles/              # Response formatting styles
-├── scripts/                    # CLI utilities (29 scripts)
+├── scripts/                    # CLI utilities (32 scripts)
 ├── skills/                     # Skill definitions (/commands, 22 skills)
 ├── CLAUDE.md                   # Core patterns (this file)
 ├── settings.json               # Hook registrations
@@ -274,7 +274,7 @@ Token-efficient model assignment via permanent, native mechanisms:
 | `/chats`      | No      | Opus (main) | Session listing (avoid fork summarization bug) |
 | `/help`       | Fork    | Haiku       | Show help info, trivial operation              |
 
-See [README.md > Complete Model Routing Matrix](./README.md#complete-model-routing-matrix) for the full 40-row routing table covering all skills, agents, GH Actions, and agent configs.
+See [README.md > Complete Model Routing Matrix](./README.md#complete-model-routing-matrix) for the full 43-row routing table covering all skills, agents, GH Actions, and agent configs.
 
 ---
 
@@ -364,7 +364,7 @@ Ralph agents use atomic task claiming with `FileLock` to prevent idle agents. Qu
 
 ## Hook System
 
-30 hooks across 7 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart/Stop, Notification. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol, /x security), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete 30-row table.
+15 hook handlers across 10 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart, SubagentStop, Notification. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol, /x security), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete 34-row table.
 
 **Code-level guards:** `sanitize_reply_text()` in `skills/x/scripts/x.py` (every X post), `x-post-check` in `guards.py` (Chrome MCP audit log).
 

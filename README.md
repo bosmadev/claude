@@ -13,7 +13,7 @@ Production [Claude Code](https://docs.anthropic.com/en/docs/claude-code) configu
 | Skills | 22 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/nightshift`, `/docx`, `/docker`, `/ask`, `/test`, `/sounds` |
 | Agents | 42 | Specialist (Opus), reviewer (Sonnet), ops (Sonnet), git coordinator (Haiku) |
 | Hooks | 15 | Security gate, auto-allow, change tracking, Ralph orchestration, ACID state, sound effects |
-| Scripts | 28 | Token management, Chrome MCP fix, statusline, session repair, PR aggregation |
+| Scripts | 32 | Token management, Chrome MCP fix, statusline, session repair, PR aggregation |
 | Safety | 7 layers | Push gate, VERIFY+FIX, security hooks, budget guard, ACID transactions |
 | Model Routing | 3 layers | Global default, skill fork, per-agent override for cost optimization |
 
@@ -242,16 +242,16 @@ Generate Dockerfiles with multi-stage builds, minimal base images, and non-root 
 
 | Command | Description |
 |---------|-------------|
-| `/ask "question"` | Single model query (gemini-2.0-flash) |
+| `/ask "question"` | Single model query (gemini-2.5-flash) |
 | `/ask "question" --models gpt-4o` | Query specific model |
-| `/ask "question" --mode consensus --models gemini-2.0-flash,gpt-4o` | Multi-model consensus |
-| `/ask "question" --mode codereview --models gemini-2.0-flash,gpt-4o` | Multi-model code review |
+| `/ask "question" --mode consensus --models gemini-2.5-flash,gpt-4o` | Multi-model consensus |
+| `/ask "question" --mode codereview --models gemini-2.5-flash,gpt-4o` | Multi-model code review |
 | `/ask "question" --timeout 60` | Custom timeout (seconds) |
 | `/ask "question" --format json` | JSON output (also: table, markdown) |
 | `/ask help` | Show usage |
 
 Query multiple AI models in parallel for comparison, consensus, or code review. Supports:
-- **GSwarm/Gemini**: `gemini-2.0-flash`, `gemini-2.0-flash-thinking`, `gemini-1.5-pro` (via http://localhost:4000)
+- **GSwarm/Gemini**: `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-3-flash-preview`, `gemini-3-pro-preview` (via http://localhost:4000)
 - **OpenAI**: `gpt-4o`, `gpt-4o-mini`, `o3-mini` (requires `OPENAI_API_KEY`)
 - **Ollama**: `llama3.2`, `codellama`, `deepseek-coder` (via http://localhost:11434)
 
@@ -277,11 +277,11 @@ Autonomous development cycle manager for off-hours work. Spawns scout agents in 
 
 **How it works:**
 
-1. `/nightshift init pulsona` — creates `pulsona-night-dev` branch + worktree from `pulsona-dev`
-2. `/nightshift start pulsona "research Next.js 15"` — spawns agents that loop forever: research → implement → commit → push → research → ...
-3. Agents work overnight — all commits land on `pulsona-night-dev` branch
-4. Morning: `/nightshift stop` — shuts down all agents, creates one consolidated PR from `pulsona-night-dev → pulsona-dev`
-5. Review and merge the PR — `reset-dev.yml` auto-resets `pulsona-night-dev` for next run
+1. `/nightshift init gswarm` — creates `gswarm-night-dev` branch + worktree from `gswarm-dev`
+2. `/nightshift start gswarm "research API improvements"` — spawns agents that loop forever: research → implement → commit → push → research → ...
+3. Agents work overnight — all commits land on `gswarm-night-dev` branch
+4. Morning: `/nightshift stop` — shuts down all agents, creates one consolidated PR from `gswarm-night-dev → gswarm-dev`
+5. Review and merge the PR — `reset-dev.yml` auto-resets `gswarm-night-dev` for next run
 
 **Continuous operation model:**
 
@@ -291,7 +291,7 @@ Autonomous development cycle manager for off-hours work. Spawns scout agents in 
 - One consolidated PR per session — all commits roll up into a single PR at stop time
 - Branch resets after PR merge — clean slate for next nightshift run
 
-**Supported repos:** pulsona, gswarm. Add more in `scripts/nightshift.py` `SUPPORTED_REPOS`.
+**Supported repos:** gswarm (+ more via `scripts/nightshift.py` `SUPPORTED_REPOS`).
 
 **Branch protection:** Nightshift agents can only push to `*-night-dev` branches. Operations on `main` or `*-dev` branches are blocked by the bypass-permissions guard.
 
@@ -301,7 +301,7 @@ Autonomous development cycle manager for off-hours work. Spawns scout agents in 
 
 ```bash
 # Friday 6pm — start agents
-/nightshift start pulsona "Next.js 15 features" --agents 3
+/nightshift start gswarm "API performance improvements" --agents 3
 
 # Saturday 10am — check how they're doing
 /nightshift status   # Shows: 47 commits, $8.45 spent, 16h runtime
@@ -534,7 +534,7 @@ After patching, restart your Claude Code session for the MCP server to load the 
 ├── agents/                     # Agent configuration files (42 files)
 ├── hooks/                      # Claude Code hook handlers (15 files)
 ├── output-styles/              # Response formatting styles
-├── scripts/                    # CLI utilities (29 scripts)
+├── scripts/                    # CLI utilities (32 scripts)
 ├── skills/                     # Skill definitions (22 skills)
 ├── plans/                      # Plan files from /start sessions
 ├── CLAUDE.md                   # Model knowledge (behavioral patterns)
@@ -591,6 +591,8 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | SubagentStop | - | `ralph.py hook-subagent-stop` | 10s | Cleanup subagent state |
 | Notification | permission_prompt | `utils.py notify` | 10s | Desktop notifications |
 | Notification | permission_prompt | `sounds.py notification` | 5s | Play notification sound (async) |
+| Stop | - | `claudeChangeStop.js` | 5s | ClaudeCodeChange stop tracking |
+| PreToolUse | MultiEdit\|Edit\|Write | `claudeChangePreToolUse.js` | 5s | ClaudeCodeChange pre-tool tracking |
 
 ### Agent Inventory
 
@@ -672,7 +674,9 @@ Ralph tracks per-agent metrics via `PerformanceTracker`:
 
 Progress file: `.claude/ralph/progress.json`. Budget guard: `ralph.py loop 10 3 --budget 5.00 "task"` — caps total spending, remaining agents get `BUDGET` status.
 
-### Security Layers
+### Runtime Security Layers
+
+Separate from Ralph Safety Layers (workflow gates) — these protect individual tool executions:
 
 | Layer | Component | What It Does |
 |-------|-----------|-------------|
@@ -949,13 +953,12 @@ Experimental feature enabling parallel Claude Code instances within a session.
 | `/x` | Sonnet 4.5 | N/A | 200K | L2 | Fork, X/Twitter outreach |
 | `/x` agents | Sonnet 4.5 | N/A | 200K | L3 | Never Opus (continuous loops burn quota) |
 | `/nightshift` | Sonnet 4.5 | N/A | 200K | L2 | Fork, orchestration |
-| `/nightshift` agents | Sonnet 4.5 | N/A | 200K | L3 | Opus blocked, gemini via GSwarm |
+| `/nightshift` agents | Sonnet 4.5 | N/A | 200K | L3 | Opus blocked, Ollama/Gemini via GSwarm |
 | `/sounds` | Opus 4.6 | Med | 200K | — | Main, file toggle (<1 turn) |
 | `/ask` | Sonnet 4.5 | N/A | 200K | L2 | Fork, multi-model query |
 | `/test` | Sonnet 4.5 | N/A | 200K | L2 | Fork, test generation |
 | `/docx` | Sonnet 4.5 | N/A | 200K | L2 | Fork, document processing |
 | `/docker` | Sonnet 4.5 | N/A | 200K | L2 | Fork, Dockerfile generation |
-| `/init-repo` | Sonnet 4.5 | N/A | 200K | L2 | Fork, repo setup |
 | `/chats` | Opus 4.6 | Med | 200K | — | Main (avoid fork summarization) |
 | `/help` | Haiku 4.5 | N/A | 200K | L2 | Fork, trivial |
 | VERIFY+FIX scoped | Opus 4.6 | Med | 200K | — | Per-task checks |
@@ -970,9 +973,9 @@ Experimental feature enabling parallel Claude Code instances within a session.
 | GH Actions: Review | Sonnet 4.5 | N/A | 1M | — | Full repo context |
 | GH Actions: Security | Opus 4.6 | Med | 200K | — | OWASP depth |
 | GH Actions: Custom | User picks | Varies | Varies | — | workflow_dispatch |
-| Specialist agents (7) | Opus | — | — | .md | go, nextjs, python, refactor, verify-fix, owasp, coordinator |
+| Specialist agents (18) | Opus | — | — | .md | go, nextjs, python, typescript, docker, testing, hook-dev, refactor, verify-fix + more |
 | Review agents (13) | Sonnet | — | — | .md | a11y, api, arch, commit, db, doc, perf, secret, security + more |
-| Ops agents (6) | Sonnet | — | — | .md | build-error, e2e, devops, scraper, pr-gen, plan-verify |
+| Ops agents (10) | Sonnet | — | — | .md | build-error, e2e, devops, scraper, pr-gen, plan-verify, dependency-auditor, error-log, readme-gen + more |
 | Git coordinator (1) | Haiku | — | — | .md | Lightweight git ops |
 
 **Legend:** Effort: Low/Med/High (Opus only). Layer: L1 = Global default, L2 = Skill fork, L3 = Per-agent override, .md = Agent config. [1m] = Extended 1M context.
