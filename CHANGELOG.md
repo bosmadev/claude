@@ -3,6 +3,29 @@
 
 ---
 
+## [![v1.10.0](https://img.shields.io/badge/v1.10.0-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/0c1b8bffba147b0d56766bedad88e1b8462841a2) | Build 21
+
+feat: nightshift autonomous development + 6 new skills + 14 specialist agents + sound system
+
+- [x] `/nightshift` skill: autonomous maintenance cycle with continuous scouts in night-dev worktrees
+- [x] `/ask` skill: multi-model query system (GSwarm/Gemini, OpenAI, Ollama) with consensus mode
+- [x] `/test` skill: unified vitest + pytest framework with mutation testing
+- [x] `/docx` skill: DOCX/PDF/XLSX document processing
+- [x] `/docker` skill: Dockerfile generation, compose, optimization, security audit
+- [x] `/sounds` skill: per-session audio feedback toggle with 15 WAV files + 12 hook events
+- [x] 14 new specialist agents: typescript, docker, testing, git-workflow, hook-developer, database, performance-optimizer, documentation, css, env-config-validator, migration-writer, dependency-auditor, error-log-analyzer, readme-generator
+- [x] 3 agent merges: performance-auditor, security-auditor, api-specialist
+- [x] 2 security agents: incident-responder, api-security-audit
+- [x] Nightshift model isolation: Opus blocked (burns quota), gemini via GSwarm routing
+- [x] Bypass-permissions guard: two profiles (nightshift=broad dev, /x=restrictive read-only)
+- [x] Hybrid voice sound system: WAV files for 6 events + generated tones for 6 events
+- [x] README.md: nightshift docs, bypass-permissions section, model routing matrix updated
+- [x] VERIFY+FIX: plan compliance check, Sonnet for non-impl phases (80% cost savings)
+- [x] Skills flag audit: bare keywords for subcommands, `--` prefix for value flags
+
+
+---
+
 ## [![v1.9.1](https://img.shields.io/badge/v1.9.1-2026--02--13-333333.svg)](https://github.com/bosmadev/claude/commit/479a10c18b1502ce9a3c51b4edf5daa486ddae3c) | Build 20
 
 refactor: ralph.py consolidation + safety layer renumber + audit cleanup

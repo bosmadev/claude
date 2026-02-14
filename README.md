@@ -1,6 +1,8 @@
 # Claude Code Configuration
 
-![Ralph Team - 10 parallel agents with custom statusline](claude-readme.png)
+<div align="center">
+  <img src="claude-readme.png" alt="Ralph Team - 10 parallel agents with custom statusline" style="border-radius: 12px; border: 2px solid #30363d; max-width: 100%;" />
+</div>
 
 Production [Claude Code](https://docs.anthropic.com/en/docs/claude-code) configuration with multi-agent orchestration, autonomous development workflows, and defense-in-depth safety layers.
 
@@ -8,7 +10,7 @@ Production [Claude Code](https://docs.anthropic.com/en/docs/claude-code) configu
 
 | Category | Count | Highlights |
 |----------|-------|------------|
-| Skills | 21 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/nightshift`, `/docx`, `/docker`, `/ask`, `/test`, `/sounds` |
+| Skills | 22 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/nightshift`, `/docx`, `/docker`, `/ask`, `/test`, `/sounds` |
 | Agents | 42 | Specialist (Opus), reviewer (Sonnet), ops (Sonnet), git coordinator (Haiku) |
 | Hooks | 15 | Security gate, auto-allow, change tracking, Ralph orchestration, ACID state, sound effects |
 | Scripts | 28 | Token management, Chrome MCP fix, statusline, session repair, PR aggregation |
@@ -529,11 +531,11 @@ After patching, restart your Claude Code session for the MCP server to load the 
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   ├── ISSUE_TEMPLATE/
 │   └── workflows/claude.yml
-├── agents/                     # Agent configuration files (25 files)
-├── hooks/                      # Claude Code hook handlers (14 files)
+├── agents/                     # Agent configuration files (42 files)
+├── hooks/                      # Claude Code hook handlers (15 files)
 ├── output-styles/              # Response formatting styles
-├── scripts/                    # CLI utilities (30+ scripts)
-├── skills/                     # Skill definitions (21 skills)
+├── scripts/                    # CLI utilities (29 scripts)
+├── skills/                     # Skill definitions (22 skills)
 ├── plans/                      # Plan files from /start sessions
 ├── CLAUDE.md                   # Model knowledge (behavioral patterns)
 ├── settings.json               # Hook registrations and permissions
@@ -560,7 +562,6 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | Setup | - | `token-guard.py check` | 60s | Validate Claude token before session |
 | Setup | - | `setup.py validate-symlinks` | 30s | Verify symlink integrity |
 | Stop | - | `ralph.py stop` | 30s | Cleanup Ralph state |
-| Stop | - | `claudeChangeStop.js` | 5s | Save session state |
 | Stop | - | `sounds.py session-stop` | 5s | Play session stop sound (async) |
 | SessionStart | startup\|resume | `utils.py model-capture` | 5s | Capture model ID for session |
 | SessionStart | - | `ralph.py session-start` | 10s | Initialize Ralph session |
@@ -570,7 +571,6 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | PreToolUse | Bash | `security-gate.py pre-bash` | 5s | Security validation for Bash commands |
 | PreToolUse | Bash | `git.py pre-commit-checks` | 5s | Git safety checks before commits |
 | PreToolUse | MultiEdit\|Edit\|Write | `auto-allow.py` | 5s | Auto-approve safe edits |
-| PreToolUse | MultiEdit\|Edit\|Write | `claudeChangePreToolUse.js` | 5s | Track file changes |
 | PreToolUse | Task | `ralph.py hook-pretool` | 10s | Ralph task orchestration prep |
 | PostToolUse | Bash | `git.py command-history` | 5s | Track git command history |
 | PostToolUse | Edit\|Write | `git.py change-tracker` | 5s | Log file changes for commits |
@@ -596,9 +596,9 @@ Hooks intercept Claude Code events at different lifecycle stages:
 
 | Category | Count | Model | Examples |
 |----------|-------|-------|----------|
-| Specialist | 7 | Opus | Go, Next.js, Python, refactor, OWASP, verify-fix, coordinator |
-| Reviewer | 13 | Sonnet | A11y, API, architecture, commit, database, docs, performance, security |
-| Ops | 6 | Sonnet | Build error, E2E, DevOps, scraper, PR generator, plan verifier |
+| Specialist | 18 | Opus | Go, Next.js, Python, TypeScript, Docker, testing, hook-dev, database, performance, CSS, migration, refactor, verify-fix, coordinator |
+| Reviewer | 13 | Sonnet | A11y, API, architecture, commit, database, docs, performance, security, secret-sentinel |
+| Ops | 10 | Sonnet | Build error, E2E, DevOps, scraper, PR gen, plan verifier, incident-responder, dependency-auditor, error-log-analyzer, readme-generator |
 | Git | 1 | Haiku | Lightweight git coordinator |
 
 ### Ralph Autonomous Development
@@ -678,8 +678,8 @@ Progress file: `.claude/ralph/progress.json`. Budget guard: `ralph.py loop 10 3 
 |-------|-----------|-------------|
 | 1 | `security-gate.py` | Validates Bash commands against allowlist |
 | 2 | `sandbox-boundary.py` | Prevents writes outside project boundaries |
-| 3 | `auto-allow.py` | Auto-approves safe Read/Edit operations |
-| 4 | `guards.py` | Plan integrity, Ralph protocol enforcement |
+| 3 | `auto-allow.py` | Auto-approves safe Read/Edit operations (CC bug #6850 workaround) |
+| 4 | `guards.py` | Plan integrity, Ralph protocol, bypass-permissions guard |
 | 5 | Push Gate | Agents must push before marking complete |
 | 6 | VERIFY+FIX | Post-implementation build/type/lint checks |
 | 7 | Budget Guard | Caps total spending per Ralph session |
@@ -948,6 +948,16 @@ Experimental feature enabling parallel Claude Code instances within a session.
 | `/init-repo` | Sonnet 4.5 | N/A | 200K | L2 | Fork, templates |
 | `/x` | Sonnet 4.5 | N/A | 200K | L2 | Fork, X/Twitter outreach |
 | `/x` agents | Sonnet 4.5 | N/A | 200K | L3 | Never Opus (continuous loops burn quota) |
+| `/nightshift` | Sonnet 4.5 | N/A | 200K | L2 | Fork, orchestration |
+| `/nightshift` agents | Sonnet 4.5 | N/A | 200K | L3 | Opus blocked, gemini via GSwarm |
+| `/sounds` | Opus 4.6 | Med | 200K | — | Main, file toggle (<1 turn) |
+| `/ask` | Sonnet 4.5 | N/A | 200K | L2 | Fork, multi-model query |
+| `/test` | Sonnet 4.5 | N/A | 200K | L2 | Fork, test generation |
+| `/docx` | Sonnet 4.5 | N/A | 200K | L2 | Fork, document processing |
+| `/docker` | Sonnet 4.5 | N/A | 200K | L2 | Fork, Dockerfile generation |
+| `/init-repo` | Sonnet 4.5 | N/A | 200K | L2 | Fork, repo setup |
+| `/chats` | Opus 4.6 | Med | 200K | — | Main (avoid fork summarization) |
+| `/help` | Haiku 4.5 | N/A | 200K | L2 | Fork, trivial |
 | VERIFY+FIX scoped | Opus 4.6 | Med | 200K | — | Per-task checks |
 | VERIFY+FIX full | Opus 4.6 | High | 200K | — | Final gate |
 | VERIFY+FIX plan | Opus 4.6 | Med | 200K | — | Plan checks |

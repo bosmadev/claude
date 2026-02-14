@@ -1332,7 +1332,7 @@ def bypass_permissions_guard() -> None:
     protected_branch_patterns = [
         r"\bmain\b",
         r"\bmaster\b",
-        r"\b\w+-dev\b",  # pulsona-dev, gswarm-dev, cwchat-dev etc.
+        r"\b\w+-dev(?:\s|$)",  # pulsona-dev, gswarm-dev, cwchat-dev etc. (not pulsona-dev-old)
     ]
     git_write_cmds = r"^git\s+(push|checkout|switch|merge|rebase|reset)\b"
     if re.match(git_write_cmds, command, re.IGNORECASE):

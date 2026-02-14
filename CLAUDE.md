@@ -11,8 +11,8 @@
 ├── agents/                     # Agent configuration files (42 files)
 ├── hooks/                      # Claude Code hook handlers (15 files)
 ├── output-styles/              # Response formatting styles
-├── scripts/                    # CLI utilities (28 scripts)
-├── skills/                     # Skill definitions (/commands, 21 skills)
+├── scripts/                    # CLI utilities (29 scripts)
+├── skills/                     # Skill definitions (/commands, 22 skills)
 ├── CLAUDE.md                   # Core patterns (this file)
 ├── settings.json               # Hook registrations
 └── README.md                   # Public-facing documentation
@@ -263,8 +263,18 @@ Token-efficient model assignment via permanent, native mechanisms:
 | `/launch`     | Fork    | Sonnet (L1) | Browser verification                           |
 | `/token`      | Fork    | Haiku       | Token status/refresh                           |
 | `/x`          | Fork    | Sonnet (L1) | X/Twitter outreach, auto-posting               |
+| `/nightshift` | Fork    | Sonnet (L1) | Autonomous maintenance, spawns Sonnet agents   |
+| `/sounds`     | No      | Opus (main) | File toggle, instant operation (<1 turn)        |
+| `/ask`        | Fork    | Sonnet (L1) | Multi-model query orchestration                |
+| `/test`       | Fork    | Sonnet (L1) | Test generation and coverage                   |
+| `/docx`       | Fork    | Sonnet (L1) | Document processing                            |
+| `/docker`     | Fork    | Sonnet (L1) | Dockerfile generation and audit                |
+| `/init-repo`  | Fork    | Sonnet (L1) | Repository setup templates                     |
+| `/rule`       | Fork    | Sonnet (L1) | Settings.json rule management                  |
+| `/chats`      | No      | Opus (main) | Session listing (avoid fork summarization bug) |
+| `/help`       | Fork    | Haiku       | Show help info, trivial operation              |
 
-See [README.md > Complete Model Routing Matrix](./README.md#complete-model-routing-matrix) for the full 37-row routing table covering all skills, agents, GH Actions, and agent configs.
+See [README.md > Complete Model Routing Matrix](./README.md#complete-model-routing-matrix) for the full 40-row routing table covering all skills, agents, GH Actions, and agent configs.
 
 ---
 
@@ -300,7 +310,7 @@ For all social media, comments, replies, and public-facing content:
 
 For complete skill command tables with all argument combinations, see [README.md &gt; Skills Reference](./README.md#skills-reference).
 
-21 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`, `/ask`, `/test`, `/docx`, `/docker`, `/nightshift`, `/sounds`
+22 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`, `/ask`, `/test`, `/docx`, `/docker`, `/nightshift`, `/sounds`, `/quality` (deprecated)
 
 ### /x Environment Variables
 
