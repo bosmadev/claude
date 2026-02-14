@@ -3,6 +3,23 @@
 
 ---
 
+## [![v1.9.2](https://img.shields.io/badge/v1.9.2-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/667145fea01e3725573abbd0db0ca16c2c5358f3) | Build 22
+
+docs: README/CLAUDE.md full audit — fix counts, ghost hooks, model routing, image styling
+
+- [x] README image: centered with rounded corners + dark border
+- [x] Fixed directory structure counts: agents 25→42, hooks 14→15, scripts 30+→29, skills 21→22
+- [x] Removed ghost JS hooks from registration table (claudeChangeStop.js, claudeChangePreToolUse.js)
+- [x] Added 8 missing skills to Complete Model Routing Matrix (/ask, /test, /docx, /docker, /init-repo, /chats, /help, /sounds)
+- [x] Added /nightshift and /sounds to CLAUDE.md Skills Model Assignment table
+- [x] Updated Agent Inventory: Specialist 7→18, Ops 6→10 (42 total)
+- [x] Added Build 21 CHANGELOG entry (v1.10.0) aggregating 9 commits
+- [x] guards.py: regex fix — \b\w+-dev\b → \b\w+-dev(?:\s|$) to prevent over-matching
+- [x] /sounds: reverted from fork to main context (fork would run in subagent, no audio output)
+
+
+---
+
 ## [![v1.10.0](https://img.shields.io/badge/v1.10.0-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/0c1b8bffba147b0d56766bedad88e1b8462841a2) | Build 21
 
 feat: nightshift autonomous development + 6 new skills + 14 specialist agents + sound system
