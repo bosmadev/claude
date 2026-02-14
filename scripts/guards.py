@@ -18,9 +18,10 @@ Usage:
   python3 guards.py skill-validator      # Skill validation checks
   python3 guards.py plan-rename-tracker  # Track plan file renames
   python3 guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
-  python3 guards.py quality-deprecation  # PostToolUse: Warn about /quality deprecation
-  python3 guards.py fs-guard             # PreToolUse: Block new file/folder creation and deletion
-  python3 guards.py x-post-check         # PostToolUse: Log /x skill Chrome MCP clicks
+  python3 guards.py quality-deprecation      # PostToolUse: Warn about /quality deprecation
+  python3 guards.py fs-guard                 # PreToolUse: Block new file/folder creation and deletion
+  python3 guards.py x-post-check             # PostToolUse: Log /x skill Chrome MCP clicks
+  python3 guards.py bypass-permissions-guard # PreToolUse: Validate commands in bypass mode
 """
 
 import json
@@ -1239,6 +1240,207 @@ def _fs_guard_bash(tool_input: dict) -> dict | None:
 
 
 # =============================================================================
+# Bypass-Permissions Guard (PreToolUse)
+# =============================================================================
+
+def bypass_permissions_guard() -> None:
+    """
+    PreToolUse guard for bypass-permissions mode (claude --dangerously-skip-permissions).
+
+    When bypass-permissions mode is active, this guard:
+    1. Allows safe commands: python x.py, git read-only, ls, cat, etc.
+    2. Blocks destructive commands, git write ops, and repo boundary violations
+    3. Reuses threat detection from security-gate.py
+
+    If bypass mode is NOT active, this is a no-op (pass through).
+    """
+    try:
+        hook_input = json.loads(sys.stdin.read())
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_name = hook_input.get("tool_name", "")
+    if tool_name != "Bash":
+        sys.exit(0)
+
+    # Check if bypass-permissions mode is active
+    permission_mode = hook_input.get("permission_mode", "")
+    bypass_env = os.environ.get("CLAUDE_BYPASS_PERMISSIONS", "")
+
+    is_bypass_mode = (
+        permission_mode == "bypassPermissions" or
+        bypass_env.lower() in ("true", "1", "yes")
+    )
+
+    if not is_bypass_mode:
+        # Not in bypass mode, pass through
+        sys.exit(0)
+
+    # In bypass mode — validate command
+    tool_input = hook_input.get("tool_input", {})
+    command = tool_input.get("command", "")
+
+    if not command:
+        sys.exit(0)
+
+    # Import threat detection from security-gate.py
+    sys.path.insert(0, str(_claude_home / "hooks"))
+    try:
+        from security_gate import detect_destructive_command, detect_dangerous_git
+    except ImportError:
+        # If import fails, be conservative and block
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": "Bypass-permissions guard: security-gate.py not available"
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
+
+    # Check for destructive commands
+    threat = detect_destructive_command(command)
+    if threat:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": f"🚫 Bypass-permissions guard BLOCKED: {threat['details']}"
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
+
+    # Check for dangerous git commands
+    threat = detect_dangerous_git(command)
+    if threat:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": f"🚫 Bypass-permissions guard BLOCKED: {threat['details']}"
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
+
+    # Allowlist patterns (safe commands in bypass mode)
+    allowlist_patterns = [
+        # Python x.py commands
+        r"^python\s+x\.py\b",
+        r"^python\s+skills/x/scripts/x\.py\b",
+        r"^python3\s+x\.py\b",
+        r"^python3\s+skills/x/scripts/x\.py\b",
+
+        # Git read-only
+        r"^git\s+status\b",
+        r"^git\s+log\b",
+        r"^git\s+diff\b",
+        r"^git\s+show\b",
+        r"^git\s+branch\s+(?!-D)",  # git branch (list), not -D (delete)
+        r"^git\s+remote\b",
+        r"^git\s+fetch\b",
+
+        # File system read-only
+        r"^ls\b",
+        r"^cat\b",
+        r"^head\b",
+        r"^tail\b",
+        r"^grep\b",
+        r"^find\b",
+        r"^tree\b",
+        r"^pwd\b",
+        r"^which\b",
+        r"^file\b",
+        r"^wc\b",
+        r"^du\b",
+        r"^stat\b",
+        r"^readlink\b",
+        r"^realpath\b",
+
+        # Encoding/text processing (read-only)
+        r"^base64\b",
+        r"^jq\b",
+        r"^xxd\b",
+        r"^od\b",
+
+        # Process inspection (read-only)
+        r"^ps\b",
+        r"^pgrep\b",
+        r"^top\b",
+        r"^htop\b",
+    ]
+
+    # Check if command matches allowlist
+    for pattern in allowlist_patterns:
+        if re.match(pattern, command, re.IGNORECASE):
+            # Allowed command, pass through
+            sys.exit(0)
+
+    # Check for git write operations (block these explicitly)
+    git_write_patterns = [
+        r"^git\s+add\b",
+        r"^git\s+commit\b",
+        r"^git\s+push\b",
+        r"^git\s+pull\b",
+        r"^git\s+merge\b",
+        r"^git\s+rebase\b",
+        r"^git\s+checkout\b",
+        r"^git\s+reset\b",
+        r"^git\s+clean\b",
+        r"^git\s+stash\b",
+        r"^git\s+tag\b",
+        r"^git\s+branch\s+-D",
+    ]
+
+    for pattern in git_write_patterns:
+        if re.match(pattern, command, re.IGNORECASE):
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "🚫 Bypass-permissions guard BLOCKED: Git write operation not allowed in bypass mode"
+                }
+            }
+            print(json.dumps(output))
+            sys.exit(0)
+
+    # Check for repo boundary violations (path traversal)
+    cwd = hook_input.get("cwd", ".")
+    try:
+        repo_root = Path(cwd).resolve()
+
+        # Extract file paths from command (simple heuristic)
+        # Look for paths starting with ../ or absolute paths
+        if "../" in command or re.search(r"\s/[a-zA-Z]", command):
+            # Potential path traversal, block it
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "🚫 Bypass-permissions guard BLOCKED: Repo boundary violation (path traversal detected)"
+                }
+            }
+            print(json.dumps(output))
+            sys.exit(0)
+    except (OSError, ValueError):
+        pass
+
+    # Command not in allowlist and not explicitly blocked
+    # Be conservative: block unknown commands in bypass mode
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": f"🚫 Bypass-permissions guard BLOCKED: Command not in allowlist\n\nAllowed: python x.py, git read-only, ls, cat, head, tail, etc.\nBlocked: All other commands in bypass mode\n\nCommand: {command[:200]}"
+        }
+    }
+    print(json.dumps(output))
+    sys.exit(0)
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 
@@ -1291,6 +1493,8 @@ def main() -> None:
         fs_guard()
     elif mode == "x-post-check":
         x_post_check()
+    elif mode == "bypass-permissions-guard":
+        bypass_permissions_guard()
     else:
         # Unknown mode - exit gracefully to avoid hook errors
         sys.exit(0)

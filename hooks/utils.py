@@ -766,9 +766,10 @@ def do_model_capture() -> None:
 
     parsed = parse_model_id(model_id)
 
-    # Write to ~/.claude/.model-info using atomic write
-    model_info_path = Path.home() / ".claude" / ".model-info"
-    _txn_atomic_write_json(model_info_path, parsed, fsync=True)
+    # Only write .model-info for main sessions (not subagents/teammates)
+    if not os.environ.get("CLAUDE_CODE_TASK_LIST_ID") and not os.environ.get("CLAUDE_CODE_SUBAGENT"):
+        model_info_path = Path.home() / ".claude" / ".model-info"
+        _txn_atomic_write_json(model_info_path, parsed, fsync=True)
 
     # Extract session_id and write to ~/.claude/.session-info
     session_id = data.get("session_id", "")

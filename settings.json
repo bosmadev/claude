@@ -5,7 +5,8 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_TMPDIR": "C:/Users/Dennis/AppData/Local/Temp/claude-tmp",
-    "PYTHONPYCACHEPREFIX": "C:/Users/Dennis/.claude/.cache/pycache"
+    "PYTHONPYCACHEPREFIX": "C:/Users/Dennis/.claude/.cache/pycache",
+    "ANTHROPIC_BASE_URL": "http://localhost:8787"
   },
   "attribution": {
     "commit": "",
@@ -320,6 +321,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py session-stop",
+            "timeout": 5,
+            "async": true
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -347,7 +358,8 @@
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/memory-unify.py",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           }
         ]
       },
@@ -366,6 +378,16 @@
             "type": "command",
             "command": "python %USERPROFILE%/.claude/scripts/fix-chrome-native-host.py",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py session-start",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
@@ -388,13 +410,19 @@
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/auto-allow.py",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/scripts/guards.py bypass-permissions-guard",
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/guards.py fs-guard",
@@ -428,7 +456,8 @@
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/auto-allow.py",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           },
           {
             "type": "command",
@@ -455,7 +484,14 @@
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/git.py command-history",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
+          },
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/git.py post-commit-metadata",
+            "timeout": 5,
+            "async": true
           },
           {
             "type": "command",
@@ -475,27 +511,32 @@
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/git.py change-tracker",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           },
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/git.py frontend-verification",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           },
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/scripts/guards.py guardian",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           },
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/scripts/guards.py plan-write-check",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           },
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/scripts/guards.py insights-reminder",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           }
         ]
       },
@@ -551,6 +592,16 @@
             "type": "command",
             "command": "python %USERPROFILE%/.claude/scripts/guards.py x-post-check",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py post-tool",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
@@ -626,6 +677,16 @@
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/utils.py notify",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python %USERPROFILE%/.claude/hooks/sounds.py notification",
+            "timeout": 5,
+            "async": true
           }
         ]
       }

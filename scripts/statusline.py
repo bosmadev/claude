@@ -26,6 +26,7 @@ from pathlib import Path
 # Import transaction primitives for locked reads
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hooks.transaction import locked_read_json, LockTimeoutError
+from hooks.utils import parse_model_id
 
 # ---------------------------------------------------------------------------
 # Timeout guard — kill process if stdin hangs (Windows-safe)
@@ -71,6 +72,28 @@ BUILD_CRITICAL= "\033[38;2;251;146;60m"   # #fb923c Orange - multiple struggles 
 
 
 CACHE_DIR = Path.home() / ".claude"
+
+
+def _format_model_mix(mix: dict) -> str:
+    """Format model mix counts as compact string like ':9o1h' or ':4o5s1h'.
+
+    Always shows counts when any agents exist (not just when mixed).
+    Abbreviations: o=opus, s=sonnet, h=haiku.
+    """
+    opus = mix.get("opus", 0)
+    sonnet = mix.get("sonnet", 0)
+    haiku = mix.get("haiku", 0)
+    total = opus + sonnet + haiku
+    if total == 0:
+        return ""
+    parts = []
+    if opus > 0:
+        parts.append(f"{LIGHT_AMBER}{opus}{RESET}{CYAN}o{RESET}")
+    if sonnet > 0:
+        parts.append(f"{LIGHT_AMBER}{sonnet}{RESET}{CYAN}s{RESET}")
+    if haiku > 0:
+        parts.append(f"{LIGHT_AMBER}{haiku}{RESET}{CYAN}h{RESET}")
+    return f"{CYAN}:{RESET}{''.join(parts)}"
 
 # Style display mapping (Element 7)
 STYLE_DISPLAY = {"Engineer": "⚙", "Default": "·"}
@@ -153,12 +176,16 @@ def _read_team_config(session_id: str) -> dict | None:
                     if not isinstance(members, list):
                         members = []
 
-                    # Compute model mix from member models
-                    model_counts = {"opus": 0, "sonnet": 0}
+                    # Compute model mix from member models (exclude team-lead)
+                    model_counts = {"opus": 0, "sonnet": 0, "haiku": 0}
                     for member in members:
-                        model = member.get("model", "opus").lower()
+                        if member.get("agentType") == "team-lead":
+                            continue  # Don't count team-lead in model mix
+                        model = (member.get("model") or "opus").lower()
                         if "sonnet" in model:
                             model_counts["sonnet"] += 1
+                        elif "haiku" in model:
+                            model_counts["haiku"] += 1
                         else:
                             model_counts["opus"] += 1
 
@@ -710,14 +737,13 @@ def main() -> None:
             if dn:
                 model = _short_model(dn)
             else:
-                # Try model ID: claude-opus-4-6 → extract family+version
+                # Try model ID: parse dynamically instead of hardcoding versions
                 mid = model_val.get("id", "")
-                if "opus" in mid.lower():
-                    model = "O4.6"
-                elif "sonnet" in mid.lower():
-                    model = "S4.5"
-                elif "haiku" in mid.lower():
-                    model = "H4.5"
+                if mid:
+                    parsed = parse_model_id(mid)
+                    display = parsed.get("display", "")
+                    if display and display != "Claude":
+                        model = _short_model(display)
         elif model_val:
             model = _short_model(str(model_val))
 
@@ -924,15 +950,8 @@ def main() -> None:
 
         agent_block = f"{CYAN}{'·'.join(parts)}{RESET}"
 
-        # Model mix suffix (Element 3)
-        mix = ralph_progress.get("model_mix", {})
-        opus_count = mix.get("opus", 0)
-        sonnet_count = mix.get("sonnet", 0)
-
-        if opus_count > 0 and sonnet_count > 0:
-            model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}o{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}s{RESET}"
-        else:
-            model_mix = ""
+        # Model mix suffix (Element 3) — always show when agents exist
+        model_mix = _format_model_mix(ralph_progress.get("model_mix", {}))
 
         # Struggle alert (Element 2)
         struggle = ralph_progress.get("struggling", 0)
@@ -960,15 +979,8 @@ def main() -> None:
             active = min(active, total)  # Clamp
             agent_block = f"{BRIGHT_WHITE}{active}{RESET}{CYAN}/{total}{RESET}"
             
-            # Model mix from team config
-            mix = team_data.get("model_mix", {})
-            opus_count = mix.get("opus", 0)
-            sonnet_count = mix.get("sonnet", 0)
-            
-            if opus_count > 0 and sonnet_count > 0:
-                model_mix = f"{CYAN}:{RESET}{LIGHT_AMBER}{opus_count}{RESET}{CYAN}o{RESET}{LIGHT_AMBER}{sonnet_count}{RESET}{CYAN}s{RESET}"
-            else:
-                model_mix = ""
+            # Model mix from team config — always show when agents exist
+            model_mix = _format_model_mix(team_data.get("model_mix", {}))
             
             # Build intelligence indicator
             build_intel = read_build_intelligence(cwd)

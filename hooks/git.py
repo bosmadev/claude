@@ -6,11 +6,15 @@ This module consolidates git-related hooks into a single file with
 mode dispatch based on command-line argument.
 
 Usage:
-  python3 git.py commit-review      # PreToolUse: Review git commit commands
-  python3 git.py change-tracker     # PostToolUse: Track file changes
-  python3 git.py command-history    # PostToolUse: Track bash commands
-  python3 git.py env-check          # PreToolUse: Check .env encryption
-  python3 git.py pre-commit-checks  # PreToolUse: Combined commit-review + env-check
+  python3 git.py commit-review        # PreToolUse: Review git commit commands
+  python3 git.py change-tracker       # PostToolUse: Track file changes
+  python3 git.py command-history      # PostToolUse: Track bash commands
+  python3 git.py env-check            # PreToolUse: Check .env encryption
+  python3 git.py pre-commit-checks    # PreToolUse: Combined commit-review + env-check
+  python3 git.py post-commit-metadata # PostToolUse: Store AI metadata in git notes
+  python3 git.py ai-log               # CLI: Show AI attribution log
+  python3 git.py ai-stats             # CLI: Show AI authorship statistics
+  python3 git.py ai-blame <file>      # CLI: Show per-line AI attribution
 """
 
 import json
@@ -854,6 +858,314 @@ def command_history() -> None:
 
 
 # =============================================================================
+# Git AI Standard v3.0 - AI Authorship Tracking
+# =============================================================================
+
+def post_commit_metadata() -> None:
+    """
+    PostToolUse hook for git commit - stores AI authorship metadata.
+
+    Detects successful git commit commands and stores AI metadata in git notes.
+    """
+    try:
+        hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
+        _cancel_timeout()
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_name = hook_input.get("tool_name", "")
+    if tool_name != "Bash":
+        sys.exit(0)
+
+    tool_input = hook_input.get("tool_input", {})
+    command = tool_input.get("command", "")
+
+    # Only process git commit commands
+    if not re.match(r"^git\s+commit\b", command):
+        sys.exit(0)
+
+    # Check if commit succeeded by checking tool_result
+    tool_result = hook_input.get("tool_result", {})
+    exit_code = tool_result.get("exitCode", -1)
+
+    if exit_code != 0:
+        # Commit failed, skip metadata storage
+        sys.exit(0)
+
+    # Get the latest commit hash
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            sys.exit(0)
+        commit_hash = result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        sys.exit(0)
+
+    # Get agent name from environment (Ralph agents set this)
+    agent_name = os.environ.get("CLAUDE_AGENT_NAME", "main")
+
+    # Get model from environment
+    model = os.environ.get("CLAUDE_CODE_MODEL", "unknown")
+
+    # Store metadata
+    store_ai_metadata(commit_hash, agent_name, model)
+
+    sys.exit(0)
+
+
+def store_ai_metadata(commit_hash: str, agent_name: str | None = None, model: str | None = None) -> None:
+    """
+    Store AI authorship metadata in git notes (refs/notes/ai).
+
+    Implements Git AI Standard v3.0 metadata tracking.
+
+    Args:
+        commit_hash: SHA of the commit to annotate
+        agent_name: Name of the AI agent (defaults to "main")
+        model: Model ID (defaults to CLAUDE_CODE_MODEL env var)
+    """
+    import subprocess
+
+    # Build metadata object
+    metadata = json.dumps({
+        "tool": "claude-code",
+        "model": model or os.environ.get("CLAUDE_CODE_MODEL", "unknown"),
+        "agent": agent_name or "main",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "session": os.environ.get("CLAUDE_CODE_SESSION_ID", "unknown")
+    })
+
+    try:
+        # Add git note to commit
+        subprocess.run(
+            ["git", "notes", "--ref=ai", "add", "-f", "-m", metadata, commit_hash],
+            capture_output=True,
+            timeout=5,
+            check=False
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        # Silent fail - don't block commits if git notes fail
+        pass
+
+
+def cmd_ai_log() -> None:
+    """
+    Show AI attribution per commit (git ai-log subcommand).
+
+    Format:
+        a1b2c3d [claude-code/opus] Agent: oauth-impl-1 | 2026-02-14
+        e5f6g7h [human] No AI metadata
+    """
+    try:
+        # Get commits with their SHAs
+        result = subprocess.run(
+            ["git", "log", "--pretty=format:%h", "-n", "20"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            print("Error: Not a git repository or git command failed.")
+            return
+
+        commits = result.stdout.strip().split("\n")
+        if not commits or not commits[0]:
+            print("No commits found.")
+            return
+
+        print("AI Authorship Log (last 20 commits):")
+        print("-" * 70)
+
+        for commit in commits:
+            # Get AI metadata from git notes
+            note_result = subprocess.run(
+                ["git", "notes", "--ref=ai", "show", commit],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if note_result.returncode == 0 and note_result.stdout.strip():
+                # Parse AI metadata
+                try:
+                    metadata = json.loads(note_result.stdout.strip())
+                    tool = metadata.get("tool", "unknown")
+                    model = metadata.get("model", "unknown")
+                    agent = metadata.get("agent", "unknown")
+                    timestamp = metadata.get("timestamp", "")[:10]  # YYYY-MM-DD
+
+                    print(f"{commit} [{tool}/{model}] Agent: {agent} | {timestamp}")
+                except json.JSONDecodeError:
+                    print(f"{commit} [ai] Invalid metadata")
+            else:
+                print(f"{commit} [human] No AI metadata")
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        print(f"Error: {e}")
+
+
+def cmd_ai_stats() -> None:
+    """
+    Show AI attribution statistics (git ai-stats subcommand).
+
+    Summary: X commits by AI, Y by human, Z mixed
+    """
+    try:
+        # Get all commits in current branch
+        result = subprocess.run(
+            ["git", "log", "--pretty=format:%h"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            print("Error: Not a git repository or git command failed.")
+            return
+
+        commits = result.stdout.strip().split("\n")
+        if not commits or not commits[0]:
+            print("No commits found.")
+            return
+
+        ai_commits = 0
+        human_commits = 0
+        tools_used = {}
+        models_used = {}
+        agents_used = {}
+
+        for commit in commits:
+            # Check for AI metadata
+            note_result = subprocess.run(
+                ["git", "notes", "--ref=ai", "show", commit],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if note_result.returncode == 0 and note_result.stdout.strip():
+                ai_commits += 1
+                try:
+                    metadata = json.loads(note_result.stdout.strip())
+                    tool = metadata.get("tool", "unknown")
+                    model = metadata.get("model", "unknown")
+                    agent = metadata.get("agent", "unknown")
+
+                    tools_used[tool] = tools_used.get(tool, 0) + 1
+                    models_used[model] = models_used.get(model, 0) + 1
+                    agents_used[agent] = agents_used.get(agent, 0) + 1
+                except json.JSONDecodeError:
+                    pass
+            else:
+                human_commits += 1
+
+        total = ai_commits + human_commits
+        ai_percent = (ai_commits / total * 100) if total > 0 else 0
+
+        print("AI Authorship Statistics:")
+        print("-" * 50)
+        print(f"Total commits:    {total}")
+        print(f"AI commits:       {ai_commits} ({ai_percent:.1f}%)")
+        print(f"Human commits:    {human_commits} ({100 - ai_percent:.1f}%)")
+        print()
+
+        if tools_used:
+            print("Tools used:")
+            for tool, count in sorted(tools_used.items(), key=lambda x: -x[1]):
+                print(f"  {tool}: {count}")
+            print()
+
+        if models_used:
+            print("Models used:")
+            for model, count in sorted(models_used.items(), key=lambda x: -x[1]):
+                print(f"  {model}: {count}")
+            print()
+
+        if agents_used:
+            print("Agents used:")
+            for agent, count in sorted(agents_used.items(), key=lambda x: -x[1]):
+                print(f"  {agent}: {count}")
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        print(f"Error: {e}")
+
+
+def cmd_ai_blame(file_path: str) -> None:
+    """
+    Show per-line AI attribution for a file (git ai-blame <file>).
+
+    Args:
+        file_path: Path to file to blame
+    """
+    if not file_path:
+        print("Usage: python hooks/git.py ai-blame <file>")
+        return
+
+    try:
+        # Get git blame output with commit hashes
+        result = subprocess.run(
+            ["git", "blame", "-s", file_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            print(f"Error: Could not blame file {file_path}")
+            return
+
+        lines = result.stdout.strip().split("\n")
+        if not lines:
+            print("No blame data.")
+            return
+
+        print(f"AI Blame for {file_path}:")
+        print("-" * 70)
+
+        # Cache for commit metadata lookups
+        commit_cache = {}
+
+        for line in lines:
+            # Parse git blame output: "hash line) content"
+            match = re.match(r"^(\w+)\s+(\d+)\)", line)
+            if not match:
+                print(line)  # Print as-is if parse fails
+                continue
+
+            commit_hash = match.group(1)
+
+            # Check cache first
+            if commit_hash not in commit_cache:
+                # Get AI metadata from git notes
+                note_result = subprocess.run(
+                    ["git", "notes", "--ref=ai", "show", commit_hash],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if note_result.returncode == 0 and note_result.stdout.strip():
+                    try:
+                        metadata = json.loads(note_result.stdout.strip())
+                        agent = metadata.get("agent", "unknown")
+                        commit_cache[commit_hash] = f"[ai:{agent}]"
+                    except json.JSONDecodeError:
+                        commit_cache[commit_hash] = "[ai:invalid]"
+                else:
+                    commit_cache[commit_hash] = "[human]"
+
+            # Print line with attribution
+            attribution = commit_cache[commit_hash]
+            print(f"{commit_hash} {attribution:15} {line[match.end():]}")
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        print(f"Error: {e}")
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 
@@ -973,6 +1285,8 @@ def main() -> None:
         frontend_verification_reminder()
     elif mode == "env-check":
         check_env_encryption()
+    elif mode == "post-commit-metadata":
+        post_commit_metadata()
     elif mode == "pre-commit-checks":
         # Combined mode: runs both commit-review and env-check in one process.
         # Early-exits for non-git-commit commands before any heavy logic.
@@ -991,6 +1305,17 @@ def main() -> None:
         check_env_encryption()
         sys.stdin = io.StringIO(raw)
         commit_review()
+    elif mode == "ai-log":
+        # Git AI Standard v3.0 subcommands
+        cmd_ai_log()
+    elif mode == "ai-stats":
+        cmd_ai_stats()
+    elif mode == "ai-blame":
+        # ai-blame requires file path argument
+        if len(sys.argv) < 3:
+            print("Usage: python hooks/git.py ai-blame <file>")
+            sys.exit(1)
+        cmd_ai_blame(sys.argv[2])
     else:
         # Unknown mode - exit gracefully to avoid hook errors
         sys.exit(0)
