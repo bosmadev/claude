@@ -37,7 +37,7 @@ skills/x/data/
 skills/*/.claude/
 ${TMPDIR}/
 
-# Temp files (any location)
+# Temp files (any location — ALL scratch/notes/install artifacts)
 temp-*
 temp_*
 .tmp-*
@@ -45,6 +45,9 @@ temp_*
 *.temp
 test-*.py
 scratch-*
+*-install-*
+*-notes.md
+nightshift/
 ralph/
 
 # Reply/signal files (from /x skill)

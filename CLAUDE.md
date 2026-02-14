@@ -18,15 +18,18 @@
 └── README.md                   # Public-facing documentation
 ```
 
-## Pending Files Convention
+## Temporary & Pending Files Convention
 
-All temporary pending files MUST be created in `{repo}/.claude/` directory, never in repo root:
+**NEVER create scratch, notes, install, or temporary files in any repo root or `~/.claude/` root.** All temp files go to:
 
-| File              | Correct Location                     | Wrong Location               |
-| ----------------- | ------------------------------------ | ---------------------------- |
-| pending-commit.md | `{repo}/.claude/pending-commit.md` | `{repo}/pending-commit.md` |
-| pending-pr.md     | `{repo}/.claude/pending-pr.md`     | `{repo}/pending-pr.md`     |
-| commit.md         | `{repo}/.claude/commit.md`         | Already correct              |
+| File Type | Location | Example |
+|-----------|----------|---------|
+| Pending commit/PR | `{repo}/.claude/` | `{repo}/.claude/pending-commit.md` |
+| Scratch/notes/research | `%LOCALAPPDATA%\Temp\claude-tmp\` | `C:\Users\Dennis\AppData\Local\Temp\claude-tmp\research.md` |
+| Install notes/logs | `%LOCALAPPDATA%\Temp\claude-tmp\` | Never in repo |
+| Script temp output | `%LOCALAPPDATA%\Temp\claude-tmp\` | Never in repo |
+
+**Hard rule:** If a file is not committed infrastructure (hooks, skills, agents, scripts), it does NOT belong in the repo. Use the system temp dir or `{repo}/.claude/` for pending workflow files.
 
 This keeps repo root clean and prevents accidental commits of temporary files.
 
