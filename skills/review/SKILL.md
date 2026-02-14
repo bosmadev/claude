@@ -88,18 +88,18 @@ Scope: git diff main...HEAD --name-only (all changes since branch creation)
 
 ## Review Aspects (ALL Run by Default)
 
-Review agents use criteria from `agents/review-coordinator.md` and specialized agent configs (`security-reviewer.md`, `a11y-reviewer.md`).
+Review agents use criteria from `agents/review-coordinator.md` and specialized agent configs (`security-auditor.md`, `a11y-reviewer.md`).
 
 | Aspect | What It Checks | Agent Reference |
 |--------|---------------|----------------|
 | **Code Quality** | Bugs, logic errors, patterns, architecture | `review-coordinator` |
-| **Security (OWASP)** | OWASP Top 10, injection, auth, secrets | `security-reviewer` |
+| **Security (OWASP)** | OWASP Top 10, injection, auth, secrets | `security-auditor` |
 | **Standards** | Biome lint, TypeScript types, React patterns | Pre-review quality check |
 | **Documentation** | Missing docs, incorrect comments | `review-coordinator` |
 | **Design & A11y** | WCAG AAA, UI/UX patterns, consistency | `a11y-reviewer` |
 | **Architecture** | SOLID, coupling, layer violations | `architecture-reviewer` |
 | **Tests** | Missing coverage, test quality | `review-coordinator` |
-| **Performance** | Bottlenecks, memory leaks, inefficiencies | `performance-reviewer` |
+| **Performance** | Bottlenecks, memory leaks, inefficiencies | `performance-auditor` |
 
 **Review agents reference specialized agent configs for domain-specific criteria but adapt to working in parallel batches.**
 

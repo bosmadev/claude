@@ -1,6 +1,7 @@
 ---
 name: start
 description: "ULTRATHINK mode with Ralph auto-loop. Default: 3 agents, 3 iterations, Opus."
+when_to_use: Use for complex multi-step implementations requiring deep analysis, planning, and parallel autonomous agent teams.
 argument-hint: "[N] [M] [opus|sonnet|sonnet all] [task | noreview | review [rN] [rM] | import <source> | help]"
 user-invocable: true
 ---
@@ -891,8 +892,9 @@ IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE
 - Send `shutdown_request` to ALL implementation agents (free resources)
 - Spawn verify-fix agents via Task() with `team_name="ralph-impl"`:
   - Count: 3 agents (default) or `postReviewAgents` from args
+  - **Model: Always `model="sonnet"`** — verify-fix is testing/validation, not implementation. Saves ~80% cost vs Opus.
   - Agent prompt: Use `agents/verify-fix.md` protocol
-  - Tasks: build check, type check, lint, dead code, symbol integrity
+  - Tasks: build check, type check, lint, dead code, symbol integrity, **plan compliance**, **script execution test**, **integration verification**, **design requirements check**
 - Monitor until all verify-fix tasks complete
 - If issues found and auto-fixed: git-coordinator commits fixes
 - If issues found and NOT fixable: report to team lead via SendMessage
@@ -905,6 +907,7 @@ IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE
 - Spawn review agents via Task() with `team_name="ralph-impl"`:
   - Count: 5 agents (default) or `postReviewAgents` from args
   - Iterations: 2 (default) or `postReviewIterations` from args
+  - **Model: Always `model="sonnet"`** — review is read-only analysis, not implementation. Saves ~80% cost vs Opus.
   - Agent prompt: Use `skills/review/SKILL.md` protocol
   - Set `disallowedTools: [Write, Edit, MultiEdit]` — read-only review
 - Review agents leave TODO-P1/P2/P3 comments and report to `.claude/review-agents.md`

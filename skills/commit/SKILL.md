@@ -1,6 +1,7 @@
 ---
 name: commit
 description: Two-phase commit workflow - generate pending-commit.md for review, then confirm to execute. Uses scope-prefix style with auto-staging and tracked changes.
+when_to_use: Use when ready to commit staged changes with auto-generated commit message following scope-prefix conventions.
 user-invocable: true
 context: fork
 argument-hint: "[confirm|abort|show|clear|log|summary|help]"

@@ -8,11 +8,11 @@
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   ├── ISSUE_TEMPLATE/
 │   └── workflows/claude.yml
-├── agents/                     # Agent configuration files (25 files)
-├── hooks/                      # Claude Code hook handlers (14 files)
+├── agents/                     # Agent configuration files (42 files)
+├── hooks/                      # Claude Code hook handlers (15 files)
 ├── output-styles/              # Response formatting styles
-├── scripts/                    # CLI utilities (30 scripts)
-├── skills/                     # Skill definitions (/commands, 17 skills)
+├── scripts/                    # CLI utilities (28 scripts)
+├── skills/                     # Skill definitions (/commands, 21 skills)
 ├── CLAUDE.md                   # Core patterns (this file)
 ├── settings.json               # Hook registrations
 └── README.md                   # Public-facing documentation
@@ -297,7 +297,7 @@ For all social media, comments, replies, and public-facing content:
 
 For complete skill command tables with all argument combinations, see [README.md &gt; Skills Reference](./README.md#skills-reference).
 
-16 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`
+21 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`, `/ask`, `/test`, `/docx`, `/docker`, `/nightshift`, `/sounds`
 
 ### /x Environment Variables
 

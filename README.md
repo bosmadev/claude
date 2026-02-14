@@ -8,10 +8,10 @@ Production [Claude Code](https://docs.anthropic.com/en/docs/claude-code) configu
 
 | Category | Count | Highlights |
 |----------|-------|------------|
-| Skills | 17 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/repotodo`, `/token`, and more |
-| Agents | 25 | Specialist (Opus), reviewer (Sonnet), ops (Sonnet), git coordinator (Haiku) |
-| Hooks | 14 | Security gate, auto-allow, change tracking, Ralph orchestration, ACID state |
-| Scripts | 30+ | Token management, Chrome MCP fix, statusline, session repair, PR aggregation |
+| Skills | 21 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/nightshift`, `/docx`, `/docker`, `/ask`, `/test`, `/sounds` |
+| Agents | 42 | Specialist (Opus), reviewer (Sonnet), ops (Sonnet), git coordinator (Haiku) |
+| Hooks | 15 | Security gate, auto-allow, change tracking, Ralph orchestration, ACID state, sound effects |
+| Scripts | 28 | Token management, Chrome MCP fix, statusline, session repair, PR aggregation |
 | Safety | 7 layers | Push gate, VERIFY+FIX, security hooks, budget guard, ACID transactions |
 | Model Routing | 3 layers | Global default, skill fork, per-agent override for cost optimization |
 
@@ -179,6 +179,18 @@ TODO format: `TODO-P1:`, `TODO-P2:`, `TODO-P3:`, or plain `TODO:`
 | `/token sync all` | Push token to all detected repos |
 | `/token help` | Show usage |
 
+### /test - Unified Test Framework
+
+| Command | Description |
+|---------|-------------|
+| `/test generate <file>` | Generate test file (auto-detect vitest/pytest) |
+| `/test coverage` | Run coverage report |
+| `/test mutate <file>` | Mutation testing preview |
+| `/test all` | Run all test suites (vitest → pytest) |
+| `/test help` | Show usage |
+
+Auto-detects framework based on file extension: `.ts/.tsx` → vitest, `.py` → pytest.
+
 ### /rule - Behavior Rule Management
 
 | Command | Description |
@@ -197,6 +209,67 @@ Manages Claude Code behavior rules via direct `settings.json` modifications. Tra
 | `/chats` or `/chats list` | List recent sessions with metadata |
 | `/chats clean` | Clean orphaned session artifacts |
 | `/chats help` | Show usage |
+
+### /docx - Document Processing
+
+| Command | Description |
+|---------|-------------|
+| `/docx read <file>` | Extract text/markdown from DOCX/PDF/XLSX |
+| `/docx write <file>` | Create DOCX from markdown content |
+| `/docx convert <input> <output>` | Convert between formats (xlsx→csv, docx→txt, pdf→txt) |
+| `/docx template <template> <data.json>` | Fill DOCX template with JSON data |
+| `/docx help` | Show usage |
+
+Read, write, convert, and template-fill Word, PDF, and Excel documents. Auto-detects format by extension. Requires `python-docx`, `openpyxl`, `pypdf` packages.
+
+### /docker - Docker Automation
+
+| Command | Description |
+|---------|-------------|
+| `/docker generate <type>` | Generate production Dockerfile (nextjs\|python\|go\|node\|rust\|java) |
+| `/docker compose <services>` | Generate docker-compose.yml (postgres\|redis\|mongo\|nginx\|mysql) |
+| `/docker optimize <dockerfile>` | Analyze and suggest optimizations (layer count, multi-stage, cache) |
+| `/docker security <dockerfile>` | Security audit (root user, secrets, base image pinning) |
+| `/docker help` | Show usage |
+
+Generate Dockerfiles with multi-stage builds, minimal base images, and non-root users. Create compose stacks with health checks and persistent volumes.
+
+### /ask - Multi-Model Query System
+
+| Command | Description |
+|---------|-------------|
+| `/ask "question"` | Single model query (gemini-2.0-flash) |
+| `/ask "question" --models gpt-4o` | Query specific model |
+| `/ask "question" --mode consensus --models gemini-2.0-flash,gpt-4o` | Multi-model consensus |
+| `/ask "question" --mode codereview --models gemini-2.0-flash,gpt-4o` | Multi-model code review |
+| `/ask "question" --timeout 60` | Custom timeout (seconds) |
+| `/ask "question" --format json` | JSON output (also: table, markdown) |
+| `/ask help` | Show usage |
+
+Query multiple AI models in parallel for comparison, consensus, or code review. Supports:
+- **GSwarm/Gemini**: `gemini-2.0-flash`, `gemini-2.0-flash-thinking`, `gemini-1.5-pro` (via http://localhost:4000)
+- **OpenAI**: `gpt-4o`, `gpt-4o-mini`, `o3-mini` (requires `OPENAI_API_KEY`)
+- **Ollama**: `llama3.2`, `codellama`, `deepseek-coder` (via http://localhost:11434)
+
+**Modes:**
+- `chat` — Single model query (default)
+- `consensus` — All models answer independently, side-by-side comparison
+- `codereview` — Send code context to all models, aggregate findings
+
+### /nightshift - Autonomous Maintenance
+
+| Command | Description |
+|---------|-------------|
+| `/nightshift init <repo>` | Create night-dev branch + worktree |
+| `/nightshift start <repo> [task]` | Spawn autonomous agents in night-dev worktree |
+| `/nightshift start <repo> [task] --agents N` | N parallel agents (default: 3) |
+| `/nightshift start <repo> [task] --budget $X` | Budget cap in USD (default: $5.00) |
+| `/nightshift start <repo> [task] --model opus\|sonnet` | Agent model (default: sonnet) |
+| `/nightshift stop` | Send shutdown to all active agents |
+| `/nightshift status` | Show active agents and progress |
+| `/nightshift help` | Show usage |
+
+Nighttime development cycles with scout agents that research online, implement features, and submit PRs to dev branches. Supports pulsona and gswarm repos initially.
 
 ### /x - X/Twitter Outreach
 
@@ -242,6 +315,24 @@ Automated X/Twitter outreach with four modes:
 **Quality guard:** `sanitize_reply_text()` runs before every post — strips non-ASCII encoding artifacts, blocks banned words/phrases, validates formatting (no ALL CAPS, no hashtag spam >2, no excessive punctuation).
 
 **Security audit:** `x-post-check` hook logs all Chrome MCP clicks during `/x` sessions to `~/.claude/security/x-clicks.log`. Activated via `.claude/.x-session` flag file.
+
+### /sounds - Audio Feedback
+
+| Command | Description |
+|---------|-------------|
+| `/sounds on` | Enable audio feedback (creates marker file) |
+| `/sounds off` | Disable audio feedback (removes marker) |
+| `/sounds status` or `/sounds` | Show current audio state |
+
+Control audio feedback for Claude Code events:
+- **Session Start** — 800Hz, 200ms
+- **Tool Success** — 1000Hz, 100ms
+- **Tool Failure** — 400Hz, 300ms
+- **Permission Prompts** — 600Hz, 150ms (×2)
+- **Git Commit** — 1200Hz, 150ms
+- **Session Stop** — 500Hz, 400ms
+
+Per-session toggle (does not persist across sessions). Audio never plays for subagents.
 
 ### /help - Help & Documentation
 
@@ -405,7 +496,7 @@ After patching, restart your Claude Code session for the MCP server to load the 
 ├── hooks/                      # Claude Code hook handlers (14 files)
 ├── output-styles/              # Response formatting styles
 ├── scripts/                    # CLI utilities (30+ scripts)
-├── skills/                     # Skill definitions (17 skills)
+├── skills/                     # Skill definitions (21 skills)
 ├── plans/                      # Plan files from /start sessions
 ├── CLAUDE.md                   # Model knowledge (behavioral patterns)
 ├── settings.json               # Hook registrations and permissions
@@ -433,8 +524,10 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | Setup | - | `setup.py validate-symlinks` | 30s | Verify symlink integrity |
 | Stop | - | `ralph.py stop` | 30s | Cleanup Ralph state |
 | Stop | - | `claudeChangeStop.js` | 5s | Save session state |
+| Stop | - | `sounds.py session-stop` | 5s | Play session stop sound (async) |
 | SessionStart | startup\|resume | `utils.py model-capture` | 5s | Capture model ID for session |
 | SessionStart | - | `ralph.py session-start` | 10s | Initialize Ralph session |
+| SessionStart | - | `sounds.py session-start` | 5s | Play session start sound (async) |
 | PreCompact | - | `ralph.py pre-compact` | 10s | Save Ralph state before compaction |
 | PreToolUse | Read | `auto-allow.py` | 5s | Auto-approve safe Read operations |
 | PreToolUse | Bash | `security-gate.py pre-bash` | 5s | Security validation for Bash commands |
@@ -452,6 +545,7 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | PostToolUse | Skill | `guards.py skill-validator` | 5s | Validate skill invocation |
 | PostToolUse | Skill | `post-review.py hook` | 30s | Post-review processing |
 | PostToolUse | computer | `guards.py x-post-check` | 5s | Security audit: log Chrome clicks during /x sessions |
+| PostToolUse | - | `sounds.py post-tool` | 5s | Play tool success/failure sound (async) |
 | UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | Parse skill commands |
 | UserPromptSubmit | ^/start | `guards.py skill-parser` | 5s | Parse /start command args |
 | UserPromptSubmit | - | `guards.py plan-comments` | 5s | Detect USER comments in plans |
@@ -459,6 +553,7 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | SubagentStart | - | `ralph.py hook-subagent-start` | 10s | Initialize subagent context |
 | SubagentStop | - | `ralph.py hook-subagent-stop` | 10s | Cleanup subagent state |
 | Notification | permission_prompt | `utils.py notify` | 10s | Desktop notifications |
+| Notification | permission_prompt | `sounds.py notification` | 5s | Play notification sound (async) |
 
 ### Agent Inventory
 
