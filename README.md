@@ -37,6 +37,8 @@ uv pip install portalocker
 
 ## Skills Reference
 
+**Argument convention:** Subcommands use bare keywords (`init`, `start`, `confirm`). Optional modifiers with values use `--` prefix (`--agents N`, `--models gpt4`). Boolean mode switches are bare keywords (`sonnet`, `noreview`, `opus`). Every skill supports `help` as a bare keyword.
+
 ### /start - Ralph Autonomous Development
 
 | Command | Description |
@@ -265,11 +267,46 @@ Query multiple AI models in parallel for comparison, consensus, or code review. 
 | `/nightshift start <repo> [task] --agents N` | N parallel agents (default: 3) |
 | `/nightshift start <repo> [task] --budget $X` | Budget cap in USD (default: $5.00) |
 | `/nightshift start <repo> [task] --model opus\|sonnet` | Agent model (default: sonnet) |
-| `/nightshift stop` | Send shutdown to all active agents |
+| `/nightshift stop` | Send shutdown to all active agents, create PR |
 | `/nightshift status` | Show active agents and progress |
 | `/nightshift help` | Show usage |
 
-Nighttime development cycles with scout agents that research online, implement features, and submit PRs to dev branches. Supports pulsona and gswarm repos initially.
+Autonomous development cycle manager for off-hours work. Spawns scout agents in `*-night-dev` worktrees that work **continuously** until explicitly stopped.
+
+**How it works:**
+
+1. `/nightshift init pulsona` — creates `pulsona-night-dev` branch + worktree from `pulsona-dev`
+2. `/nightshift start pulsona "research Next.js 15"` — spawns agents that loop forever: research → implement → commit → push → research → ...
+3. Agents work overnight — all commits land on `pulsona-night-dev` branch
+4. Morning: `/nightshift stop` — shuts down all agents, creates one consolidated PR from `pulsona-night-dev → pulsona-dev`
+5. Review and merge the PR — `reset-dev.yml` auto-resets `pulsona-night-dev` for next run
+
+**Continuous operation model:**
+
+- Agents NEVER stop automatically — only `/nightshift stop` triggers shutdown
+- Agents WORK SILENTLY — no status reports, no progress updates (same protocol as /x)
+- Budget is a soft limit — triggers warning but doesn't stop agents
+- One consolidated PR per session — all commits roll up into a single PR at stop time
+- Branch resets after PR merge — clean slate for next nightshift run
+
+**Supported repos:** pulsona, gswarm. Add more in `scripts/nightshift.py` `SUPPORTED_REPOS`.
+
+**Branch protection:** Nightshift agents can only push to `*-night-dev` branches. Operations on `main` or `*-dev` branches are blocked by the bypass-permissions guard.
+
+**Bypass-permissions profile:** Nightshift agents run with `NIGHTSHIFT_AGENT=1` env var, which gives them broad dev tooling access (pip, npm, git, python, build tools) while blocking protected branches, other repos, Docker containers, and system modifications. See [Bypass-Permissions Guard](#bypass-permissions-guard) for details.
+
+**Example overnight session:**
+
+```bash
+# Friday 6pm — start agents
+/nightshift start pulsona "Next.js 15 features" --agents 3
+
+# Saturday 10am — check how they're doing
+/nightshift status   # Shows: 47 commits, $8.45 spent, 16h runtime
+
+# Saturday 10:30am — stop and review
+/nightshift stop     # Shutdown all agents → single PR with 47 commits
+```
 
 ### /x - X/Twitter Outreach
 
@@ -646,6 +683,38 @@ Progress file: `.claude/ralph/progress.json`. Budget guard: `ralph.py loop 10 3 
 | 5 | Push Gate | Agents must push before marking complete |
 | 6 | VERIFY+FIX | Post-implementation build/type/lint checks |
 | 7 | Budget Guard | Caps total spending per Ralph session |
+
+#### Bypass-Permissions Guard
+
+When Claude runs with `--bypassPermissions` (used by `/x` posting and `/nightshift` agents), the `guards.py bypass-permissions-guard` enforces two profiles:
+
+**Profile: /x (default — restrictive)**
+
+| Allowed | Blocked |
+|---------|---------|
+| `python x.py <subcommand>` | All git write operations |
+| Git read-only (status, log, diff, show) | File modifications |
+| File read-only (ls, cat, head, tail, grep) | pip, npm, build tools |
+| Text processing (base64, jq) | Docker, system commands |
+
+**Profile: Nightshift (`NIGHTSHIFT_AGENT=1` — broad dev tooling)**
+
+| Allowed | Blocked |
+|---------|---------|
+| Python ecosystem (pip, uv, pytest, ruff, mypy) | Push to `main` or `*-dev` branches |
+| Node.js ecosystem (npm, pnpm, npx, vitest, biome) | Force push (`--force`, `-f`) |
+| Git operations on `*-night-dev` branches | `git reset --hard`, `git clean -f` |
+| Build tools (make, cargo, go, dotnet) | Docker run/exec/attach |
+| File system ops (mkdir, cp, mv, touch, rm) | Windows registry/service/permissions |
+| Network read (curl, wget) | Operations outside worktree boundary |
+| Text processing (sed, awk, sort, diff) | `rm -rf` (recursive delete) |
+| Docker build/images (read-only) | System shutdown/reboot |
+
+**Branch protection (both profiles):** All git write commands (push, checkout, merge, rebase, reset) are blocked from targeting `main`, `master`, or `*-dev` branches. Exception: `git push origin *-night-dev` is allowed for nightshift agents.
+
+**Env vars:**
+- `NIGHTSHIFT_AGENT=1` — enables nightshift profile
+- `NIGHTSHIFT_WORKTREE=/path/to/worktree` — enables path boundary enforcement
 
 ---
 

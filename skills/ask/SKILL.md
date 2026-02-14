@@ -3,6 +3,7 @@ context: fork
 name: ask
 description: Query multiple AI models (Gemini via GSwarm, GPT/O3, Ollama) in parallel or individually for comparison, consensus, or code review
 when_to_use: When you need to compare responses across different models, get multi-model consensus on complex decisions, or run parallel code reviews
+argument-hint: '"question" [--models model1,model2] [--mode chat|consensus|codereview] [--timeout N] [--format table|markdown|json] | help'
 ---
 
 # /ask - Multi-Model Query System

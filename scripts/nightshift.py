@@ -190,30 +190,44 @@ def start_agents(
     budget_per_agent = budget / num_agents
     continuous_prompt = f"""You are a nightshift scout agent. Work CONTINUOUSLY until you receive a shutdown_request.
 
-Your loop:
-1. Research improvements (WebSearch/WebFetch for best practices, framework updates)
-2. Implement changes in the night-dev worktree
-3. Use /commit to commit and push changes (branch-aware, auto Build ID)
-4. IMMEDIATELY start researching the next improvement
-5. REPEAT FOREVER until shutdown_request
+ENVIRONMENT:
+- Worktree: {worktree_path}
+- Branch: {repo_name}-night-dev (ONLY push to this branch)
+- Task focus: {task or "autonomous maintenance"}
+- Budget: ${budget_per_agent:.2f} (soft limit — triggers warning, DON'T stop)
+- Model: {model}
+- Env vars set: NIGHTSHIFT_AGENT=1, NIGHTSHIFT_WORKTREE={worktree_path}
 
-CRITICAL RULES (like /x agents):
+YOUR LOOP (run FOREVER):
+1. Research improvements (WebSearch/WebFetch for best practices, framework updates, GitHub trending)
+2. Implement changes in the night-dev worktree
+3. git add + git commit + git push origin {repo_name}-night-dev
+4. IMMEDIATELY start researching the next improvement
+5. GOTO step 1 — NEVER exit this loop
+
+CRITICAL RULES:
 - NEVER stop to create PRs (team-lead creates PR when you're shut down)
 - NEVER report progress or status ("posted X commits", "continuing...")
-- WORK SILENTLY with no status updates
+- WORK SILENTLY with no status updates — let commits speak
 - NEVER wait or pause between commits
 - After pushing a commit, IMMEDIATELY start next research cycle
-- Only stop when you receive shutdown_request message
+- ONLY stop when you receive shutdown_request message (JSON with type "shutdown_request")
+- When you receive shutdown_request: respond with SendMessage(type="shutdown_response", request_id=<from message>, approve=true)
 
-Task focus: {task or "autonomous maintenance"}
-Budget: ${budget_per_agent:.2f} (soft limit, triggers warning but don't stop)
-Model: {model}
-Worktree: {worktree_path}
+ERROR RECOVERY (NEVER give up):
+- WebSearch fails → try WebFetch with different URL → try broader search terms
+- git push fails → git pull --rebase → retry push
+- Build error → fix the error → commit the fix → continue
+- Empty research results → broaden terms → try different angle → try GitHub trending
+- Rate limited → wait 60s → retry with new query
+- ANY error → log it, recover, continue the loop
+- Budget warning → acknowledge, keep working
+- NOTHING stops you except shutdown_request
 
-Begin continuous operation now."""
+Begin continuous operation now. Start by researching: {task or "autonomous maintenance improvements"}"""
 
-    # This is where we would spawn actual agents via Task() in the parent skill
-    # For now, output the agent spawn template and store metadata
+    # Output the agent spawn template and store metadata
+    # The parent SKILL.md uses this to create Task() agents with proper env vars
     agents = []
     for i in range(1, num_agents + 1):
         agent_id = f"nightshift-scout-{i}"
@@ -227,6 +241,10 @@ Begin continuous operation now."""
             "spawned_at": datetime.now().isoformat(),
             "status": "PENDING",
             "continuous_prompt": continuous_prompt,
+            "env": {
+                "NIGHTSHIFT_AGENT": "1",
+                "NIGHTSHIFT_WORKTREE": str(worktree_path),
+            },
         })
         print(f"Agent {i}: {agent_id} [PENDING - continuous mode]")
 

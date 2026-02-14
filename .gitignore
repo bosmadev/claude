@@ -49,7 +49,7 @@ test-*.py
 scratch-*
 *-install-*
 *-notes.md
-nightshift/
+/nightshift/
 ralph/
 
 # Reply/signal files (from /x skill)

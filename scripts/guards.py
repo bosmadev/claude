@@ -1276,6 +1276,9 @@ def bypass_permissions_guard() -> None:
         # Not in bypass mode, pass through
         sys.exit(0)
 
+    # Detect profile: nightshift agents get broad dev permissions
+    is_nightshift = os.environ.get("NIGHTSHIFT_AGENT", "").lower() in ("true", "1", "yes")
+
     # In bypass mode — validate command
     tool_input = hook_input.get("tool_input", {})
     command = tool_input.get("command", "")
@@ -1283,50 +1286,212 @@ def bypass_permissions_guard() -> None:
     if not command:
         sys.exit(0)
 
-    # Import threat detection from security-gate.py
-    sys.path.insert(0, str(_claude_home / "hooks"))
-    try:
-        from security_gate import detect_destructive_command, detect_dangerous_git
-    except ImportError:
-        # If import fails, be conservative and block
-        output = {
+    def _deny(reason: str):
+        """Helper: emit deny decision and exit."""
+        print(json.dumps({
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
-                "permissionDecisionReason": "Bypass-permissions guard: security-gate.py not available"
+                "permissionDecisionReason": reason
             }
-        }
-        print(json.dumps(output))
+        }))
         sys.exit(0)
 
-    # Check for destructive commands
-    threat = detect_destructive_command(command)
-    if threat:
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": f"🚫 Bypass-permissions guard BLOCKED: {threat['details']}"
-            }
-        }
-        print(json.dumps(output))
-        sys.exit(0)
+    # ── Universal blocklist (both profiles) ──────────────────────────
+    # Commands that are NEVER allowed in bypass mode regardless of profile
+    universal_blocklist = [
+        r"^rm\s+(-rf?|--recursive)\b",        # recursive delete
+        r"^del\s+/[sS]",                       # Windows recursive delete
+        r"^rmdir\s+/[sS]",                     # Windows recursive rmdir
+        r"^format\b",                           # disk format
+        r"^mkfs\b",                             # make filesystem
+        r"^dd\s+",                              # raw disk write
+        r"^shutdown\b",                         # system shutdown
+        r"^reboot\b",                           # system reboot
+        r"^reg\s+(add|delete)\b",               # Windows registry modification
+        r"^sc\s+(stop|delete|config)\b",        # Windows service control
+        r"^net\s+(user|localgroup)\b",          # Windows user/group modification
+        r"^icacls\b",                           # Windows permissions
+        r"^takeown\b",                          # Windows ownership
+        r"^docker\s+(rm|rmi|system\s+prune)\b", # Docker destructive ops
+        r"^docker-compose\s+down\b",            # Docker compose down
+        r"^kubectl\s+delete\b",                 # Kubernetes destructive
+        r"^git\s+push\s+.*--force\b",           # Force push always blocked
+        r"^git\s+push\s+.*-f\b",               # Force push shorthand
+        r"^git\s+clean\s+-f",                   # Git clean -f
+        r"^git\s+reset\s+--hard\b",            # Git reset --hard
+        r"^git\s+branch\s+-[dD]\b",            # Git branch delete
+    ]
 
-    # Check for dangerous git commands
-    threat = detect_dangerous_git(command)
-    if threat:
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": f"🚫 Bypass-permissions guard BLOCKED: {threat['details']}"
-            }
-        }
-        print(json.dumps(output))
-        sys.exit(0)
+    for pattern in universal_blocklist:
+        if re.search(pattern, command, re.IGNORECASE):
+            _deny(f"🚫 Bypass-permissions: BLOCKED destructive command")
 
-    # Allowlist patterns (safe commands in bypass mode)
-    allowlist_patterns = [
+    # ── Branch protection (both profiles) ────────────────────────────
+    # Never allow push/checkout/operations targeting main or *-dev branches
+    protected_branch_patterns = [
+        r"\bmain\b",
+        r"\bmaster\b",
+        r"\b\w+-dev\b",  # pulsona-dev, gswarm-dev, cwchat-dev etc.
+    ]
+    git_write_cmds = r"^git\s+(push|checkout|switch|merge|rebase|reset)\b"
+    if re.match(git_write_cmds, command, re.IGNORECASE):
+        for bp in protected_branch_patterns:
+            if re.search(bp, command):
+                # Exception: "git checkout -b *-night-dev" is creating a new branch, allow it
+                if re.search(r"checkout\s+-b\s+\S+-night-dev", command, re.IGNORECASE):
+                    break
+                # Exception: "git push origin *-night-dev" is pushing to night branch, allow it
+                if re.match(r"^git\s+push\b", command, re.IGNORECASE) and \
+                   re.search(r"\S+-night-dev\b", command):
+                    break
+                _deny(f"🚫 Bypass-permissions: BLOCKED operation on protected branch (main/*-dev)")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PROFILE: Nightshift (broad dev permissions)
+    # ═══════════════════════════════════════════════════════════════════
+    if is_nightshift:
+        # Nightshift gets broad dev tooling: pip, npm, git, python, etc.
+        # Only restrictions: protected branches, other repos, Docker, system files
+
+        # Block Docker container operations (build is OK, run/exec risky)
+        if re.match(r"^docker\s+(run|exec|attach|cp)\b", command, re.IGNORECASE):
+            _deny("🚫 Nightshift: Docker run/exec not allowed (use Docker in dev worktree only)")
+
+        # Block operations outside nightshift worktree
+        # Nightshift worktrees are at D:/source/{repo}/{repo}-night-dev/
+        nightshift_worktree = os.environ.get("NIGHTSHIFT_WORKTREE", "")
+        if nightshift_worktree:
+            # Check for absolute paths in command that escape worktree
+            abs_path_match = re.findall(r'[A-Za-z]:[/\\][^\s"\']+|/(?:home|usr|etc|var|tmp|opt|root|mnt|c|d)[/\\][^\s"\']*', command, re.IGNORECASE)
+            for p in abs_path_match:
+                try:
+                    resolved = str(Path(p).resolve()).replace("\\", "/").lower()
+                    wt_resolved = str(Path(nightshift_worktree).resolve()).replace("\\", "/").lower()
+                    claude_home = str(_claude_home.resolve()).replace("\\", "/").lower()
+                    # Allow paths within worktree or ~/.claude
+                    if not (resolved.startswith(wt_resolved) or resolved.startswith(claude_home)):
+                        _deny(f"🚫 Nightshift: Path outside worktree boundary: {p[:100]}")
+                except (OSError, ValueError):
+                    pass
+
+        # Nightshift broad allowlist — development tooling
+        nightshift_allowlist = [
+            # Python ecosystem
+            r"^python3?\b",                     # Any python command
+            r"^pip3?\s+",                       # pip install/uninstall
+            r"^uv\s+",                          # uv package manager
+            r"^uvx?\s+",                        # uv tool runner
+            r"^ruff\b",                         # linter
+            r"^mypy\b",                         # type checker
+            r"^pytest\b",                       # test runner
+            r"^black\b",                        # formatter
+            r"^isort\b",                        # import sorter
+            r"^pylint\b",                       # linter
+            r"^flake8\b",                       # linter
+
+            # Node.js ecosystem
+            r"^node\b",                         # node runtime
+            r"^npm\s+",                         # npm commands
+            r"^npx\s+",                         # npx runner
+            r"^pnpm\s+",                        # pnpm commands
+            r"^yarn\b",                         # yarn commands
+            r"^tsx?\b",                         # TypeScript execution
+            r"^tsc\b",                          # TypeScript compiler
+            r"^vitest\b",                       # test runner
+            r"^biome\b",                        # linter/formatter
+            r"^eslint\b",                       # linter
+            r"^prettier\b",                     # formatter
+            r"^knip\b",                         # dead code finder
+
+            # Git operations (safe writes — protected branches already checked above)
+            r"^git\s+add\b",
+            r"^git\s+commit\b",
+            r"^git\s+push\b",                  # push (force already blocked above)
+            r"^git\s+pull\b",
+            r"^git\s+stash\b",
+            r"^git\s+checkout\b",              # checkout (protected branches checked above)
+            r"^git\s+switch\b",
+            r"^git\s+merge\b",                 # merge (protected branches checked above)
+            r"^git\s+rebase\b",                # rebase (protected branches checked above)
+            r"^git\s+tag\b",
+            r"^git\s+worktree\b",
+            r"^git\s+cherry-pick\b",
+            r"^git\s+config\b",                # repo-level config only
+            r"^git\s+submodule\b",
+
+            # Git read-only (always safe)
+            r"^git\s+(status|log|diff|show|branch|remote|fetch|rev-parse|describe|ls-files)\b",
+
+            # Build tools
+            r"^make\b",
+            r"^cmake\b",
+            r"^cargo\b",                        # Rust
+            r"^go\s+",                          # Go
+            r"^dotnet\b",                       # .NET
+
+            # Docker build only (run/exec blocked above)
+            r"^docker\s+build\b",
+            r"^docker\s+images?\b",
+            r"^docker\s+tag\b",
+            r"^docker\s+push\b",
+            r"^docker-compose\s+build\b",
+            r"^docker-compose\s+up\b",
+            r"^docker\s+compose\s+(build|up|images?|ps|logs)\b",
+
+            # File system operations (within worktree — boundary checked above)
+            r"^mkdir\b",
+            r"^cp\b",
+            r"^mv\b",
+            r"^touch\b",
+            r"^chmod\b",
+            r"^rm\s+(?!-r)",                   # rm single files OK, rm -r blocked above
+            r"^ln\b",                           # symlinks
+
+            # Network tools (read-only)
+            r"^curl\b",
+            r"^wget\b",
+            r"^http\b",                         # httpie
+
+            # Text processing / utilities
+            r"^sed\b",
+            r"^awk\b",
+            r"^sort\b",
+            r"^uniq\b",
+            r"^diff\b",
+            r"^patch\b",
+            r"^xargs\b",
+            r"^echo\b",
+            r"^printf\b",
+            r"^tee\b",
+            r"^cut\b",
+            r"^tr\b",
+            r"^env\b",
+            r"^export\b",
+            r"^source\b",
+            r"^\.\s+",                          # . (source) command
+        ]
+
+        # Also include the shared read-only allowlist
+        shared_readonly = [
+            r"^ls\b", r"^cat\b", r"^head\b", r"^tail\b", r"^grep\b", r"^find\b",
+            r"^tree\b", r"^pwd\b", r"^which\b", r"^file\b", r"^wc\b", r"^du\b",
+            r"^stat\b", r"^readlink\b", r"^realpath\b", r"^base64\b", r"^jq\b",
+            r"^xxd\b", r"^od\b", r"^ps\b", r"^pgrep\b", r"^top\b", r"^htop\b",
+        ]
+
+        for pattern in nightshift_allowlist + shared_readonly:
+            if re.match(pattern, command, re.IGNORECASE):
+                sys.exit(0)
+
+        # Nightshift: block unknown commands (conservative)
+        _deny(f"🚫 Nightshift guard: Command not in dev allowlist\n\nCommand: {command[:200]}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PROFILE: /x and default (restrictive — read-only + x.py)
+    # ═══════════════════════════════════════════════════════════════════
+    # Allowlist patterns for /x bypass mode
+    x_allowlist = [
         # Python x.py commands
         r"^python\s+x\.py\b",
         r"^python\s+skills/x/scripts/x\.py\b",
@@ -1334,110 +1499,27 @@ def bypass_permissions_guard() -> None:
         r"^python3\s+skills/x/scripts/x\.py\b",
 
         # Git read-only
-        r"^git\s+status\b",
-        r"^git\s+log\b",
-        r"^git\s+diff\b",
-        r"^git\s+show\b",
-        r"^git\s+branch\s+(?!-D)",  # git branch (list), not -D (delete)
-        r"^git\s+remote\b",
-        r"^git\s+fetch\b",
+        r"^git\s+(status|log|diff|show|remote|fetch|rev-parse|describe|ls-files)\b",
+        r"^git\s+branch\s+(?!-[dD])",          # git branch (list), not -D (delete)
 
         # File system read-only
-        r"^ls\b",
-        r"^cat\b",
-        r"^head\b",
-        r"^tail\b",
-        r"^grep\b",
-        r"^find\b",
-        r"^tree\b",
-        r"^pwd\b",
-        r"^which\b",
-        r"^file\b",
-        r"^wc\b",
-        r"^du\b",
-        r"^stat\b",
-        r"^readlink\b",
-        r"^realpath\b",
+        r"^ls\b", r"^cat\b", r"^head\b", r"^tail\b", r"^grep\b", r"^find\b",
+        r"^tree\b", r"^pwd\b", r"^which\b", r"^file\b", r"^wc\b", r"^du\b",
+        r"^stat\b", r"^readlink\b", r"^realpath\b",
 
         # Encoding/text processing (read-only)
-        r"^base64\b",
-        r"^jq\b",
-        r"^xxd\b",
-        r"^od\b",
+        r"^base64\b", r"^jq\b", r"^xxd\b", r"^od\b",
 
         # Process inspection (read-only)
-        r"^ps\b",
-        r"^pgrep\b",
-        r"^top\b",
-        r"^htop\b",
+        r"^ps\b", r"^pgrep\b", r"^top\b", r"^htop\b",
     ]
 
-    # Check if command matches allowlist
-    for pattern in allowlist_patterns:
+    for pattern in x_allowlist:
         if re.match(pattern, command, re.IGNORECASE):
-            # Allowed command, pass through
             sys.exit(0)
 
-    # Check for git write operations (block these explicitly)
-    git_write_patterns = [
-        r"^git\s+add\b",
-        r"^git\s+commit\b",
-        r"^git\s+push\b",
-        r"^git\s+pull\b",
-        r"^git\s+merge\b",
-        r"^git\s+rebase\b",
-        r"^git\s+checkout\b",
-        r"^git\s+reset\b",
-        r"^git\s+clean\b",
-        r"^git\s+stash\b",
-        r"^git\s+tag\b",
-        r"^git\s+branch\s+-D",
-    ]
-
-    for pattern in git_write_patterns:
-        if re.match(pattern, command, re.IGNORECASE):
-            output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": "🚫 Bypass-permissions guard BLOCKED: Git write operation not allowed in bypass mode"
-                }
-            }
-            print(json.dumps(output))
-            sys.exit(0)
-
-    # Check for repo boundary violations (path traversal)
-    cwd = hook_input.get("cwd", ".")
-    try:
-        repo_root = Path(cwd).resolve()
-
-        # Extract file paths from command (simple heuristic)
-        # Look for paths starting with ../ or absolute paths
-        if "../" in command or re.search(r"\s/[a-zA-Z]", command):
-            # Potential path traversal, block it
-            output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": "🚫 Bypass-permissions guard BLOCKED: Repo boundary violation (path traversal detected)"
-                }
-            }
-            print(json.dumps(output))
-            sys.exit(0)
-    except (OSError, ValueError):
-        pass
-
-    # Command not in allowlist and not explicitly blocked
-    # Be conservative: block unknown commands in bypass mode
-    output = {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": f"🚫 Bypass-permissions guard BLOCKED: Command not in allowlist\n\nAllowed: python x.py, git read-only, ls, cat, head, tail, etc.\nBlocked: All other commands in bypass mode\n\nCommand: {command[:200]}"
-        }
-    }
-    print(json.dumps(output))
-    sys.exit(0)
+    # /x: block everything else
+    _deny(f"🚫 Bypass-permissions guard BLOCKED: Command not in allowlist\n\nAllowed: python x.py, git read-only, ls, cat, etc.\nFor dev tooling, use NIGHTSHIFT_AGENT=1\n\nCommand: {command[:200]}")
 
 
 # =============================================================================

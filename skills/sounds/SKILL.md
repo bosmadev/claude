@@ -2,6 +2,7 @@
 name: sounds
 description: Enable or disable audio feedback for Claude Code events (tool calls, commits, errors)
 when_to_use: When the user wants to toggle audio notifications on/off for the current session
+argument-hint: "on | off | status"
 context: main
 ---
 

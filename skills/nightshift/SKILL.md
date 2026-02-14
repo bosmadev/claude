@@ -254,6 +254,8 @@ Nightshift agents inherit all 7 Ralph safety layers:
 
 **Continuous Operation:** Agents inherit /x WORK SILENTLY protocol - no idle states, no status reports, just continuous loop.
 
+**Bypass-Permissions Profile:** Agents run with `NIGHTSHIFT_AGENT=1` and `NIGHTSHIFT_WORKTREE=<path>` env vars. This enables broad dev tooling (pip, npm, git, python, build tools) while protecting `main`/`*-dev` branches, other repos, Docker containers, and system files. See `guards.py bypass-permissions-guard` for allowlist details.
+
 ---
 
 ## Automation Integration
