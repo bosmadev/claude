@@ -334,3 +334,30 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 - **ISR**: Consider revalidate for semi-static content
 - **Edge runtime**: Check API compatibility before using
 - **Third-party scripts**: Use next/script for proper loading
+
+**Performance Best Practices:**
+- Use `next/image` for automatic optimization (WebP, lazy loading, blur placeholder)
+- Implement streaming with Suspense boundaries
+- Use React Server Components by default (0 KB JavaScript)
+- Enable `'use cache'` for expensive computations
+- Implement parallel routes for complex layouts
+- Use `loading.tsx` for instant loading states
+- Prefer Server Actions over API routes for mutations
+- Use `unstable_cache` for data that changes infrequently
+
+**Security Best Practices:**
+- Validate Server Action inputs with Zod schemas
+- Use CSRF protection (built-in with Server Actions)
+- Implement rate limiting on public endpoints
+- Never expose sensitive data in client components
+- Use environment variables for secrets
+- Enable Content Security Policy headers
+- Implement proper authentication middleware
+
+**Developer Experience:**
+- Use TypeScript for type safety
+- Enable ESLint with next/core-web-vitals config
+- Use Prettier for consistent formatting
+- Implement error boundaries for graceful failures
+- Use React DevTools and Next.js DevTools
+- Monitor Core Web Vitals in production

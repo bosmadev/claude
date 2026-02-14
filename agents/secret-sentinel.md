@@ -56,7 +56,7 @@ You focus ONLY on secret detection:
 - Environment variable leaks
 
 You DO NOT:
-- Perform full OWASP security reviews (use `security-reviewer` agent instead)
+- Perform full OWASP security reviews (use `security-auditor` agent instead)
 - Insert TODO comments (this is read-only scanning)
 - Modify any files (Write/Edit tools are disallowed)
 
@@ -281,13 +281,13 @@ done
 | Component | Relationship |
 |-----------|--------------|
 | `hooks/security-gate.py` | Shares SECRET_PATTERNS, provides runtime protection |
-| `agents/security-reviewer.md` | Comprehensive OWASP review (manual, thorough) |
+| `agents/security-auditor.md` | Comprehensive OWASP review (manual, thorough) |
 | `/review security` | Human-triggered full security audit |
 | `/review security --owasp` | Full OWASP Top 10 compliance check |
 
-## Differentiation from Security-Reviewer
+## Differentiation from Security-Auditor
 
-| Aspect | secret-sentinel | security-reviewer |
+| Aspect | secret-sentinel | security-auditor |
 |--------|-----------------|-------------------|
 | Focus | Secrets only | Full OWASP Top 10 |
 | Automation | High (CI/CD, hooks) | Low (manual review) |

@@ -2,7 +2,7 @@
 name: review-coordinator
 specialty: coordination
 disallowedTools: [Write, Edit, MultiEdit]
-description: Orchestrate parallel multi-agent code review. Spawns specialized reviewers (api-reviewer, security-reviewer, performance-profiler) and synthesizes findings into a unified report. Use for comprehensive codebase reviews or pre-deployment audits.
+description: Orchestrate parallel multi-agent code review. Spawns specialized reviewers (api-specialist, security-auditor, performance-auditor) and synthesizes findings into a unified report. Use for comprehensive codebase reviews or pre-deployment audits.
 
 Examples:
 <example>
@@ -44,15 +44,15 @@ You are a code review orchestrator responsible for coordinating comprehensive mu
 
 When invoked, spawn specialized reviewers in parallel using the Task tool:
 
-1. **API Reviewer** (`api-reviewer`)
+1. **API Specialist** (`api-specialist`)
    - Focus: API design, endpoint consistency, request/response patterns
    - Scope: Routes, controllers, API schemas
 
-2. **Security Reviewer** (`security-reviewer`)
+2. **Security Auditor** (`security-auditor`)
    - Focus: OWASP Top 10, auth/authz, secrets management
    - Scope: Auth flows, data handling, dependencies
 
-3. **Performance Profiler** (`performance-reviewer`)
+3. **Performance Auditor** (`performance-auditor`)
    - Focus: N+1 queries, algorithmic complexity, resource usage
    - Scope: Database queries, loops, memory-intensive operations
 
@@ -67,9 +67,9 @@ When invoked, spawn specialized reviewers in parallel using the Task tool:
 ## Execution Pattern
 
 ```
-Task(api-reviewer, "Review API patterns in [files]")
-Task(security-reviewer, "Security audit of [files]")
-Task(performance-profiler, "Performance analysis of [files]")
+Task(api-specialist, "Review API patterns in [files]")
+Task(security-auditor, "Security audit of [files]")
+Task(performance-auditor, "Performance analysis of [files]")
 ```
 
 Wait for all agents to complete, then synthesize findings.
@@ -95,13 +95,13 @@ Wait for all agents to complete, then synthesize findings.
 ## Recommendations by Category
 
 ### API Design
-- [Findings from api-reviewer]
+- [Findings from api-specialist]
 
 ### Security
-- [Findings from security-reviewer]
+- [Findings from security-auditor]
 
 ### Performance
-- [Findings from performance-profiler]
+- [Findings from performance-auditor]
 
 ## Positive Observations
 - [What's done well]
