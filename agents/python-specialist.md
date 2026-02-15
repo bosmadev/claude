@@ -377,3 +377,8 @@ async def test_create_user(client: AsyncClient):
 - **Memory**: Stream large responses, don't load entirely in memory
 - **Timeouts**: Set explicit timeouts on external calls
 - **Testing**: Use `pytest-asyncio` with proper fixtures
+
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`

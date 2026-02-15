@@ -384,4 +384,4 @@ await page.screenshot({ path: 'result.png', scale: 'css' });
 | Accessibility testing | Playwriter | Snapshot-based |
 | Manual user testing | System | Full browser features |
 
-**Note:** For web research (not app debugging), use the Web Research Fallback Chain in CLAUDE.md.
+**Note:** For web research (not app debugging), use the 5-tier chain: `markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`. Prefer chrome-mcp over Playwriter for page reading (user's cookies already loaded).

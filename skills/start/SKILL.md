@@ -680,7 +680,7 @@ All work MUST follow these four phases:
 
 Spawned agents have access to: `context7` (docs).
 
-For web research, see CLAUDE.md "Web Research Fallback Chain" - agents MUST use the full browser fallback chain, not just WebFetch.
+For web research: `markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`. Auth pages skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`
 
 ---
 

@@ -340,4 +340,9 @@ tests/
 └── playwright.config.ts
 ```
 
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`
+
 Remember: Good E2E tests are deterministic, fast, and focused. They test user journeys, not implementation details. When a test fails, it should clearly indicate what user flow is broken.

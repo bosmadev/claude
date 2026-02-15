@@ -36,9 +36,10 @@ Commands:
   help             Show this help
 
 Branch Hierarchy (auto-detected when no base-branch given):
-  *-dev branches     → PR targets main (Build N+1 from CHANGELOG)
-  feature/* branches → PR targets {repo}-dev (no Build ID)
-  anything else      → PR targets {repo}-dev if exists, else main
+  *-night-dev branches → PR targets main (nightshift agents)
+  *-dev branches       → PR targets main (Build N+1 from CHANGELOG)
+  feature/* branches   → PR targets {repo}-dev (no Build ID)
+  anything else        → PR targets {repo}-dev if exists, else main
 
 Workflow:
   1. Auto-detects target branch from hierarchy
@@ -76,19 +77,21 @@ Parse arguments:
 When no base branch is explicitly provided, auto-detect using this logic:
 
 ```
-Current Branch              → Target Base Branch
-────────────────────────────────────────────────
-*-dev (e.g. cwchat-dev)      → main
-feature/*, anything else     → {repo}-dev (if exists on remote, else main)
-main/master                  → BLOCKED (abort with error)
+Current Branch                   → Target Base Branch
+────────────────────────────────────────────────────────
+*-night-dev (e.g. gswarm-night-dev) → main
+*-dev (e.g. cwchat-dev)             → main
+feature/*, anything else            → {repo}-dev (if exists on remote, else main)
+main/master                         → BLOCKED (abort with error)
 ```
 
 **Detection steps:**
 
 1. If user provided a base branch arg → use it directly
 2. Get current branch: `git branch --show-current`
-3. If current branch ends with `-dev` → base = `main`
-4. Else → check if `{repo}-dev` exists on remote:
+3. If current branch ends with `-night-dev` → base = `main` (nightshift branch)
+4. Else if current branch ends with `-dev` → base = `main`
+5. Else → check if `{repo}-dev` exists on remote:
    ```bash
    REPO=$(basename "$(git rev-parse --show-toplevel)")
    DEV_BRANCH="${REPO}-dev"

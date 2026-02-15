@@ -884,6 +884,62 @@ Configured in `.claude.json` under `mcpServers`. See `.claude.json.example` for 
 
 ---
 
+## Web Research Fallback Chain
+
+5-tier chain for fetching web content, ordered by speed and capability:
+
+| Tier | Tool | Speed | Auth | When |
+|------|------|-------|------|------|
+| 1 | `markdown_fetch.py` (markdown.new) | 1-3s | No | Always try first — server-side rendering handles JS-heavy pages |
+| 2 | `markdown_fetch.py` (jina.ai) | 2-3s | No | markdown.new fails or rate-limited |
+| 3 | `WebFetch` | 1-2s | No | Both markdown services fail |
+| 4 | `claude-in-chrome` | 3-5s | Yes | Auth required (uses user's Chrome cookies) |
+| 5 | `Playwriter` | 3-5s | Yes | Complex auth flows requiring scripted login |
+
+### Usage
+
+```bash
+# CLI usage
+python ~/.claude/scripts/markdown_fetch.py <url> [--method auto|browser|ai]
+
+# Returns JSON: {"markdown": "...", "source": "markdown.new|jina|failed", "tokens": 1234}
+```
+
+### Decision Tree
+
+```
+URL to fetch
+  ├─ Try markdown_fetch.py (markdown.new → jina)
+  │   ├─ Success → use markdown
+  │   └─ Failed (empty/error/login page)
+  │       ├─ Try WebFetch
+  │       │   ├─ Success → use markdown
+  │       │   └─ Failed
+  │       │       ├─ Auth likely needed? → claude-in-chrome (has user cookies)
+  │       │       └─ Complex auth flow? → Playwriter (scripted login)
+```
+
+### Auth Handling
+
+No hardcoded auth domain list. When `markdown_fetch.py` returns `"source": "failed"`, the LLM uses context awareness to decide:
+
+- **claude-in-chrome**: For sites where the user is already logged in (X, GitHub, Google) — reuses Chrome session cookies
+- **Playwriter**: For sites requiring scripted authentication flows or session management
+
+### Subagent Injection
+
+The `hooks/context-injection.py` SubagentStart hook automatically injects the chain into every subagent's context (~200 chars). No manual inclusion needed in agent configs.
+
+### Rate Limits
+
+| Service | Free Tier | With API Key |
+|---------|-----------|-------------|
+| markdown.new | Undocumented (Cloudflare) | N/A |
+| jina.ai | 20 RPM | 500 RPM (`JINA_API_KEY` env var) |
+| WebFetch | No limit | N/A |
+
+---
+
 ## Agent Teams
 
 Experimental feature enabling parallel Claude Code instances within a session.

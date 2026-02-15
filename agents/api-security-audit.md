@@ -550,3 +550,8 @@ const order = await prisma.order.findUnique({ where: { id } });
    - Document all API endpoints
    - Implement API monitoring
    - Regular security audits
+
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`

@@ -27,14 +27,30 @@ const commitMsg = safeExec(
 ).trim();
 const commitSubject = commitMsg.split("\n")[0];
 
-// Extract build ID from commit subject
+// Extract build ID from commit subject, or auto-assign from CHANGELOG
 const buildMatch = commitSubject.match(/Build\s+(\d{1,6})/i);
-if (!buildMatch) {
-  console.log("No build ID found in commit, skipping CHANGELOG update");
-  process.exit(0);
-}
+let buildId: string;
 
-const buildId = buildMatch[1];
+if (!buildMatch) {
+  // Auto-assign Build ID by reading CHANGELOG.md and incrementing highest Build N
+  console.log("No build ID in commit, auto-assigning from CHANGELOG...");
+  const changelogPath = "CHANGELOG.md";
+  let highestBuild = 0;
+
+  if (fs.existsSync(changelogPath)) {
+    const changelog = fs.readFileSync(changelogPath, "utf8");
+    const buildMatches = changelog.matchAll(/\|\s*Build\s+(\d{1,6})/gi);
+    for (const match of buildMatches) {
+      const buildNum = parseInt(match[1], 10);
+      if (buildNum > highestBuild) highestBuild = buildNum;
+    }
+  }
+
+  buildId = String(highestBuild + 1);
+  console.log(`Auto-assigned Build ${buildId}`);
+} else {
+  buildId = buildMatch[1];
+}
 const buildIdNum = parseInt(buildId, 10);
 if (buildIdNum < 1 || buildIdNum > 999999) {
   throw new Error(`Invalid build ID: ${buildId} (must be 1-999999)`);

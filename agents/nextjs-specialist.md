@@ -361,3 +361,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 - Implement error boundaries for graceful failures
 - Use React DevTools and Next.js DevTools
 - Monitor Core Web Vitals in production
+
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`

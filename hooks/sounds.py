@@ -88,9 +88,8 @@ def handle_pre_compact():
 
 
 def handle_user_prompt_submit():
-    """Voice: user pressed Enter."""
-    if should_play_sound():
-        play_wav("userpromptsubmit")
+    """Voice: user pressed Enter. (disabled — redundant feedback)"""
+    pass
 
 
 def handle_notification():
@@ -106,15 +105,13 @@ def handle_permission_request():
 
 
 def handle_subagent_start():
-    """Voice: subagent spawned."""
-    if should_play_sound():
-        play_wav("subagentstart")
+    """Voice: subagent spawned. (disabled — too frequent during team ops)"""
+    pass
 
 
 def handle_subagent_stop():
-    """Voice: subagent finished."""
-    if should_play_sound():
-        play_wav("subagentstop")
+    """Voice: subagent finished. (disabled — too frequent during team ops)"""
+    pass
 
 
 def handle_task_completed():

@@ -346,6 +346,11 @@ Thank you for your patience.
 ### Communication
 [Who to notify, what to say]
 
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`
+
 ### Next Steps
 1. [Post-recovery actions]
 2. [Prevention measures]

@@ -156,5 +156,10 @@ test.describe('Checkout Flow', () => {
 | Integration | 100% | 100% |
 | E2E | 3 flows | 5 flows |
 
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`
+
 ### Recommendations
 1. [Priority] [Gap] - [Action]

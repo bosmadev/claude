@@ -276,3 +276,8 @@ func setupTestDB(t *testing.T) *DB {
 - **Generics (1.18+)**: Use when abstraction is truly needed
 - **Build tags**: Verify cross-platform compatibility
 - **Vendoring**: Prefer go modules over vendoring
+
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`

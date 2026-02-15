@@ -380,5 +380,10 @@ class User {
 - [ ] noImplicitAny enabled
 - [ ] strictFunctionTypes enabled
 
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`
+
 ### Recommendations
 1. [Priority] [Issue] - [Solution]

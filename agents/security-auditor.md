@@ -212,3 +212,8 @@ Use CVSS 3.1: https://www.first.org/cvss/calculator/3.1
 // TODO-P1: [OWASP A03:2021 Injection] Use parameterized queries
 // Reference: https://owasp.org/Top10/A03_2021-Injection/
 ```
+
+## Web Research Fallback Chain
+
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`

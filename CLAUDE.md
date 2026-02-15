@@ -330,27 +330,10 @@ For complete skill command tables with all argument combinations, see [README.md
 
 ## Web Research Fallback Chain
 
-When fetching web content (research, scouting, documentation), use this fallback chain:
-
-```
-1. WebFetch(url)              → Fast, public URLs
-2. Playwriter navigate        → If auth/session needed
-3. claude-in-chrome            → Debug/inspect via DevTools
-```
-
-| Scenario            | Browser          |
-| ------------------- | ---------------- |
-| Simple public page  | WebFetch         |
-| Requires login/auth | Playwriter       |
-| Debug/inspect       | claude-in-chrome |
-
-| Browser          | Auth | CDP | Best For             |
-| ---------------- | ---- | --- | -------------------- |
-| WebFetch         | No   | No  | Simple public pages  |
-| Playwriter MCP   | Yes  | Yes | Auth flows, sessions |
-| claude-in-chrome | Yes  | Yes | DevTools, inspection |
-
-**Note:** For subagents fetching web content, always include this fallback chain in prompts.
+5-tier: `markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to claude-in-chrome. Full docs: [README.md > Web Research Chain](./README.md#web-research-fallback-chain).
+Script: `python ~/.claude/scripts/markdown_fetch.py <url>`
+**For subagents:** Always include this chain in prompts.
 
 ## Work-Stealing Queue
 

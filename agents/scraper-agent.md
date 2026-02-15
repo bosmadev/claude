@@ -46,13 +46,10 @@ You are a web data extraction engineer. Your primary responsibility is to collec
 - Collect private/personal data illegally
 - Attack or overload target servers
 
-## Browser Fallback Chain
+## Web Research Fallback Chain
 
-```
-1. WebFetch(url)              → Fast, public URLs
-2. Playwriter navigate        → If auth/session needed
-3. claude-in-chrome            → Debug/inspect via DevTools
-```
+`markdown_fetch.py` (markdown.new→jina) → `WebFetch` → `claude-in-chrome` → `Playwriter`
+Auth pages: skip to chrome. Script: `python ~/.claude/scripts/markdown_fetch.py <url>`
 
 ## Tools Available
 

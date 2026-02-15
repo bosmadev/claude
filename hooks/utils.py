@@ -332,7 +332,7 @@ def _win_show_notification(title: str, message: str) -> None:
         f"$n.Icon = [System.Drawing.SystemIcons]::Information;"
         f"$n.BalloonTipTitle = '{safe_title}';"
         f"$n.BalloonTipText = '{safe_message}';"
-        f"$n.BalloonTipIcon = 'Info';"
+        f"$n.BalloonTipIcon = 'None';"
         f"$n.Visible = $true;"
         f"$n.ShowBalloonTip(5000);"
         f"Start-Sleep -Milliseconds 5100;"
@@ -430,8 +430,8 @@ def do_notify() -> None:
     title, icon, urgency = _notification_params(notification_type)
 
     if IS_WIN:
-        _win_play_sound()
-        _win_show_notification(title, message)
+        # Voice WAV plays via sounds.py — toast removed (Win11 plays PEEP regardless of BalloonTipIcon)
+        pass
     else:
         _linux_play_sound()
         _linux_show_notification(title, message, icon, urgency)

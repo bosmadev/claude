@@ -104,6 +104,16 @@ def format_build_intelligence(bi: dict) -> str:
     return f"**Build Status:** {total_struggling} struggling — {agents_str}"
 
 
+def format_web_chain_context() -> str:
+    """Return compact web research fallback chain for subagent injection."""
+    return (
+        "Web Research: markdown_fetch.py (markdown.new→jina) → WebFetch → "
+        "claude-in-chrome → Playwriter. "
+        "Auth pages: skip to chrome. "
+        "Script: python ~/.claude/scripts/markdown_fetch.py <url>"
+    )
+
+
 def build_context_block(state: dict, bi: Optional[dict]) -> str:
     """Build the complete Ralph context injection block."""
     lines = ["<!-- Ralph Context Injection -->"]
@@ -140,23 +150,41 @@ def main() -> None:
     Reads Ralph state directly from filesystem (no stdin dependency).
     Gracefully exits if Ralph is not active or state files are missing.
     """
-    # Quick exit if not in Ralph mode
+    # Always inject web research chain (not gated behind Ralph)
+    web_chain = format_web_chain_context()
+
+    # Check if Ralph is active for additional context
     ralph_active = Path(RALPH_STATE_FILE).exists()
     if not ralph_active:
-        # Pass through — no Ralph state to inject
+        # No Ralph state — inject web chain only
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "SubagentStart",
+                "additionalContext": web_chain,
+            }
+        }
+        sys.stdout.write(json.dumps(output))
         sys.exit(0)
 
     # Read Ralph state
     state = read_ralph_state()
     if not state:
-        # No state file or invalid — pass through
+        # Invalid state — inject web chain only
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "SubagentStart",
+                "additionalContext": web_chain,
+            }
+        }
+        sys.stdout.write(json.dumps(output))
         sys.exit(0)
 
     # Read build intelligence (optional)
     bi = read_build_intelligence()
 
-    # Build context block
-    context_block = build_context_block(state, bi)
+    # Build context block (Ralph + web chain)
+    ralph_block = build_context_block(state, bi)
+    context_block = f"{ralph_block}\n\n{web_chain}"
 
     # Output augmented context via SubagentStart hook schema
     # SubagentStart hooks use: {hookEventName, additionalContext}
