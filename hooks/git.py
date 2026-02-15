@@ -33,56 +33,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Stdin Timeout - Prevent hanging on missing stdin
 # =============================================================================
 
-# Cross-platform stdin timeout (SIGALRM not available on Windows)
-_stdin_timer = None
+from hooks.compat import setup_stdin_timeout, cancel_stdin_timeout
 
-def _setup_timeout():
-    global _stdin_timer
-    if sys.platform == "win32":
-        import threading
-
-        def timeout_exit():
-            """Log timeout and exit gracefully."""
-            try:
-                debug_log = Path.home() / ".claude" / "debug" / "hook-timeout.log"
-                debug_log.parent.mkdir(parents=True, exist_ok=True)
-                with open(debug_log, "a") as f:
-                    f.write(f"[{datetime.now().isoformat()}] git.py timeout after 5s\n")
-            except Exception:
-                pass
-            sys.exit(0)
-
-        _stdin_timer = threading.Timer(5, timeout_exit)
-        _stdin_timer.daemon = True
-        _stdin_timer.start()
-    else:
-        import signal
-
-        def timeout_handler(signum, frame):
-            """Log timeout and exit to prevent hooks from hanging."""
-            try:
-                debug_log = Path.home() / ".claude" / "debug" / "hook-timeout.log"
-                debug_log.parent.mkdir(parents=True, exist_ok=True)
-                with open(debug_log, "a") as f:
-                    f.write(f"[{datetime.now().isoformat()}] git.py timeout after 5s\n")
-            except Exception:
-                pass
-            sys.exit(0)
-
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(5)
-
-def _cancel_timeout():
-    global _stdin_timer
-    if sys.platform == "win32":
-        if _stdin_timer:
-            _stdin_timer.cancel()
-            _stdin_timer = None
-    else:
-        import signal
-        signal.alarm(0)
-
-_setup_timeout()
+setup_stdin_timeout(5, debug_label="git.py")
 
 
 # =============================================================================
@@ -246,7 +199,7 @@ def commit_review() -> None:
     """
     try:
         hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError as e:
         # Log JSON error for debugging
         try:
@@ -688,7 +641,7 @@ def change_tracker() -> None:
     """Track file changes and log to commit.md with bullet style."""
     try:
         hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
 
@@ -742,7 +695,7 @@ def frontend_verification_reminder() -> None:
     """Suggest visual verification via /launch when editing frontend files."""
     try:
         hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
 
@@ -804,7 +757,7 @@ def command_history() -> None:
     """Track bash commands in per-project command-history.log."""
     try:
         hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
 
@@ -869,7 +822,7 @@ def post_commit_metadata() -> None:
     """
     try:
         hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError:
         sys.exit(0)
 
@@ -1180,7 +1133,7 @@ def check_env_encryption() -> None:
     """
     try:
         hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError:
         return
 
@@ -1292,7 +1245,7 @@ def main() -> None:
         # Early-exits for non-git-commit commands before any heavy logic.
         try:
             hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
-            _cancel_timeout()
+            cancel_stdin_timeout()
         except json.JSONDecodeError:
             sys.exit(0)
         command = hook_input.get("tool_input", {}).get("command", "")

@@ -23,8 +23,14 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+# sys.path needed when invoked as hook/standalone
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Import compat utilities
+from scripts.compat import get_claude_home, IS_WINDOWS
+
 # Configuration
-CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude"))
+CLAUDE_HOME = get_claude_home()
 CREDS_FILE = Path.home() / ".claude" / ".credentials.json"
 LOG_FILE = Path.home() / ".claude" / "debug" / "token-refresh.log"
 BUFFER_SECONDS = 600  # Refresh 10 min before expiry
@@ -40,7 +46,7 @@ GREY = "\033[38;5;245m"
 RESET = "\033[0m"
 
 # Repo search paths - platform dependent
-if sys.platform == "win32":
+if IS_WINDOWS:
     _default_search_paths = [
         Path.home() / "Desktop",
         Path.home() / ".claude",
@@ -68,7 +74,7 @@ def get_repo_search_paths() -> list[Path]:
     """Get repo search paths from env or defaults."""
     env_paths = os.environ.get("CLAUDE_REPO_PATHS", "")
     if env_paths:
-        separator = ";" if sys.platform == "win32" else ":"
+        separator = ";" if IS_WINDOWS else ":"
         return [Path(p) for p in env_paths.split(separator) if p]
     return _default_search_paths
 
@@ -174,7 +180,7 @@ def write_credentials(data: dict, max_retries: int = 3) -> None:
                 debug_log(f"Write failed after {max_retries} attempts: {e}")
                 raise
 
-    if sys.platform == "win32":
+    if IS_WINDOWS:
         pass  # Windows file permissions handled by user account
     else:
         os.chmod(str(CREDS_FILE), 0o600)
@@ -318,7 +324,7 @@ def cmd_status() -> None:
     print()
     print("Auto-refresh Timer:")
 
-    if sys.platform == "win32":
+    if IS_WINDOWS:
         try:
             result = subprocess.run(
                 ["schtasks", "/query", "/tn", "ClaudeTokenRefresh"],
@@ -742,7 +748,7 @@ def cmd_help() -> None:
     print("  init                      Initialize repo with Claude workflow")
     print()
     print("Options:")
-    if sys.platform == "win32":
+    if IS_WINDOWS:
         print("  --all       Sync to all repos (searches ~/Desktop, ~/code, ~/.claude, etc.)")
     else:
         print("  --all       Sync to all repos (searches ~/Desktop, ~/code, /usr/share/claude, etc.)")

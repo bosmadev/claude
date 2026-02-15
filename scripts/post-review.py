@@ -27,35 +27,24 @@ import argparse
 import json
 import re
 import os
-import signal
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# sys.path needed when invoked as hook: python scripts/post-review.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 # Import shared parsing logic
 from review_parser import Finding, parse_review_findings
+
+# Import compat utilities
+from scripts.compat import setup_stdin_timeout
 
 # ---------------------------------------------------------------------------
 # Timeout guard — prevent hooks from hanging on missing stdin
 # ---------------------------------------------------------------------------
 
-if sys.platform == "win32":
-    import threading
-    def _timeout_cleanup():
-        """Clean shutdown on timeout - allows proper cleanup."""
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0)
-    _timeout_timer = threading.Timer(10, _timeout_cleanup)
-    _timeout_timer.daemon = True
-    _timeout_timer.start()
-else:
-    def _timeout_handler(_signum: int, _frame: object) -> None:
-        sys.exit(0)
-
-    signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(10)
+setup_stdin_timeout(10)
 
 
 # ---------------------------------------------------------------------------

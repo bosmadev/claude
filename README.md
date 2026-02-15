@@ -586,6 +586,27 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | Stop | - | `claudeChangeStop.js` | 5s | ClaudeCodeChange stop tracking |
 | PreToolUse | MultiEdit\|Edit\|Write | `claudeChangePreToolUse.js` | 5s | ClaudeCodeChange pre-tool tracking |
 
+### Cross-Platform Compatibility
+
+All hooks and scripts use `scripts/compat.py` for platform abstraction:
+
+**Functions:**
+- `IS_WINDOWS` - Boolean constant for platform detection
+- `get_claude_home()` - Returns Path to CLAUDE_HOME (Windows: `~/.claude`, Linux: `/usr/share/claude`)
+- `setup_stdin_timeout(seconds)` - Cross-platform timeout for stdin reads
+- `cancel_stdin_timeout()` - Cancel active timeout
+- `file_lock(fd)` - Advisory file locking (Windows: msvcrt, Linux: fcntl)
+- `file_unlock(fd)` - Release file lock
+- `create_symlink(target, link)` - Create symlinks (Windows: junctions, Linux: symlinks)
+- `is_symlink(path)` - Check if path is a symlink/junction
+- `play_sound(wav_path)` - Play WAV files (Windows: winsound, Linux: aplay/paplay)
+
+**Import patterns:**
+- Hooks: `from hooks.compat import ...` (re-exported from `scripts/compat.py`)
+- Scripts: `from scripts.compat import ...` (direct import)
+
+**Linux support:** Additive compatibility layer - symlinks replace junctions, aplay/paplay for audio.
+
 ### Agent Inventory
 
 | Category | Count | Model | Examples |

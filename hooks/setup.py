@@ -20,38 +20,26 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Add parent directory to sys.path for hooks imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 # =============================================================================
 # Stdin Timeout - Prevent hanging on missing stdin
 # =============================================================================
 
-# Cross-platform stdin timeout (SIGALRM not available on Windows)
-if sys.platform == "win32":
-    import threading
-    _timeout_timer = threading.Timer(30, lambda: os._exit(0))
-    _timeout_timer.daemon = True
-    _timeout_timer.start()
-else:
-    import signal
+from hooks.compat import setup_stdin_timeout, IS_WINDOWS, get_claude_home
 
-    def timeout_handler(signum, frame):
-        """Silent exit on timeout - prevents hooks from hanging."""
-        sys.exit(0)
-
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(30)  # 30 second timeout for setup operations
+setup_stdin_timeout(30)  # 30s for setup operations
 
 
 # =============================================================================
 # Constants
 # =============================================================================
 
-CLAUDE_CONFIG_DIR = Path(os.environ.get(
-    "CLAUDE_HOME",
-    str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude"
-))
+CLAUDE_CONFIG_DIR = get_claude_home()
 HOME_CLAUDE_SYMLINK = Path.home() / ".claude"
-ROOT_CLAUDE_SYMLINK = None if sys.platform == "win32" else Path("/root/.claude")
+ROOT_CLAUDE_SYMLINK = None if IS_WINDOWS else Path("/root/.claude")
 
 # MCP servers to check connectivity
 MCP_SERVERS = ["context7", "playwriter"]

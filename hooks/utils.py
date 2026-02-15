@@ -26,11 +26,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hooks.transaction import atomic_write_json as _txn_atomic_write_json
+from hooks.compat import IS_WINDOWS as IS_WIN
 
 # ---------------------------------------------------------------------------
 # Platform detection
 # ---------------------------------------------------------------------------
-IS_WIN = sys.platform == "win32"
 
 if IS_WIN:
     import ctypes

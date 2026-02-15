@@ -351,6 +351,8 @@ Ralph agents use atomic task claiming with `FileLock` to prevent idle agents. Qu
 
 **Code-level guards:** `sanitize_reply_text()` in `skills/x/scripts/x.py` (every X post), `x-post-check` in `guards.py` (Chrome MCP audit log).
 
+**Cross-platform:** All hooks use `scripts/compat.py` for platform abstraction (stdin timeout, file locking, CLAUDE_HOME, sound playback). Hooks import via `hooks/compat.py` re-export.
+
 ## Agent Frontmatter Fields
 
 Agent config files (`agents/*.md`) support these frontmatter fields:

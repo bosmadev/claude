@@ -31,55 +31,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+# Add parent directory to sys.path for hooks imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
 # =============================================================================
 # Stdin Timeout - Prevent hanging on missing stdin
 # =============================================================================
 
-_stdin_timer = None
+from hooks.compat import setup_stdin_timeout, cancel_stdin_timeout
 
-
-def _setup_timeout():
-    global _stdin_timer
-    if sys.platform == "win32":
-        import threading
-
-        def timeout_exit():
-            """Log timeout and exit gracefully."""
-            try:
-                debug_log = Path.home() / ".claude" / "debug" / "security-gate-timeout.log"
-                debug_log.parent.mkdir(parents=True, exist_ok=True)
-                with open(debug_log, "a") as f:
-                    f.write(f"[{datetime.now().isoformat()}] Timeout after 5s\n")
-            except Exception:
-                pass
-            sys.exit(0)
-
-        _stdin_timer = threading.Timer(5, timeout_exit)
-        _stdin_timer.daemon = True
-        _stdin_timer.start()
-    else:
-        import signal
-
-        def timeout_handler(signum, frame):
-            sys.exit(0)
-
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(5)
-
-
-def _cancel_timeout():
-    global _stdin_timer
-    if sys.platform == "win32":
-        if _stdin_timer:
-            _stdin_timer.cancel()
-            _stdin_timer = None
-    else:
-        import signal
-
-        signal.alarm(0)
-
-
-_setup_timeout()
+setup_stdin_timeout(5, debug_label="security-gate.py")
 
 
 # =============================================================================
@@ -693,7 +655,7 @@ def pre_check() -> None:
             print(json.dumps(output))
             sys.exit(0)
         hook_input = json.loads(raw_input)
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError as e:
         # Log JSON parsing errors to detect potential injection attempts
         try:
@@ -804,7 +766,7 @@ def post_edit_check() -> None:
             # Input too large, exit silently (allow the edit)
             sys.exit(0)
         hook_input = json.loads(raw_input)
-        _cancel_timeout()
+        cancel_stdin_timeout()
     except json.JSONDecodeError:
         # JSON parsing error, exit silently (allow the edit)
         sys.exit(0)

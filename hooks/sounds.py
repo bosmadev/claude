@@ -22,11 +22,12 @@ import os
 import sys
 from pathlib import Path
 
-try:
-    import winsound
-    WINSOUND_AVAILABLE = True
-except ImportError:
-    WINSOUND_AVAILABLE = False
+# Add parent directory to path so hooks.compat import works when run as script
+_PARENT = Path(__file__).resolve().parent.parent
+if str(_PARENT) not in sys.path:
+    sys.path.insert(0, str(_PARENT))
+
+from hooks.compat import play_sound as _play_sound
 
 SOUNDS_DIR = Path(__file__).parent / "sounds"
 
@@ -45,12 +46,9 @@ def should_play_sound() -> bool:
 
 def play_wav(name: str):
     """Play a WAV file from the sounds directory."""
-    if not WINSOUND_AVAILABLE:
-        return
     try:
         wav_path = SOUNDS_DIR / f"{name}.wav"
-        if wav_path.exists():
-            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
+        _play_sound(wav_path)
     except Exception:
         pass
 

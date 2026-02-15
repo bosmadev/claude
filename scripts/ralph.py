@@ -24,12 +24,8 @@ Usage:
 
 import asyncio
 import sys
-if sys.platform != "win32":
-    import fcntl
 import json
 import os
-if sys.platform != "win32":
-    import pty
 import shutil
 import subprocess
 import threading
@@ -38,6 +34,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, field, asdict
+
+# Import compat utilities (sys.path needed when invoked as hook: python scripts/ralph.py)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.compat import file_lock, file_unlock, get_claude_home, setup_stdin_timeout, IS_WINDOWS
 from enum import Enum
 from zoneinfo import ZoneInfo
 
@@ -72,7 +72,7 @@ AGENT_SPECIALTIES: dict[str, list[str]] = {
 
 def _get_agents_dir() -> str:
     """Get default agents directory, cross-platform."""
-    _home = os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude")
+    _home = str(get_claude_home())
     return str(Path(_home) / "agents")
 
 
@@ -376,22 +376,11 @@ class WorkStealingQueue:
     def _acquire_lock(self) -> int:
         self._ensure_dir()
         fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR)
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_EX)
+        file_lock(fd)
         return fd
 
     def _release_lock(self, fd: int) -> None:
-        if sys.platform == "win32":
-            import msvcrt
-            os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_UN)
+        file_unlock(fd)
         os.close(fd)
 
     def load(self) -> TaskQueue:
@@ -1349,23 +1338,12 @@ class WorkStealingQueue:
         """Acquire file lock for atomic operations."""
         self._ensure_dir()
         fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR)
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_EX)
+        file_lock(fd)
         return fd
 
     def _release_lock(self, fd: int) -> None:
         """Release file lock."""
-        if sys.platform == "win32":
-            import msvcrt
-            os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_UN)
+        file_unlock(fd)
         os.close(fd)
 
     def load(self) -> TaskQueue:
@@ -2129,12 +2107,7 @@ def record_daily_cost(cost_usd: float) -> None:
 
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
     try:
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_EX)
+        file_lock(fd)
 
         # Read existing accumulated cost
         existing = 0.0
@@ -2149,13 +2122,7 @@ def record_daily_cost(cost_usd: float) -> None:
         ralph_path.write_text(str(new_total))
 
     finally:
-        if sys.platform == "win32":
-            import msvcrt
-            os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_UN)
+        file_unlock(fd)
         os.close(fd)
 
 # =============================================================================
@@ -3996,35 +3963,12 @@ def agent_tracker() -> None:
     - Stale session auto-cleanup (>4h marks as complete with staleReason)
     """
     # Set timeout for stdin read (cross-platform)
-    if sys.platform == "win32":
-        import threading
-
-        def _timeout_win():
-            _debug_exit("stdin read timeout", 0)
-            os._exit(0)
-
-        _timer = threading.Timer(10, _timeout_win)
-        _timer.daemon = True
-        _timer.start()
-    else:
-        import signal
-
-        def _timeout_handler(signum, frame):
-            _debug_exit("stdin read timeout", 0)
-
-        signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(10)  # 10 second timeout
+    setup_stdin_timeout(10)
 
     try:
         data = json.loads(sys.stdin.read())
     except json.JSONDecodeError:
         _debug_exit("invalid JSON on stdin", 0)
-
-    if sys.platform == "win32":
-        _timer.cancel()
-    else:
-        import signal
-        signal.alarm(0)  # Cancel timeout
 
     tool_name = data.get("tool_name", "")
 

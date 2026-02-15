@@ -21,46 +21,23 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
-# =============================================================================
-# Stdin Timeout - Prevent hanging on missing stdin
-# =============================================================================
+# Add parent directory to path for compat imports
+_PARENT = Path(__file__).resolve().parent.parent
+if str(_PARENT) not in sys.path:
+    sys.path.insert(0, str(_PARENT))
 
-_stdin_timer = None
+from hooks.compat import setup_stdin_timeout, cancel_stdin_timeout
 
 
+# Wrapper functions for backward compat within this file
 def _setup_timeout():
     """Setup timeout protection for stdin read operations."""
-    global _stdin_timer
-    if sys.platform == "win32":
-        import threading
-
-        def timeout_exit():
-            sys.exit(0)
-
-        _stdin_timer = threading.Timer(5, timeout_exit)
-        _stdin_timer.daemon = True
-        _stdin_timer.start()
-    else:
-        import signal
-
-        def timeout_handler(signum, frame):
-            sys.exit(0)
-
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(5)
+    setup_stdin_timeout(5, debug_label="memory-unify.py stdin read")
 
 
 def _cancel_timeout():
     """Cancel timeout after successful stdin read."""
-    global _stdin_timer
-    if sys.platform == "win32":
-        if _stdin_timer:
-            _stdin_timer.cancel()
-            _stdin_timer = None
-    else:
-        import signal
-
-        signal.alarm(0)
+    cancel_stdin_timeout()
 
 
 # =============================================================================
@@ -152,6 +129,9 @@ def detect_source_repo(cwd: str) -> Optional[Tuple[str, str]]:
 # =============================================================================
 
 
+from hooks.compat import is_symlink as _is_symlink, get_symlink_target as _get_symlink_target
+
+
 def is_junction(path: Path) -> bool:
     """
     Check if a path is an NTFS junction.
@@ -167,13 +147,7 @@ def is_junction(path: Path) -> bool:
     """
     if not path.exists():
         return False
-
-    # Python 3.12+ has native is_junction()
-    if hasattr(path, "is_junction"):
-        return path.is_junction()
-
-    # Fallback: os.path.islink() works for junctions on Windows
-    return os.path.islink(str(path))
+    return _is_symlink(path)
 
 
 def get_junction_target(path: Path) -> Optional[Path]:
@@ -189,12 +163,10 @@ def get_junction_target(path: Path) -> Optional[Path]:
     if not is_junction(path):
         return None
 
-    try:
-        # readlink works for junctions on Windows
-        target = os.readlink(str(path))
-        return Path(target).resolve()
-    except (OSError, ValueError):
-        return None
+    target = _get_symlink_target(path)
+    if target:
+        return target.resolve()
+    return None
 
 
 def create_memory_junction(
@@ -270,21 +242,11 @@ def create_memory_junction(
     # Ensure parent directory exists
     dev_memory.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create junction using cmd.exe mklink
+    # Create junction using compat.create_symlink
+    from hooks.compat import create_symlink
+
     try:
-        # Use absolute paths
-        dev_path = str(dev_memory.resolve())
-        main_path = str(main_memory.resolve())
-
-        # Run mklink /J via cmd.exe
-        result = subprocess.run(
-            ["cmd.exe", "/c", "mklink", "/J", dev_path, main_path],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if result.returncode == 0:
+        if create_symlink(main_memory, dev_memory):
             return {
                 "success": True,
                 "action": "created",
@@ -294,7 +256,7 @@ def create_memory_junction(
             return {
                 "success": False,
                 "action": "error",
-                "message": f"mklink failed: {result.stderr}",
+                "message": "create_symlink failed",
             }
 
     except Exception as e:

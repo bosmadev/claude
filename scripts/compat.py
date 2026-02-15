@@ -16,6 +16,7 @@ Usage:
 """
 
 import os
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -41,22 +42,45 @@ def get_claude_home() -> Path:
     return Path("/usr/share/claude")
 
 
-def setup_stdin_timeout(seconds: int) -> None:
+def setup_stdin_timeout(seconds: int, debug_label: str = "") -> None:
     """
     Set a timeout for stdin read operations.
 
     On POSIX: uses signal.SIGALRM (interrupts blocking reads).
     On Windows: uses a daemon thread with os._exit (forceful but reliable).
+
+    Args:
+        seconds: Timeout in seconds
+        debug_label: Optional label for debug logging when timeout fires
     """
     global _stdin_timer
     if IS_WINDOWS:
-        _stdin_timer = threading.Timer(seconds, lambda: os._exit(0))
+        def _timeout_handler():
+            if debug_label:
+                from datetime import datetime
+                log_dir = get_claude_home() / "debug"
+                log_dir.mkdir(exist_ok=True)
+                log_file = log_dir / "hook-timeout.log"
+                timestamp = datetime.now().isoformat()
+                with open(log_file, "a") as f:
+                    f.write(f"{timestamp} - Timeout ({seconds}s): {debug_label}\n")
+            os._exit(0)
+
+        _stdin_timer = threading.Timer(seconds, _timeout_handler)
         _stdin_timer.daemon = True
         _stdin_timer.start()
     else:
         import signal
 
         def _handler(signum, frame):
+            if debug_label:
+                from datetime import datetime
+                log_dir = get_claude_home() / "debug"
+                log_dir.mkdir(exist_ok=True)
+                log_file = log_dir / "hook-timeout.log"
+                timestamp = datetime.now().isoformat()
+                with open(log_file, "a") as f:
+                    f.write(f"{timestamp} - Timeout ({seconds}s): {debug_label}\n")
             sys.exit(0)
 
         signal.signal(signal.SIGALRM, _handler)
@@ -134,3 +158,111 @@ def file_unlock(fd: int) -> None:
         import fcntl
 
         fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def create_symlink(target: Path, link: Path) -> bool:
+    """
+    Create a symlink/junction, cross-platform.
+
+    On Windows: creates a junction using cmd.exe mklink /J.
+    On Linux: creates a symlink using os.symlink.
+
+    Args:
+        target: Path to the target directory
+        link: Path where the symlink/junction should be created
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        if IS_WINDOWS:
+            result = subprocess.run(
+                ["cmd.exe", "/c", "mklink", "/J", str(link), str(target)],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            return result.returncode == 0
+        else:
+            os.symlink(str(target), str(link))
+            return True
+    except Exception:
+        return False
+
+
+def is_symlink(path: Path) -> bool:
+    """
+    Check if path is a symlink/junction, cross-platform.
+
+    On Windows (Python 3.12+): uses path.is_junction().
+    On Windows (Python <3.12): uses os.path.islink() fallback.
+    On Linux: uses path.is_symlink().
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if path is a symlink/junction, False otherwise
+    """
+    try:
+        if IS_WINDOWS:
+            # Try Python 3.12+ method first
+            if hasattr(path, 'is_junction'):
+                return path.is_junction()
+            # Fallback to os.path.islink
+            return os.path.islink(str(path))
+        else:
+            return path.is_symlink()
+    except Exception:
+        return False
+
+
+def get_symlink_target(path: Path) -> Path | None:
+    """
+    Get the target of a symlink/junction, cross-platform.
+
+    Args:
+        path: Path to the symlink/junction
+
+    Returns:
+        Path to the target, or None if path is not a symlink or on error
+    """
+    try:
+        return path.readlink()
+    except Exception:
+        return None
+
+
+def play_sound(wav_path: Path) -> None:
+    """
+    Play a WAV sound file, cross-platform.
+
+    On Windows: uses winsound.PlaySound().
+    On Linux: tries aplay, then paplay as fallback.
+
+    Args:
+        wav_path: Path to the .wav file to play
+    """
+    if not wav_path.exists():
+        return
+
+    if IS_WINDOWS:
+        try:
+            import winsound
+            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
+        except Exception:
+            pass  # Silently ignore errors
+    else:
+        # Try aplay first, then paplay
+        for player in ["aplay", "paplay"]:
+            try:
+                subprocess.Popen(
+                    [player, str(wav_path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                break  # Success, don't try other players
+            except FileNotFoundError:
+                continue  # Try next player
+            except Exception:
+                break  # Give up on error

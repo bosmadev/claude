@@ -30,21 +30,15 @@ import re
 import sys
 from pathlib import Path
 
+# sys.path needed when invoked as hook: python scripts/guards.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # =============================================================================
 # Stdin Timeout - Prevent hanging on missing stdin (cross-platform)
 # =============================================================================
 
-# Set 5 second timeout for stdin read operations
-if sys.platform == "win32":
-    import threading
-    _t = threading.Timer(5, lambda: os._exit(0))
-    _t.daemon = True
-    _t.start()
-else:
-    import signal
-    signal.signal(signal.SIGALRM, lambda s, f: sys.exit(0))
-    signal.alarm(5)
+from scripts.compat import setup_stdin_timeout
+setup_stdin_timeout(5)
 
 
 # =============================================================================
@@ -699,7 +693,8 @@ RALPH CONFIGURATION (COPY TO PLAN FILE):
 # Skill Interceptor (UserPromptSubmit)
 # =============================================================================
 
-_claude_home = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude"))
+from scripts.compat import get_claude_home
+_claude_home = get_claude_home()
 SKILLS_DIR = _claude_home / "skills"
 
 # Cache discovered skill names at module level (populated once per process)
