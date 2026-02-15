@@ -1,93 +1,107 @@
-# Folders
+# ===========================================
+# Claude Code — runtime state & data
+# ===========================================
+.cache/
+.claude/*
+cache/
+chrome/
+daily-cost/
 debug/
-projects/
+downloads/
 file-history/
-todos/
+image-cache/
+memory/
+nightshift/
+paste-cache/
+plans/
+projects/
+ralph/
+research/
+security/
 session-env/
 shell-snapshots/
-cache/
-paste-cache/
-chrome/
-downloads/
-plans/
+statsig/
 tasks/
-node_modules/
-daily-cost/
-.cache/
-__pycache__/
-.venv/
-venv/
-.vscode/
-ide/
-plugins/
+teams/
 telemetry/
-.serena/
-bin/
-.claude/*
+tmp/
+todos/
 transcriptions/
 youtube/
-statsig/
-tmp/
-security/
-teams/
-memory/
-research/
-image-cache/
+${TMPDIR}/
+
+# Dev tooling
+__pycache__/
+.venv/
+.vscode/
+bin/
+ide/
+node_modules/
+plugins/
+venv/
+
+# Skill runtime data
 skills/x/data/
 skills/*/.claude/
 skills/*/scripts/~/
 skills/*/data/~/
-${TMPDIR}/
 
-# Temp files (any location — ALL scratch/notes/install artifacts)
+# ===========================================
+# File patterns
+# ===========================================
+
+# Temp & scratch
+*.temp
+*.tmp
+.tmp-*
+scratch-*
 temp-*
 temp_*
-.tmp-*
-*.tmp
-*.temp
 test-*.py
-scratch-*
 *-install-*
 *-notes.md
-/nightshift/
-ralph/
 
-# Reply/signal files (from /x skill)
+# X skill artifacts
 *.reply
 *.signal
 
-# Build/cache
+# Compiled & editor
 *.pyc
-*.pyo
 *.pyd
 *.swp
 *~
+
+# Lock & log
 *.lock
 *.log
 *-lock.json
 *-lock.yaml
 
-# Auth/secrets
-.credentials.json
+# ===========================================
+# Auth & secrets
+# ===========================================
 .claude.json
+.credentials.json
 .env*
 !.env.example
 
-# State files
-command-history.log
-history.jsonl
-stats-cache.json
-security_*.json
+# ===========================================
+# Runtime state files
+# ===========================================
 .claude.json.*
 !.claude.json.example
-.usage-cache
-.usage-cache.tmp
-settings.json.*
-nul
-.statusline-last
 .model-info
 .session-info
-
-# Keep markers
-!.gitkeep
+.statusline-last
+.usage-cache
+history.jsonl
+nul
+security_*.json
+settings.json.*
 sounds-enabled*
+stats-cache.json
+
+# ===========================================
+# Negations
+# ===========================================
+!.gitkeep

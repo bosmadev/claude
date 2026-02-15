@@ -151,8 +151,8 @@ jobs:
             }
           }
           EOF
-          # NOTE: Only sequential-thinking and context7 included for CI safety
-          # Serena/Playwriter excluded - risk of infinite loops burning minutes
+          # NOTE: Only context7 included for CI safety
+          # Playwriter excluded - risk of infinite loops burning minutes
 
       - name: Validate Claude Token Secret
         run: |

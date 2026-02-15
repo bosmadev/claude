@@ -48,14 +48,14 @@ from zoneinfo import ZoneInfo
 # =============================================================================
 
 AGENT_SPECIALTIES: dict[str, list[str]] = {
-    "security-reviewer": ["security", "auth", "owasp", "xss", "csrf", "injection", "vulnerability", "encryption", "token", "password"],
-    "performance-reviewer": ["performance", "speed", "latency", "cache", "optimize", "memory", "profil", "bottleneck", "slow"],
-    "api-reviewer": ["api", "rest", "graphql", "endpoint", "route", "http", "request", "response", "cors", "middleware"],
+    "security-auditor": ["security", "auth", "owasp", "xss", "csrf", "injection", "vulnerability", "encryption", "token", "password"],
+    "performance-auditor": ["performance", "speed", "latency", "cache", "optimize", "memory", "profil", "bottleneck", "slow"],
+    "api-specialist": ["api", "rest", "graphql", "endpoint", "route", "http", "request", "response", "cors", "middleware"],
     "architecture-reviewer": ["architecture", "pattern", "design", "structure", "module", "dependency", "coupling", "solid"],
     "a11y-reviewer": ["accessibility", "a11y", "aria", "wcag", "screen reader", "keyboard", "contrast", "focus"],
     "database-reviewer": ["database", "sql", "query", "migration", "schema", "index", "orm", "prisma", "drizzle"],
     "commit-reviewer": ["commit", "git", "merge", "branch", "changelog", "version", "release"],
-    "performance-profiler": ["profile", "benchmark", "flame", "trace", "cpu", "heap", "allocation"],
+    "performance-optimizer": ["profile", "benchmark", "flame", "trace", "cpu", "heap", "allocation"],
     "doc-accuracy-checker": ["documentation", "readme", "jsdoc", "docstring", "comment", "api doc"],
     "build-error-resolver": ["build", "compile", "error", "typescript", "lint", "biome", "webpack", "vite", "bundle"],
     "refactor-cleaner": ["refactor", "clean", "dead code", "unused", "duplicate", "simplify", "extract"],
