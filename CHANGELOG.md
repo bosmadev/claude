@@ -3,6 +3,15 @@
 
 ---
 
+## [![v1.11.4](https://img.shields.io/badge/v1.11.4-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/2dd746977d3150e2f1527fa090e3a13119234750) | Build 29
+
+fix: CHANGELOG trivia filter + commit skill docs
+
+- [x] Added CHANGELOG-Worthy Changes table in commit/SKILL.md documenting what to include/exclude
+
+
+---
+
 ## [![v1.11.3](https://img.shields.io/badge/v1.11.3-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/35992ae029c2a9899a43e9a87907a9cdb08eaa12) | Build 28
 
 fix: address review findings in compat.py
