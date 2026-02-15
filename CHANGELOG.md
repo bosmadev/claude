@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.11.1](https://img.shields.io/badge/v1.11.1-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/dae4643c7e2f9be428914d2ad6b170440ced9bdc) | Build 26
+
+fix(ci): add github.token fallback to ADMIN_TOKEN in claude.yml
+
+
+
+---
+
 ## [![v1.11.0](https://img.shields.io/badge/v1.11.0-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/2aea59ce8970712af34404103865d66c10a5cf76) | Build 25
 
 feat: web research fallback chain with auto-injection + markdown_fetch.py
