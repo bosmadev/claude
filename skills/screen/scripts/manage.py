@@ -12,7 +12,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-SCREENSHOTS_DIR = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude") if sys.platform == "win32" else "/usr/share/claude")) / "skills" / "screen" / "screenshots"
+# Add parent directories to sys.path for compat import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+
+from scripts.compat import get_claude_home
+
+SCREENSHOTS_DIR = get_claude_home() / "skills" / "screen" / "screenshots"
 FILENAME_PREFIX = "screen-"
 FILENAME_SUFFIX = ".png"
 RETENTION_DAYS = 7

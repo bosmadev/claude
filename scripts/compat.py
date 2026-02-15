@@ -7,6 +7,22 @@ Provides platform-aware replacements for:
 - fcntl.flock (file locking)
 - Path resolution (CLAUDE_HOME)
 - Python executable detection
+- Symlink/junction creation and detection
+- Sound playback (WAV files)
+
+Public API:
+    IS_WINDOWS - bool platform flag
+    get_python_exe() - current Python interpreter path
+    get_claude_home() - CLAUDE_HOME path with platform defaults
+    setup_stdin_timeout(seconds, debug_label="") - set stdin read timeout
+    cancel_stdin_timeout() - cancel active timeout
+    file_lock(fd, exclusive=True) - acquire file lock
+    file_lock_nb(fd) - non-blocking file lock attempt
+    file_unlock(fd) - release file lock
+    create_symlink(target, link) - create symlink/junction
+    is_symlink(path) - check if path is symlink/junction
+    get_symlink_target(path) - resolve symlink target
+    play_sound(wav_path) - play WAV file
 
 Usage:
     from scripts.compat import IS_WINDOWS, get_claude_home, setup_stdin_timeout

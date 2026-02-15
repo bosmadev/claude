@@ -347,7 +347,7 @@ Ralph agents use atomic task claiming with `FileLock` to prevent idle agents. Qu
 
 ## Hook System
 
-19 hook handlers across 13 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart, SubagentStop, Notification, PermissionRequest, TaskCompleted, TeammateIdle. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol, /x security), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete hook registration table.
+20 hook handlers across 13 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart, SubagentStop, Notification, PermissionRequest, TaskCompleted, TeammateIdle. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol, /x security), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete hook registration table.
 
 **Code-level guards:** `sanitize_reply_text()` in `skills/x/scripts/x.py` (every X post), `x-post-check` in `guards.py` (Chrome MCP audit log).
 

@@ -19,47 +19,18 @@ import sys
 import threading
 from pathlib import Path
 
+# Add parent directory to sys.path for hooks imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from hooks.compat import setup_stdin_timeout, cancel_stdin_timeout
+
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 RALPH_SCRIPT = SCRIPTS_DIR / "ralph.py"
-
-# ---------------------------------------------------------------------------
-# Timeout guard — kill process if stdin/subprocess hangs (Windows-safe)
-# ---------------------------------------------------------------------------
-_TOTAL_TIMEOUT = 25  # seconds — must be less than the hook timeout in settings.json
-_kill_timer = None
-
-
-def _setup_timeout():
-    """Setup timeout guard with proper cleanup logging."""
-    global _kill_timer
-
-    def timeout_exit():
-        """Log timeout and exit."""
-        try:
-            debug_log = Path.home() / ".claude" / "debug" / "ralph-timeout.log"
-            debug_log.parent.mkdir(parents=True, exist_ok=True)
-            with open(debug_log, "a") as f:
-                f.write(f"[{Path(__file__).name}] Timeout after {_TOTAL_TIMEOUT}s\n")
-        except Exception:
-            pass
-        sys.exit(0)
-
-    _kill_timer = threading.Timer(_TOTAL_TIMEOUT, timeout_exit)
-    _kill_timer.daemon = True
-    _kill_timer.start()
-
-
-def _cancel_timeout():
-    """Cancel timeout guard."""
-    global _kill_timer
-    if _kill_timer:
-        _kill_timer.cancel()
-        _kill_timer = None
 
 
 def main() -> None:
     """Delegate to scripts/ralph.py with hook-{mode} command."""
-    _setup_timeout()
+    setup_stdin_timeout(25, debug_label="ralph.py")
 
     if len(sys.argv) < 2:
         sys.exit(0)
@@ -100,7 +71,7 @@ def main() -> None:
         # Stdin read timed out
         sys.exit(0)
 
-    _cancel_timeout()
+    cancel_stdin_timeout()
 
     # Call scripts/ralph.py hook-{mode}
     try:

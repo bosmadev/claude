@@ -219,7 +219,7 @@ def check_tmpdir() -> dict:
 
             # Additional safety: ensure path doesn't escape to sensitive locations
             forbidden_parents = [Path("/etc"), Path("/sys"), Path("/proc"), Path.home() / ".ssh"]
-            if sys.platform == "win32":
+            if IS_WINDOWS:
                 forbidden_parents.extend([Path("C:/Windows"), Path("C:/System32")])
 
             is_forbidden = any(
@@ -257,7 +257,7 @@ def check_tmpdir() -> dict:
         else:
             results["recommendation"] = f"CLAUDE_CODE_TMPDIR does not exist: {tmpdir}"
     else:
-        if sys.platform == "win32":
+        if IS_WINDOWS:
             results["recommendation"] = (
                 "Consider setting CLAUDE_CODE_TMPDIR to a RAM disk for faster file operations:\n"
                 "  1. Install a RAM disk tool (e.g., ImDisk) and create a 512 MB RAM drive (e.g., R:\\)\n"
