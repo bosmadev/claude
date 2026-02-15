@@ -11,8 +11,6 @@ fix: address review findings in compat.py
 - [x] file_lock/file_lock_nb: add os.lseek(0) for consistent lock position with file_unlock
 - [x] create_symlink: quote paths in mklink command (handle spaces)
 - [x] play_sound: add SND_ASYNC flag for non-blocking Windows playback
-- [x] Remove redundant exclusive ternary in file_lock (msvcrt is always exclusive)
-- [x] Remove inline TODO comments from review agent (findings addressed in code)
 
 
 ---
@@ -22,7 +20,6 @@ fix: address review findings in compat.py
 cleanup: sound removal + path fixes
 
 - [x] Removed 5 sound files from hooks/sounds directory (agent_stop, notification, subagentstart, subagentstop, userpromptsubmit)
-- [x] Updated Hook System summary in CLAUDE.md: corrected hook count to 19 handlers across 13 lifecycle stages, updated to include PermissionRequest, TaskCompleted, and TeammateIdle stages
 
 
 ---

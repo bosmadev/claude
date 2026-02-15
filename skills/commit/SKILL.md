@@ -425,6 +425,20 @@ config: Windows migration, security hooks, init-repo skill
 | **Config Files** | Configuration changes | `- **Config Files Updated (3):** Updated settings.json with hook registrations for Ralph protocol, .gitignore with pending-commit patterns, .claude.json with Windows-specific paths` |
 | **Core Scripts** | Main codebase scripts | `- **Core Scripts Updated (3):** Enhanced git.py with change-tracker hook for commit.md logging, guards.py with skill-parser validation, ralph.py with agent-tracker performance metrics` |
 
+### CHANGELOG-Worthy Changes (IMPORTANT)
+
+Bullet points flow directly into CHANGELOG.md via GitHub Actions. Only include items a **user or contributor would care about**. Internal meta-work is noise.
+
+| Include | Exclude (NEVER) |
+|---------|-----------------|
+| New features, bug fixes, perf improvements | TODO/FIXME/comment removal |
+| Breaking changes, API changes | CLAUDE.md / SKILL.md / agent config updates |
+| Dependency upgrades with impact | Whitespace, formatting, redundant code removal |
+| Security fixes | Review agent findings cleanup |
+| Config changes affecting behavior | Internal documentation corrections |
+
+**Rule:** If a bullet describes something that only matters to the Claude Code developer workflow (not the project's users), omit it.
+
 ### Rules
 
 1. **Bold the category label** with `**Label (N files):**`

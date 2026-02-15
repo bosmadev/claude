@@ -167,6 +167,33 @@ if (summaryIdx !== -1) {
   );
 }
 
+// Filter out internal/trivial items that should never appear in CHANGELOG
+// These are implementation details, not user-facing changes
+function isTrivia(line: string): boolean {
+  const lower = line.toLowerCase();
+  const triviaPatterns = [
+    // Internal cleanup
+    /\bremov(e|ed|ing)\b.*\b(todo|fixme|hack|xxx)\b.*\bcomment/i,
+    /\bremov(e|ed|ing)\b.*\binline\b.*\bcomment/i,
+    /\bclean(ed|ing)?\s*up\b.*\bcomment/i,
+    /\b(add|remov|updat)(e|ed|ing)\b.*\b(todo|fixme)\b/i,
+    // Internal documentation (CLAUDE.md, SKILL.md, agent configs)
+    /\b(updat|correct|fix)(e|ed|ing)\b.*\bCLAUDE\.md\b/i,
+    /\b(updat|correct|fix)(e|ed|ing)\b.*\bSKILL\.md\b/i,
+    /\b(updat|correct|fix)(e|ed|ing)\b.*\bagent\s+(config|description)/i,
+    /\bhook\s+(count|summary)\b.*\bCLAUDE\.md\b/i,
+    // Whitespace/formatting-only
+    /\bwhitespace\b/i,
+    /\bformatting\s+only\b/i,
+    // Redundant/trivial refactoring
+    /\bremov(e|ed|ing)\b.*\bredundant\b.*\b(ternary|comment|whitespace|import)\b/i,
+    // Review agent internal findings
+    /\breview\s+agent\b.*\b(finding|addressed)\b/i,
+    /\bfindings\s+addressed\b/i,
+  ];
+  return triviaPatterns.some((p) => p.test(lower));
+}
+
 // Extract changes - FLATTEN categories (no ### feat, ### fix)
 const verbs: Record<string, string> = {
   feat: "Added",
@@ -223,6 +250,15 @@ if (!summary && changes.length === 0) {
   if (bodyLines.length > 0) {
     changes = bodyLines.map((l) => l.trim());
   }
+}
+
+// Strip internal/trivial items from changelog (both extraction paths)
+const beforeFilter = changes.length;
+changes = changes.filter((l) => !isTrivia(l));
+if (beforeFilter > changes.length) {
+  console.log(
+    `Filtered ${beforeFilter - changes.length} trivial item(s) from CHANGELOG`,
+  );
 }
 
 // Build CHANGELOG entry with badge format
