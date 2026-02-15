@@ -3,6 +3,23 @@
 
 ---
 
+## [![v1.11.0](https://img.shields.io/badge/v1.11.0-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/2aea59ce8970712af34404103865d66c10a5cf76) | Build 25
+
+feat: web research fallback chain with auto-injection + markdown_fetch.py
+
+- [x] **Web Research Chain (5-tier):** markdown_fetch.py (markdown.new→jina) → WebFetch → claude-in-chrome → Playwriter for progressive fallback with auth detection
+- [x] **Auto-Injection (SubagentStart):** context-injection.py hook injects web chain into all subagents (~200 chars) — no manual config needed
+- [x] **markdown_fetch.py Script:** Unified web-to-markdown utility (tries markdown.new POST API, falls back to r.jina.ai) with JSON output for token estimates
+- [x] **Documentation (README):** Added Web Research Fallback Chain section with decision tree, rate limits table, auth handling guide
+- [x] **Agent Updates (13 files):** Injected web chain reference at end of api-security-audit, api-specialist, docker-specialist, e2e-runner, go-specialist, incident-responder, nextjs-specialist, python-specialist, scraper-agent, security-auditor, testing-specialist, typescript-specialist, web3-hunter-v2
+- [x] **CLAUDE.md Condensed:** Reduced web chain docs from 24 lines to 7 lines with README link
+- [x] **Skills Updated (3 files):** launch/openpr/start SKILL.md reference web chain for browser fallbacks
+- [x] **Sound Fix:** Removed triple notification sounds (MessageBeep + toast peep + voice), disabled userpromptsubmit/subagentstart/subagentstop sounds
+- [x] **Hooks Enhanced:** context-injection.py unconditional web chain injection, utils.py toast removal
+
+
+---
+
 ## [![v1.10.3](https://img.shields.io/badge/v1.10.3-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/9939cd903db74ed5c47a1cb3d29c43ef28702b77) | Build 24
 
 cleanup: sound removal + path fixes
