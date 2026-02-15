@@ -3,6 +3,16 @@
 
 ---
 
+## [![v1.11.2](https://img.shields.io/badge/v1.11.2-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/2946cf15c18c454fe1530dea0a1c32fd2c9eb280) | Build 27
+
+cleanup: sound removal + path fixes
+
+- [x] Removed 5 sound files from hooks/sounds directory (agent_stop, notification, subagentstart, subagentstop, userpromptsubmit)
+- [x] Updated Hook System summary in CLAUDE.md: corrected hook count to 19 handlers across 13 lifecycle stages, updated to include PermissionRequest, TaskCompleted, and TeammateIdle stages
+
+
+---
+
 ## [![v1.11.1](https://img.shields.io/badge/v1.11.1-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/dae4643c7e2f9be428914d2ad6b170440ced9bdc) | Build 26
 
 fix(ci): add github.token fallback to ADMIN_TOKEN in claude.yml
