@@ -93,9 +93,18 @@ def handle_user_prompt_submit():
 
 
 def handle_notification():
-    """Voice: notification/attention."""
-    if should_play_sound():
-        play_wav("notification")
+    """Voice: permissionrequest.wav for permission prompts only. Other notifications silent."""
+    if not should_play_sound():
+        return
+    try:
+        stdin_data = sys.stdin.read()
+        if stdin_data.strip():
+            import json as _json
+            data = _json.loads(stdin_data)
+            if data.get("notification_type") == "permission_prompt":
+                play_wav("permissionrequest")
+    except Exception:
+        pass
 
 
 def handle_permission_request():
