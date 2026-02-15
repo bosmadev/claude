@@ -3,6 +3,20 @@
 
 ---
 
+## [![v1.11.3](https://img.shields.io/badge/v1.11.3-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/35992ae029c2a9899a43e9a87907a9cdb08eaa12) | Build 28
+
+fix: address review findings in compat.py
+
+- [x] setup_stdin_timeout: cancel existing timer on double-call (leak prevention)
+- [x] file_lock/file_lock_nb: add os.lseek(0) for consistent lock position with file_unlock
+- [x] create_symlink: quote paths in mklink command (handle spaces)
+- [x] play_sound: add SND_ASYNC flag for non-blocking Windows playback
+- [x] Remove redundant exclusive ternary in file_lock (msvcrt is always exclusive)
+- [x] Remove inline TODO comments from review agent (findings addressed in code)
+
+
+---
+
 ## [![v1.11.2](https://img.shields.io/badge/v1.11.2-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/2946cf15c18c454fe1530dea0a1c32fd2c9eb280) | Build 27
 
 cleanup: sound removal + path fixes
