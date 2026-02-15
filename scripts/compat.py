@@ -70,6 +70,9 @@ def setup_stdin_timeout(seconds: int, debug_label: str = "") -> None:
         debug_label: Optional label for debug logging when timeout fires
     """
     global _stdin_timer
+    # Cancel any existing timer to prevent leaked threads on double-call
+    cancel_stdin_timeout()
+
     if IS_WINDOWS:
         def _timeout_handler():
             if debug_label:
@@ -121,14 +124,15 @@ def file_lock(fd: int, exclusive: bool = True) -> None:
     Acquire a file lock, cross-platform.
 
     On POSIX: uses fcntl.flock().
-    On Windows: uses msvcrt.locking() on 1 byte at current position.
+    On Windows: uses msvcrt.locking() on 1 byte at position 0.
     """
     if IS_WINDOWS:
         import msvcrt
 
-        # Note: Windows msvcrt does not support shared locks; all locks are exclusive
-        lock_mode = msvcrt.LK_LOCK if exclusive else msvcrt.LK_LOCK
-        msvcrt.locking(fd, lock_mode, 1)
+        # Windows msvcrt does not support shared locks; all locks are exclusive.
+        # Seek to position 0 for consistent lock byte range with file_unlock().
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
     else:
         import fcntl
 
@@ -146,6 +150,7 @@ def file_lock_nb(fd: int) -> bool:
         import msvcrt
 
         try:
+            os.lseek(fd, 0, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
             return True
         except OSError:
@@ -192,8 +197,9 @@ def create_symlink(target: Path, link: Path) -> bool:
     """
     try:
         if IS_WINDOWS:
+            # Quote paths for cmd.exe to handle spaces correctly
             result = subprocess.run(
-                ["cmd.exe", "/c", "mklink", "/J", str(link), str(target)],
+                ["cmd.exe", "/c", "mklink", "/J", f'"{link}"', f'"{target}"'],
                 capture_output=True,
                 text=True,
                 check=False
@@ -253,8 +259,8 @@ def play_sound(wav_path: Path) -> None:
     """
     Play a WAV sound file, cross-platform.
 
-    On Windows: uses winsound.PlaySound().
-    On Linux: tries aplay, then paplay as fallback.
+    On Windows: uses winsound.PlaySound() with SND_ASYNC for non-blocking.
+    On Linux: tries aplay, then paplay as fallback (non-blocking via Popen).
 
     Args:
         wav_path: Path to the .wav file to play
@@ -265,7 +271,7 @@ def play_sound(wav_path: Path) -> None:
     if IS_WINDOWS:
         try:
             import winsound
-            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
+            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception:
             pass  # Silently ignore errors
     else:
