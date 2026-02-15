@@ -37,7 +37,7 @@ from typing import Any, Optional
 from collections import defaultdict
 
 
-RECEIPTS_DIR = Path.home() / ".claude" / ".claude" / "ralph" / "receipts"
+RECEIPTS_DIR = Path.home() / ".claude" / "ralph" / "receipts"
 
 
 def load_receipt(receipt_path: Path) -> Optional[dict[str, Any]]:

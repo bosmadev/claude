@@ -554,7 +554,7 @@ except ImportError:
 
 REDIS_HOST = "localhost"
 REDIS_PORT = 6379
-CONTEXT_FILE_PATH = Path.home() / ".claude" / ".claude" / "ralph" / "pending-context.md"
+CONTEXT_FILE_PATH = Path.home() / ".claude" / "ralph" / "pending-context.md"
 
 # =============================================================================
 # Model Configuration for VERIFY+FIX Phases
@@ -574,7 +574,7 @@ VERIFY_FIX_EFFORT: dict[str, str] = {
 # Receipt Audit Trail System
 # =============================================================================
 
-RECEIPTS_DIR = Path.home() / ".claude" / ".claude" / "ralph" / "receipts"
+RECEIPTS_DIR = Path.home() / ".claude" / "ralph" / "receipts"
 
 def write_receipt(
     agent_id: str,
@@ -618,7 +618,7 @@ def write_receipt(
 
         # Auto-detect session_id from checkpoint if not provided
         if session_id is None:
-            checkpoint = Path.home() / ".claude" / ".claude" / "ralph" / "checkpoint.json"
+            checkpoint = Path.home() / ".claude" / "ralph" / "checkpoint.json"
             if checkpoint.exists():
                 try:
                     state = json.loads(checkpoint.read_text(encoding="utf-8"))

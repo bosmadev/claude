@@ -5,8 +5,7 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_TMPDIR": "C:/Users/Dennis/AppData/Local/Temp/claude-tmp",
-    "PYTHONPYCACHEPREFIX": "C:/Users/Dennis/.claude/.cache/pycache",
-    "ANTHROPIC_BASE_URL": "http://localhost:8787"
+    "PYTHONPYCACHEPREFIX": "C:/Users/Dennis/.claude/.cache/pycache"
   },
   "attribution": {
     "commit": "",
@@ -790,5 +789,6 @@
       "Unifying"
     ]
   },
-  "autoUpdatesChannel": "latest"
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true
 }

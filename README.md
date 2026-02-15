@@ -363,15 +363,7 @@ Automated X/Twitter outreach with four modes:
 | `/sounds off` | Disable audio feedback (removes marker) |
 | `/sounds status` or `/sounds` | Show current audio state |
 
-Control audio feedback for Claude Code events:
-- **Session Start** — 800Hz, 200ms
-- **Tool Success** — 1000Hz, 100ms
-- **Tool Failure** — 400Hz, 300ms
-- **Permission Prompts** — 600Hz, 150ms (×2)
-- **Git Commit** — 1200Hz, 150ms
-- **Session Stop** — 500Hz, 400ms
-
-Per-session toggle (does not persist across sessions). Audio never plays for subagents.
+Voice WAV audio feedback for Claude Code lifecycle events (session start/stop, subagent spawn, notifications, permission prompts, git commits, tool errors). No sound on successful tool completion. Per-session toggle. Audio never plays for subagents.
 
 ### /help - Help & Documentation
 
@@ -582,7 +574,7 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | PostToolUse | Skill | `guards.py skill-validator` | 5s | Validate skill invocation |
 | PostToolUse | Skill | `post-review.py hook` | 30s | Post-review processing |
 | PostToolUse | computer | `guards.py x-post-check` | 5s | Security audit: log Chrome clicks during /x sessions |
-| PostToolUse | - | `sounds.py post-tool` | 5s | Play tool success/failure sound (async) |
+| PostToolUse | - | `sounds.py post-tool` | 5s | Play tool error/commit sound (async, no success beep) |
 | UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | Parse skill commands |
 | UserPromptSubmit | ^/start | `guards.py skill-parser` | 5s | Parse /start command args |
 | UserPromptSubmit | - | `guards.py plan-comments` | 5s | Detect USER comments in plans |

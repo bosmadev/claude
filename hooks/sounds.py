@@ -13,14 +13,12 @@ Plays audio only if:
 1. ~/.claude/sounds-enabled marker file exists
 2. NOT running as subagent (no CLAUDE_CODE_TASK_LIST_ID or CLAUDE_CODE_SUBAGENT)
 
-Hybrid approach: Voice WAVs (from shanraisshan/claude-code-voice-hooks)
-for most events, generated tones for high-frequency events.
+Voice WAVs (from shanraisshan/claude-code-voice-hooks) for key events.
+No sound on successful tool completion (too noisy).
 """
 
 import json
-import math
 import os
-import struct
 import sys
 from pathlib import Path
 
@@ -45,33 +43,6 @@ def should_play_sound() -> bool:
     return True
 
 
-def _generate_wav(frequency: int, duration_ms: int, volume: float = 0.3) -> bytes:
-    """Generate a mono 16-bit PCM WAV tone in memory."""
-    sample_rate = 22050
-    num_samples = int(sample_rate * duration_ms / 1000)
-    samples = bytearray()
-    for i in range(num_samples):
-        t = i / sample_rate
-        fade_samples = int(sample_rate * 0.005)
-        if i < fade_samples:
-            envelope = i / fade_samples
-        elif i > num_samples - fade_samples:
-            envelope = (num_samples - i) / fade_samples
-        else:
-            envelope = 1.0
-        value = int(volume * envelope * 32767 * math.sin(2 * math.pi * frequency * t))
-        samples.extend(struct.pack("<h", max(-32768, min(32767, value))))
-
-    data = bytes(samples)
-    header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF", 36 + len(data), b"WAVE",
-        b"fmt ", 16, 1, 1, sample_rate, sample_rate * 2, 2, 16,
-        b"data", len(data),
-    )
-    return header + data
-
-
 def play_wav(name: str):
     """Play a WAV file from the sounds directory."""
     if not WINSOUND_AVAILABLE:
@@ -80,17 +51,6 @@ def play_wav(name: str):
         wav_path = SOUNDS_DIR / f"{name}.wav"
         if wav_path.exists():
             winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
-    except Exception:
-        pass
-
-
-def play_tone(frequency: int, duration_ms: int, volume: float = 0.3):
-    """Play a generated tone through system audio."""
-    if not WINSOUND_AVAILABLE:
-        return
-    try:
-        wav_data = _generate_wav(frequency, duration_ms, volume)
-        winsound.PlaySound(wav_data, winsound.SND_MEMORY)
     except Exception:
         pass
 
@@ -170,7 +130,7 @@ def handle_teammate_idle():
 
 
 def handle_post_tool():
-    """Hybrid: voice WAVs for error/commit, generated tone for success."""
+    """Voice WAVs for error/commit only. No sound on success."""
     if not should_play_sound():
         return
 
@@ -198,9 +158,7 @@ def handle_post_tool():
             play_wav("pretooluse-git-committing")
         elif is_error:
             play_wav("posttoolusefailure")
-        else:
-            # Quick generated tone for success (voice WAV too verbose for every tool)
-            play_tone(880, 250, volume=0.4)
+        # No sound on success — too noisy when tools fire rapidly
 
     except Exception:
         pass
