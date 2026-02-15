@@ -23,7 +23,11 @@ argument-hint: "[confirm|abort|show|clear|log|summary|help]"
 4. Run `git diff --cached --stat` to show staged changes
 5. Read `.claude/commit.md` for tracked changes
 6. Analyze ALL staged changes (read diffs, understand what changed)
-7. **Auto Build ID (main branch only):** Check current branch with `git branch --show-current`. If `main` or `master`, read `CHANGELOG.md` from repo root, extract highest Build N via regex `/Build\s+(\d+)/g`, and set `nextBuildId = max(N) + 1`. If no CHANGELOG or no Build entries, start at `Build 1`.
+7. **Auto Build ID (main branch only):** Check current branch with `git branch --show-current`. If `main` or `master`, run this exact bash command to get the next Build ID:
+   ```bash
+   CL=$(grep '^## ' CHANGELOG.md 2>/dev/null | grep -oP 'Build \K\d+' | sort -rn | head -1); GL=$(git log --oneline -50 2>/dev/null | grep -oP 'Build \K\d+' | sort -rn | head -1); MAX=$(echo -e "${CL:-0}\n${GL:-0}" | sort -rn | head -1); echo $((MAX + 1))
+   ```
+   **CRITICAL:** Use the bash output as-is. Do NOT manually parse CHANGELOG.md. This command checks BOTH CHANGELOG headings AND recent git commits (covers the race between push and GitHub Action updating CHANGELOG).
 8. Generate a scope-prefix subject line (feat/fix/refactor/cleanup/config/docs/test/perf). **If on main/master, prepend Build ID:** `Build {nextBuildId}: scope: description`
 9. Generate categorized bullet points describing the changes
 10. Write the subject + bullets to the `## Ready` section of `.claude/commit.md`
@@ -60,10 +64,10 @@ Commits use scope-prefix style — no branch numbering. Squash-merge collapses t
 
 When committing directly to `main` or `master`, the skill automatically:
 
-1. Reads `CHANGELOG.md` from repo root
-2. Finds highest existing Build N via regex `/Build\s+(\d+)/g`
-3. Increments to `Build N+1`
-4. Prepends to subject: `Build 3: feat: add auth`
+1. Runs the bash command from step 7 above (checks BOTH CHANGELOG headings AND git log)
+2. Takes the MAX of both sources (handles race between push and GitHub Action)
+3. Increments to `MAX + 1`
+4. Prepends to subject: `Build 26: feat: add auth`
 
 **Why:** The `changelog.ts` GitHub Action requires `Build N` in the commit subject to trigger CHANGELOG + version bump automation. Feature branches get Build IDs from their branch name (`feature/b101-auth`) via the `/openpr` squash merge.
 

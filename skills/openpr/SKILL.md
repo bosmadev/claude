@@ -251,7 +251,11 @@ Build ID is **only injected for PRs targeting `main`** (i.e., `*-dev` → `main`
 
 **When Build ID applies** (target = `main`):
 1. **Branch name pattern:** `b101`, `feature/b42-auth` → numeric ID from name
-2. **CHANGELOG.md auto-detect:** reads `CHANGELOG.md` for highest `Build N`, uses `N+1`
+2. **CHANGELOG.md + git log auto-detect:** Run this exact bash command:
+   ```bash
+   CL=$(grep '^## ' CHANGELOG.md 2>/dev/null | grep -oP 'Build \K\d+' | sort -rn | head -1); GL=$(git log --oneline -50 2>/dev/null | grep -oP 'Build \K\d+' | sort -rn | head -1); MAX=$(echo -e "${CL:-0}\n${GL:-0}" | sort -rn | head -1); echo $((MAX + 1))
+   ```
+   **CRITICAL:** Use bash output as-is. Checks BOTH CHANGELOG headings AND git log (covers race between push and GitHub Action updating CHANGELOG).
 3. **Fallback:** `Build 1` if no CHANGELOG or no existing builds
 
 PR Title: `Build {number}` (e.g., "Build 3")
