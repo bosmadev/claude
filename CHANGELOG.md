@@ -3,6 +3,19 @@
 
 ---
 
+## [![v1.10.3](https://img.shields.io/badge/v1.10.3-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/9939cd903db74ed5c47a1cb3d29c43ef28702b77) | Build 24
+
+cleanup: sound removal + path fixes
+
+- [x] Removed success tone beeps from sounds.py (only error/commit/event WAVs now)
+- [x] Updated README.md sound descriptions to match voice-only implementation
+- [x] Fixed duplicate .claude/.claude path bugs in audit-receipts.py and ralph.py (3 instances)
+- [x] Removed ANTHROPIC_BASE_URL from settings.json (no longer proxying)
+- [x] Added skipDangerousModePermissionPrompt to settings.json
+
+
+---
+
 ## [![v1.10.2](https://img.shields.io/badge/v1.10.2-2026--02--14-333333.svg)](https://github.com/bosmadev/claude/commit/248e3b2787f421bf21be08ca67edd4b9cced2434) | Build 23
 
 docs: full consistency audit + GitHub ruleset + Chrome MCP fix
