@@ -3,6 +3,19 @@
 
 ---
 
+## [![v1.12.1](https://img.shields.io/badge/v1.12.1-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/2a4aac4df720c0888aa2508ac92aabaa209e5bdb) | Build 35
+
+refactor(openpr): unify PR body and squash message into single format
+
+- [x] Remove separate format_pr_body/format_squash_message, replace with unified format_pr
+- [x] Single output serves as both commit message and PR body (type-grouped [x] checkmarks)
+- [x] Remove --squash flag (no longer needed)
+- [x] Add /openpr confirm argument for direct squash+PR without preview step
+- [x] Boilerplate filter applies to unified format
+
+
+---
+
 ## [![v1.12.0](https://img.shields.io/badge/v1.12.0-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/8c0de109220e62f21b05702cc9217554e86b5a81) | Build 34
 
 feat(aggregate-pr): add boilerplate filter for PR body details
