@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.12.0](https://img.shields.io/badge/v1.12.0-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/8c0de109220e62f21b05702cc9217554e86b5a81) | Build 34
+
+feat(aggregate-pr): add boilerplate filter for PR body details
+
+
+
+---
+
 ## [![v1.11.8](https://img.shields.io/badge/v1.11.8-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/9c84eb1dd1bb25128484634dbfe3be88fa1e1083) | Build 33
 
 ci: add clone config step to claude.yml, fix aggregate-pr.py, add --label claude
