@@ -1,12 +1,18 @@
 // Consolidated CHANGELOG + Version Bump Script
-// Runs after merge to main/master
-// Single atomic commit with both updates
+// Runs after push to main/master via GitHub Actions
+//
+// KEY DESIGN: Processes ALL new commits since the last changelog bot commit,
+// not just HEAD. This prevents commits from being silently lost when multiple
+// commits are pushed in a single push event (e.g., rapid-fire commits, batch push).
 
 import { execSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function safeExec(cmd: string, errorMsg: string): string {
-  // Validate command is safe (git/find only, no shell expansion)
   const allowedCommands = /^(git|find)\s/;
   if (!allowedCommands.test(cmd)) {
     throw new Error(`Unsafe command rejected: ${cmd}`);
@@ -20,86 +26,332 @@ function safeExec(cmd: string, errorMsg: string): string {
   }
 }
 
-// Get the latest commit message
-const commitMsg = safeExec(
-  "git log -1 --pretty=format:%B",
-  "Failed to get commit message",
-).trim();
-const commitSubject = commitMsg.split("\n")[0];
-
-// Extract build ID from commit subject, or auto-assign from CHANGELOG
-const buildMatch = commitSubject.match(/Build\s+(\d{1,6})/i);
-let buildId: string;
-
-if (!buildMatch) {
-  // Auto-assign Build ID by reading CHANGELOG.md and incrementing highest Build N
-  console.log("No build ID in commit, auto-assigning from CHANGELOG...");
-  const changelogPath = "CHANGELOG.md";
-  let highestBuild = 0;
-
-  if (fs.existsSync(changelogPath)) {
-    const changelog = fs.readFileSync(changelogPath, "utf8");
-    const buildMatches = changelog.matchAll(/\|\s*Build\s+(\d{1,6})/gi);
-    for (const match of buildMatches) {
-      const buildNum = parseInt(match[1], 10);
-      if (buildNum > highestBuild) highestBuild = buildNum;
-    }
-  }
-
-  buildId = String(highestBuild + 1);
-  console.log(`Auto-assigned Build ${buildId}`);
-} else {
-  buildId = buildMatch[1];
+function sanitizeMarkdown(text: string): string {
+  return text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-const buildIdNum = parseInt(buildId, 10);
-if (buildIdNum < 1 || buildIdNum > 999999) {
-  throw new Error(`Invalid build ID: ${buildId} (must be 1-999999)`);
-}
-
-// Extract PR number from commit subject, e.g. "feat: auth (#42)" → 42
-const prMatch = commitSubject.match(/\(#(\d+)\)/);
-const prNumber = prMatch ? prMatch[1] : null;
-
-// Get commit SHA for fallback URL
-const commitSha = safeExec(
-  "git rev-parse HEAD",
-  "Failed to get commit SHA",
-).trim();
-
-// Build repo URL from GITHUB_REPOSITORY env var (e.g. "bosmadev/claude")
-const githubRepo = process.env.GITHUB_REPOSITORY || "";
-
-// === PART 1: Version Bump ===
-console.log("[1/3] Detecting version bump type...");
 
 function detectBumpType(msg: string): "major" | "minor" | "patch" {
-  // Strip "Build N: " prefix before checking conventional commit type
   const stripped = msg.replace(/^Build\s+\d+:\s*/i, "");
   const lowerMsg = stripped.toLowerCase();
-
-  // Check for BREAKING CHANGE
-  if (
-    lowerMsg.includes("breaking change:") ||
-    lowerMsg.includes("breaking-change:")
-  ) {
-    return "major";
-  }
-
-  // Check for conventional commit with !
-  if (/^(feat|fix|refactor|perf)(\(.+\))?!:/.test(lowerMsg)) {
-    return "major";
-  }
-
-  // Check for feat (new feature)
-  if (/^feat(\(.+\))?:/.test(lowerMsg) || msg.includes("### feat")) {
-    return "minor";
-  }
-
-  // Default to patch
+  if (lowerMsg.includes("breaking change:") || lowerMsg.includes("breaking-change:")) return "major";
+  if (/^(feat|fix|refactor|perf)(\(.+\))?!:/.test(lowerMsg)) return "major";
+  if (/^feat(\(.+\))?:/.test(lowerMsg) || msg.includes("### feat")) return "minor";
   return "patch";
 }
 
-// Find package.json
+function isTrivia(line: string): boolean {
+  const triviaPatterns = [
+    /\bremov(e|ed|ing)\b.*\b(todo|fixme|hack|xxx)\b.*\bcomment/i,
+    /\bremov(e|ed|ing)\b.*\binline\b.*\bcomment/i,
+    /\bclean(ed|ing)?\s*up\b.*\bcomment/i,
+    /\b(add|remov|updat)(e|ed|ing)\b.*\b(todo|fixme)\b/i,
+    /\b(updat|correct|fix)(e|ed|ing)\b.*\bCLAUDE\.md\b/i,
+    /\b(updat|correct|fix)(e|ed|ing)\b.*\bSKILL\.md\b/i,
+    /\b(updat|correct|fix)(e|ed|ing)\b.*\bagent\s+(config|description)/i,
+    /\bhook\s+(count|summary)\b.*\bCLAUDE\.md\b/i,
+    /\bwhitespace\b/i,
+    /\bformatting\s+only\b/i,
+    /\bremov(e|ed|ing)\b.*\bredundant\b.*\b(ternary|comment|whitespace|import)\b/i,
+    /\breview\s+agent\b.*\b(finding|addressed)\b/i,
+    /\bfindings\s+addressed\b/i,
+  ];
+  return triviaPatterns.some((p) => p.test(line));
+}
+
+const verbs: Record<string, string> = {
+  feat: "Added", fix: "Fixed", refactor: "Refactored", docs: "Updated",
+  test: "Added tests for", chore: "Updated", config: "Configured",
+  cleanup: "Cleaned up", perf: "Improved", style: "Styled",
+};
+
+function getHighestBuildId(): number {
+  const changelogPath = "CHANGELOG.md";
+  let highest = 0;
+  if (fs.existsSync(changelogPath)) {
+    const changelog = fs.readFileSync(changelogPath, "utf8");
+    for (const match of changelog.matchAll(/\|\s*Build\s+(\d{1,6})/gi)) {
+      const num = parseInt(match[1], 10);
+      if (num > highest) highest = num;
+    }
+  }
+  // Also check recent git log for Build IDs not yet in CHANGELOG
+  try {
+    const log = safeExec("git log --oneline -50", "Failed to read git log");
+    for (const match of log.matchAll(/Build\s+(\d{1,6})/gi)) {
+      const num = parseInt(match[1], 10);
+      if (num > highest) highest = num;
+    }
+  } catch { /* ignore */ }
+  return highest;
+}
+
+// ---------------------------------------------------------------------------
+// Commit discovery: find ALL new commits needing CHANGELOG entries
+// ---------------------------------------------------------------------------
+
+interface CommitInfo {
+  sha: string;
+  subject: string;
+  body: string;
+  fullMessage: string;
+  buildId: string | null; // from commit message, or null for auto-assign
+}
+
+function discoverNewCommits(): CommitInfo[] {
+  // Find the last changelog bot commit (our anchor point)
+  let lastBotSha = "";
+  try {
+    lastBotSha = safeExec(
+      'git log --format=%H --author=github-actions --grep="update CHANGELOG" -1',
+      "Failed to find last bot commit",
+    ).trim();
+  } catch { /* no bot commits yet */ }
+
+  // Get all commits between last bot commit and HEAD
+  // If no bot commit exists, use HEAD~20 as a reasonable limit
+  let range: string;
+  if (lastBotSha) {
+    range = `${lastBotSha}..HEAD`;
+  } else {
+    range = "HEAD~20..HEAD";
+  }
+
+  console.log(`Commit discovery range: ${range}${lastBotSha ? ` (since ${lastBotSha.slice(0, 8)})` : " (no bot commits found)"}`);
+
+  let logOutput: string;
+  try {
+    // Use %x00 as record separator, %x01 as field separator
+    logOutput = safeExec(
+      `git log ${range} --format=%H%x01%s%x01%b%x00 --reverse`,
+      "Failed to get commit log",
+    ).trim();
+  } catch {
+    // Fallback: just process HEAD
+    const sha = safeExec("git rev-parse HEAD", "Failed to get HEAD").trim();
+    const msg = safeExec("git log -1 --pretty=format:%B", "Failed to get commit").trim();
+    const subject = msg.split("\n")[0];
+    const body = msg.split("\n").slice(1).join("\n").trim();
+    const buildMatch = subject.match(/Build\s+(\d{1,6})/i);
+    return [{ sha, subject, body, fullMessage: msg, buildId: buildMatch ? buildMatch[1] : null }];
+  }
+
+  if (!logOutput) {
+    console.log("No new commits found since last CHANGELOG update");
+    process.exit(0);
+  }
+
+  const commits: CommitInfo[] = [];
+  const records = logOutput.split("\0").filter((r) => r.trim());
+
+  for (const record of records) {
+    const fields = record.trim().split("\x01");
+    if (fields.length < 2) continue;
+
+    const sha = fields[0].trim();
+    const subject = fields[1].trim();
+    const body = (fields[2] || "").trim();
+
+    // Skip bot commits (changelog updates, version bumps)
+    if (/^(chore|docs):\s*(bump to v|update CHANGELOG)/i.test(subject)) continue;
+
+    const buildMatch = subject.match(/Build\s+(\d{1,6})/i);
+    commits.push({
+      sha,
+      subject,
+      body,
+      fullMessage: `${subject}\n\n${body}`.trim(),
+      buildId: buildMatch ? buildMatch[1] : null,
+    });
+  }
+
+  return commits;
+}
+
+// ---------------------------------------------------------------------------
+// Extract summary + changes from a single commit message
+// ---------------------------------------------------------------------------
+
+function extractCommitContent(commit: CommitInfo): { summary: string; changes: string[] } {
+  const lines = commit.fullMessage.split("\n");
+  let summary = "";
+  let changes: string[] = [];
+
+  // Try structured ## Summary section
+  const summaryIdx = lines.findIndex((l) => l.startsWith("## Summary"));
+  if (summaryIdx !== -1) {
+    let endIdx = lines.findIndex((l, i) => i > summaryIdx && l.startsWith("## "));
+    if (endIdx === -1) endIdx = lines.length;
+    summary = sanitizeMarkdown(lines.slice(summaryIdx + 1, endIdx).join("\n").trim());
+  }
+
+  // Try structured ## Commits / ## Changes section
+  const commitsIdx = lines.findIndex((l) => l.startsWith("## Commits") || l.startsWith("## Changes"));
+  if (commitsIdx !== -1) {
+    let endIdx = lines.findIndex((l, i) => i > commitsIdx && l.startsWith("## "));
+    if (endIdx === -1) endIdx = lines.length;
+    changes = lines
+      .slice(commitsIdx + 1, endIdx)
+      .filter((l) => l.trim().startsWith("-") && !l.trim().startsWith("###"))
+      .map((l) =>
+        l.replace(/^-\s*b\d+-\d+:\s*/, "- ").replace(
+          /^-\s*(feat|fix|refactor|docs|test|chore|config|cleanup|perf|style)(\([^)]+\))?:\s*/i,
+          (_, type: string) => `- ${verbs[type.toLowerCase()] || "Updated"} `,
+        ),
+      );
+  }
+
+  // Fallback: use commit subject + body bullets
+  if (!summary && changes.length === 0) {
+    summary = commit.subject
+      .replace(/Build\s+\d+/i, "")
+      .replace(/\(#\d+\)/, "")
+      .replace(/^[\s:]+|[\s:]+$/g, "")
+      .trim();
+    const bodyLines = lines.slice(1).filter((l) => l.trim().startsWith("-"));
+    if (bodyLines.length > 0) {
+      changes = bodyLines.map((l) => l.trim());
+    }
+  }
+
+  // Filter trivia
+  changes = changes.filter((l) => !isTrivia(l));
+
+  return { summary, changes };
+}
+
+// ---------------------------------------------------------------------------
+// Build a CHANGELOG entry for one commit
+// ---------------------------------------------------------------------------
+
+function buildChangelogEntry(
+  commit: CommitInfo,
+  buildId: string,
+  version: string | null,
+  githubRepo: string,
+): string {
+  const date = new Date().toISOString().split("T")[0];
+  const badgeDate = date.replace(/-/g, "--");
+
+  const badgeLabel = version ? `v${version}` : `Build_${buildId}`;
+  const prMatch = commit.subject.match(/\(#(\d+)\)/);
+  const prNumber = prMatch ? prMatch[1] : null;
+  let badgeUrl = "#";
+  if (githubRepo) {
+    badgeUrl = prNumber
+      ? `https://github.com/${githubRepo}/pull/${prNumber}`
+      : `https://github.com/${githubRepo}/commit/${commit.sha}`;
+  }
+
+  const badge = `[![${badgeLabel}](https://img.shields.io/badge/${badgeLabel}-${badgeDate}-333333.svg)](${badgeUrl})`;
+
+  const { summary, changes } = extractCommitContent(commit);
+
+  let entry = `---\n\n## ${badge} | Build ${buildId}\n\n`;
+  if (summary) entry += `${summary}\n\n`;
+  if (changes.length > 0) {
+    const checkboxChanges = changes.map((l) =>
+      /^- \[x\]/.test(l) ? l : l.replace(/^- /, "- [x] "),
+    );
+    entry += `${checkboxChanges.join("\n")}\n`;
+  }
+  entry += "\n";
+  return entry;
+}
+
+// ---------------------------------------------------------------------------
+// Insert entry into CHANGELOG content (returns updated content)
+// ---------------------------------------------------------------------------
+
+function insertIntoChangelog(changelog: string, entry: string): string {
+  const headerComment = "<!-- DO NOT EDIT MANUALLY";
+  const headerEnd = "# Changelog";
+
+  if (changelog.includes(headerComment)) {
+    const headerIdx = changelog.indexOf(headerEnd);
+    if (headerIdx !== -1) {
+      const insertPoint = changelog.indexOf("\n", headerIdx) + 1;
+      return changelog.slice(0, insertPoint) + "\n" + entry + changelog.slice(insertPoint);
+    }
+  } else if (changelog.startsWith("# Changelog")) {
+    const insertPoint = changelog.indexOf("\n") + 1;
+    return changelog.slice(0, insertPoint) + "\n" + entry + changelog.slice(insertPoint);
+  }
+  return `<!-- DO NOT EDIT MANUALLY - Auto-generated by GitHub Actions. -->\n# Changelog\n\n${entry}${changelog}`;
+}
+
+// ===========================================================================
+// Main
+// ===========================================================================
+
+// Discover all new commits
+const commits = discoverNewCommits();
+if (commits.length === 0) {
+  console.log("No new user commits found, nothing to update");
+  process.exit(0);
+}
+
+console.log(`Found ${commits.length} new commit(s) to process`);
+
+// Read current CHANGELOG for dedup + highest Build ID
+const changelogPath = "CHANGELOG.md";
+let changelog = fs.existsSync(changelogPath)
+  ? fs.readFileSync(changelogPath, "utf8")
+  : "";
+
+const githubRepo = process.env.GITHUB_REPOSITORY || "";
+let highestBuild = getHighestBuildId();
+let combinedBumpType: "major" | "minor" | "patch" = "patch";
+const processedBuildIds: string[] = [];
+
+// Process commits oldest-first (already reversed in discovery)
+for (const commit of commits) {
+  // Determine Build ID: use commit's own or auto-assign
+  let buildId: string;
+  if (commit.buildId) {
+    buildId = commit.buildId;
+  } else {
+    highestBuild++;
+    buildId = String(highestBuild);
+    console.log(`Auto-assigned Build ${buildId} to: ${commit.subject.slice(0, 60)}`);
+  }
+
+  const buildIdNum = parseInt(buildId, 10);
+  if (buildIdNum < 1 || buildIdNum > 999999) {
+    console.warn(`Skipping invalid build ID ${buildId} for ${commit.sha}`);
+    continue;
+  }
+
+  // Dedup: skip if Build ID already in CHANGELOG
+  const duplicateCheck = new RegExp(`^## .*Build ${buildId}(\\s|\\||$)`, "m");
+  if (duplicateCheck.test(changelog)) {
+    console.log(`Build ${buildId} already in CHANGELOG, skipping: ${commit.subject.slice(0, 60)}`);
+    continue;
+  }
+
+  // Track highest bump type across all commits (for version bump)
+  const bt = detectBumpType(commit.fullMessage);
+  if (bt === "major") combinedBumpType = "major";
+  else if (bt === "minor" && combinedBumpType !== "major") combinedBumpType = "minor";
+
+  // Build and insert CHANGELOG entry (no version in badge — version determined after all entries)
+  const entry = buildChangelogEntry(commit, buildId, null, githubRepo);
+  changelog = insertIntoChangelog(changelog, entry);
+  processedBuildIds.push(buildId);
+
+  // Update highest for next iteration
+  if (buildIdNum > highestBuild) highestBuild = buildIdNum;
+
+  console.log(`✓ Added CHANGELOG entry for Build ${buildId}: ${commit.subject.slice(0, 60)}`);
+}
+
+if (processedBuildIds.length === 0) {
+  console.log("All commits already in CHANGELOG, nothing to update");
+  process.exit(0);
+}
+
+// === Version Bump (single bump for all new entries) ===
+console.log("[2/3] Version bump...");
+
 let pkgPath: string | null = null;
 try {
   const result = safeExec(
@@ -115,285 +367,80 @@ let newVersion: string | null = null;
 if (pkgPath && fs.existsSync(pkgPath)) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
   const currentVersion: string = pkg.version || "0.0.0";
-  console.log(`Current version: ${currentVersion}`);
-
-  // Validate semver
   const semverRegex = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
   if (!semverRegex.test(currentVersion)) {
     throw new Error(`Invalid semver: ${currentVersion}`);
   }
 
   const [major, minor, patch] = currentVersion.split(".").map(Number);
-  const bumpType = detectBumpType(commitMsg);
 
-  if (bumpType === "major") {
+  if (combinedBumpType === "major") {
     newVersion = `${major + 1}.0.0`;
-    console.log(`MAJOR bump: ${currentVersion} → ${newVersion}`);
-  } else if (bumpType === "minor") {
+  } else if (combinedBumpType === "minor") {
     newVersion = `${major}.${minor + 1}.0`;
-    console.log(`MINOR bump: ${currentVersion} → ${newVersion}`);
   } else {
     newVersion = `${major}.${minor}.${patch + 1}`;
-    console.log(`PATCH bump: ${currentVersion} → ${newVersion}`);
   }
 
-  // Update package.json
+  console.log(`${combinedBumpType.toUpperCase()} bump: ${currentVersion} → ${newVersion}`);
   pkg.version = newVersion;
   fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, "\t")}\n`);
   console.log(`✓ Updated ${pkgPath} to v${newVersion}`);
-}
 
-// === PART 2: CHANGELOG Update ===
-console.log("[2/3] Updating CHANGELOG.md...");
-
-const date = new Date().toISOString().split("T")[0];
-
-// Extract summary
-function sanitizeMarkdown(text: string): string {
-  return text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-let summary = "";
-const lines = commitMsg.split("\n");
-const summaryIdx = lines.findIndex((l) => l.startsWith("## Summary"));
-if (summaryIdx !== -1) {
-  let endIdx = lines.findIndex((l, i) => i > summaryIdx && l.startsWith("## "));
-  if (endIdx === -1) endIdx = lines.length;
-  summary = sanitizeMarkdown(
-    lines
-      .slice(summaryIdx + 1, endIdx)
-      .join("\n")
-      .trim(),
-  );
-}
-
-// Filter out internal/trivial items that should never appear in CHANGELOG
-// These are implementation details, not user-facing changes
-function isTrivia(line: string): boolean {
-  const lower = line.toLowerCase();
-  const triviaPatterns = [
-    // Internal cleanup
-    /\bremov(e|ed|ing)\b.*\b(todo|fixme|hack|xxx)\b.*\bcomment/i,
-    /\bremov(e|ed|ing)\b.*\binline\b.*\bcomment/i,
-    /\bclean(ed|ing)?\s*up\b.*\bcomment/i,
-    /\b(add|remov|updat)(e|ed|ing)\b.*\b(todo|fixme)\b/i,
-    // Internal documentation (CLAUDE.md, SKILL.md, agent configs)
-    /\b(updat|correct|fix)(e|ed|ing)\b.*\bCLAUDE\.md\b/i,
-    /\b(updat|correct|fix)(e|ed|ing)\b.*\bSKILL\.md\b/i,
-    /\b(updat|correct|fix)(e|ed|ing)\b.*\bagent\s+(config|description)/i,
-    /\bhook\s+(count|summary)\b.*\bCLAUDE\.md\b/i,
-    // Whitespace/formatting-only
-    /\bwhitespace\b/i,
-    /\bformatting\s+only\b/i,
-    // Redundant/trivial refactoring
-    /\bremov(e|ed|ing)\b.*\bredundant\b.*\b(ternary|comment|whitespace|import)\b/i,
-    // Review agent internal findings
-    /\breview\s+agent\b.*\b(finding|addressed)\b/i,
-    /\bfindings\s+addressed\b/i,
-  ];
-  return triviaPatterns.some((p) => p.test(lower));
-}
-
-// Extract changes - FLATTEN categories (no ### feat, ### fix)
-const verbs: Record<string, string> = {
-  feat: "Added",
-  fix: "Fixed",
-  refactor: "Refactored",
-  docs: "Updated",
-  test: "Added tests for",
-  chore: "Updated",
-  config: "Configured",
-  cleanup: "Cleaned up",
-  perf: "Improved",
-  style: "Styled",
-};
-
-let changes: string[] = [];
-const commitsIdx = lines.findIndex(
-  (l) => l.startsWith("## Commits") || l.startsWith("## Changes"),
-);
-if (commitsIdx !== -1) {
-  let endIdx = lines.findIndex((l, i) => i > commitsIdx && l.startsWith("## "));
-  if (endIdx === -1) endIdx = lines.length;
-
-  // Extract all bullets, skip ### category headers
-  changes = lines
-    .slice(commitsIdx + 1, endIdx)
-    .filter((l) => {
-      const trimmed = l.trim();
-      return trimmed.startsWith("-") && !trimmed.startsWith("###");
-    })
-    .map((l) => {
-      // Clean up: "b101-1: feat(scope): add X" → "- Added X"
-      return l
-        .replace(/^-\s*b\d+-\d+:\s*/, "- ")
-        .replace(
-          /^-\s*(feat|fix|refactor|docs|test|chore|config|cleanup|perf|style)(\([^)]+\))?:\s*/i,
-          (_, type: string) => {
-            return `- ${verbs[type.toLowerCase()] || "Updated"} `;
-          },
-        );
-    });
-}
-
-// Fallback: if no structured sections found, use commit subject + body bullets
-if (!summary && changes.length === 0) {
-  // Use commit subject (strip Build ID and conventional prefix for summary)
-  summary = commitSubject
-    .replace(/Build\s+\d+/i, "")
-    .replace(/\(#\d+\)/, "")
-    .replace(/^[\s:]+|[\s:]+$/g, "")
-    .trim();
-
-  // Extract bullet points from commit body (lines starting with -)
-  const bodyLines = lines.slice(1).filter((l) => l.trim().startsWith("-"));
-  if (bodyLines.length > 0) {
-    changes = bodyLines.map((l) => l.trim());
+  // Patch the latest CHANGELOG entry badge with the version
+  if (newVersion) {
+    const latestBuild = processedBuildIds[processedBuildIds.length - 1];
+    changelog = changelog.replace(
+      new RegExp(`Build_${latestBuild}`, "g"),
+      `v${newVersion}`,
+    );
   }
 }
 
-// Strip internal/trivial items from changelog (both extraction paths)
-const beforeFilter = changes.length;
-changes = changes.filter((l) => !isTrivia(l));
-if (beforeFilter > changes.length) {
-  console.log(
-    `Filtered ${beforeFilter - changes.length} trivial item(s) from CHANGELOG`,
-  );
-}
-
-// Build CHANGELOG entry with badge format
-const badgeDate = date.replace(/-/g, "--"); // shields.io escaping
-let badgeLabel: string;
-let badgeUrl: string;
-
-if (newVersion) {
-  badgeLabel = `v${newVersion}`;
-} else {
-  badgeLabel = `Build_${buildId}`;
-}
-
-if (githubRepo) {
-  if (prNumber) {
-    badgeUrl = `https://github.com/${githubRepo}/pull/${prNumber}`;
-  } else {
-    badgeUrl = `https://github.com/${githubRepo}/commit/${commitSha}`;
-  }
-} else {
-  badgeUrl = "#";
-}
-
-const badge = `[![${badgeLabel}](https://img.shields.io/badge/${badgeLabel}-${badgeDate}-333333.svg)](${badgeUrl})`;
-
-let entry = `---\n\n## ${badge} | Build ${buildId}\n\n`;
-if (summary) {
-  entry += `${summary}\n\n`;
-}
-if (changes.length > 0) {
-  // Use [x] checkbox style for change items (skip if already has [x])
-  const checkboxChanges = changes.map((l) =>
-    /^- \[x\]/.test(l) ? l : l.replace(/^- /, "- [x] "),
-  );
-  entry += `${checkboxChanges.join("\n")}\n`;
-}
-entry += "\n";
-
-// Update CHANGELOG.md
-const changelogPath = "CHANGELOG.md";
-let changelog = "";
-if (fs.existsSync(changelogPath)) {
-  changelog = fs.readFileSync(changelogPath, "utf8");
-
-  // Deduplication check - anchored to ## headers to avoid matching prose
-  const duplicateCheck = new RegExp(`^## .*Build ${buildId}(\\s|\\||$)`, "m");
-  if (duplicateCheck.test(changelog)) {
-    console.log(`Build ${buildId} already in CHANGELOG, skipping duplicate`);
-    process.exit(0);
-  }
-}
-
-// Insert after header or at top
-const headerComment = "<!-- DO NOT EDIT MANUALLY";
-const headerEnd = "# Changelog";
-
-if (changelog.includes(headerComment)) {
-  const headerIdx = changelog.indexOf(headerEnd);
-  if (headerIdx !== -1) {
-    const insertPoint = changelog.indexOf("\n", headerIdx) + 1;
-    changelog =
-      changelog.slice(0, insertPoint) +
-      "\n" +
-      entry +
-      changelog.slice(insertPoint);
-  }
-} else if (changelog.startsWith("# Changelog")) {
-  const insertPoint = changelog.indexOf("\n") + 1;
-  changelog =
-    changelog.slice(0, insertPoint) +
-    "\n" +
-    entry +
-    changelog.slice(insertPoint);
-} else {
-  changelog = `<!-- DO NOT EDIT MANUALLY - Auto-generated by GitHub Actions. Use @claude prepare or /openpr for PR summaries. -->\n# Changelog\n\n${entry}${changelog}`;
-}
-
+// Write CHANGELOG
 fs.writeFileSync(changelogPath, changelog);
-console.log(`✓ Updated CHANGELOG.md for Build ${buildId}`);
+console.log(`✓ Updated CHANGELOG.md for Build(s) ${processedBuildIds.join(", ")}`);
 
-// === PART 3: Commit & Push (Single Atomic Commit) ===
+// === Commit & Push ===
 console.log("[3/3] Creating consolidated commit...");
 
-safeExec(
-  'git config user.name "github-actions[bot]"',
-  "Failed to set git user",
-);
-safeExec(
-  'git config user.email "github-actions[bot]@users.noreply.github.com"',
-  "Failed to set git email",
-);
+safeExec('git config user.name "github-actions[bot]"', "Failed to set git user");
+safeExec('git config user.email "github-actions[bot]@users.noreply.github.com"', "Failed to set git email");
 safeExec("git add CHANGELOG.md", "Failed to stage CHANGELOG");
 if (pkgPath) {
   safeExec(`git add ${pkgPath}`, "Failed to stage package.json");
 }
 
-// Step 1: Commit
+const latestBuild = processedBuildIds[processedBuildIds.length - 1];
 const msg = newVersion
-  ? `chore: bump to v${newVersion} and update CHANGELOG for Build ${buildId}`
-  : `docs: update CHANGELOG for Build ${buildId}`;
+  ? `chore: bump to v${newVersion} and update CHANGELOG for Build ${latestBuild}`
+  : `docs: update CHANGELOG for Build ${latestBuild}`;
 
-const commitResult = spawnSync("git", ["commit", "-m", msg], {
-  encoding: "utf8",
-});
+const commitResult = spawnSync("git", ["commit", "-m", msg], { encoding: "utf8" });
 if (commitResult.status !== 0) {
   const status = safeExec("git status --porcelain", "Failed to get git status");
   if (status.trim() === "") {
     console.log("No changes to commit (working tree clean)");
     process.exit(0);
   }
-  throw new Error(
-    `Commit failed: ${commitResult.stderr || commitResult.stdout}`,
-  );
+  throw new Error(`Commit failed: ${commitResult.stderr || commitResult.stdout}`);
 }
 console.log(`✓ Committed: ${msg}`);
 
-// Step 2: Pull --rebase to handle queued changelog runs (prevents non-fast-forward)
-const pullResult = spawnSync("git", ["pull", "--rebase", "origin", "main"], {
-  encoding: "utf8",
-});
+// Pull --rebase to handle queued changelog runs
+const pullResult = spawnSync("git", ["pull", "--rebase", "origin", "main"], { encoding: "utf8" });
 if (pullResult.status !== 0) {
-  console.warn(
-    `⚠ Pull --rebase failed (may be first push): ${pullResult.stderr || ""}`,
-  );
+  console.warn(`⚠ Pull --rebase failed (may be first push): ${pullResult.stderr || ""}`);
 }
 
-// Step 3: Push (separate error handling — don't swallow push failures)
+// Push
 const pushResult = spawnSync("git", ["push"], { encoding: "utf8" });
 if (pushResult.status !== 0) {
   const errMsg = pushResult.stderr || pushResult.stdout || "Unknown push error";
   console.error(`✗ Push failed: ${errMsg}`);
   throw new Error(`Push failed (branch protection?): ${errMsg}`);
 }
+
 console.log(`✓ Pushed consolidated commit`);
-if (newVersion) {
-  console.log(`✓ Version bumped: v${newVersion}`);
-}
-console.log(`✓ CHANGELOG updated: Build ${buildId}`);
+if (newVersion) console.log(`✓ Version bumped: v${newVersion}`);
+console.log(`✓ CHANGELOG updated: Build(s) ${processedBuildIds.join(", ")}`);

@@ -909,6 +909,13 @@ def auto_push_after_commit(original_command: str) -> None:
             print("Auto-push skipped: detached HEAD")
             return
 
+        # Skip auto-push on main/master — /commit confirm handles push there.
+        # Auto-pushing to main races with the changelog GitHub Action, causing
+        # multi-commit pushes where only HEAD gets a CHANGELOG entry.
+        if branch in ("main", "master"):
+            print(f"Auto-push skipped: {branch} branch (use /commit confirm to push)")
+            return
+
         # Try simple push first (respects upstream tracking)
         result = git_run(["push"])
 

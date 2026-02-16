@@ -241,7 +241,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 2
+          fetch-depth: 50  # Enough history to find all new commits since last bot commit
           token: ${{ secrets.ADMIN_TOKEN || github.token }}
 
       - name: Setup Node.js
