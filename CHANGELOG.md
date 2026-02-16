@@ -3,6 +3,19 @@
 
 ---
 
+## [![v1.11.7](https://img.shields.io/badge/v1.11.7-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/19fe67c4b186bb656eaf8c872fbe1a329de8379f) | Build 32
+
+cleanup: remove pending-commit.md legacy references
+
+- [x] Removed pending-commit.md references from commit skill documentation (SKILL.md) - consolidated to commit.md two-section format
+- [x] Updated commit-helper.py script to generate commit.md directly instead of pending-commit.md
+- [x] Updated commit-reviewer agent to reference commit.md only (removed pending-commit.md mentions)
+- [x] Removed pending-commit.md cleanup logic from hooks/git.py change-tracker hook
+- [x] Updated help skill, init-repo skill, and start skill to reference commit.md workflow
+
+
+---
+
 ## [![v1.11.6](https://img.shields.io/badge/v1.11.6-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/6d1732fef083f342d371449ea7ca2921ed3239ed) | Build 31
 
 fix: CHANGELOG Action processes all new commits, not just HEAD
