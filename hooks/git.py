@@ -833,8 +833,8 @@ def post_commit_metadata() -> None:
     tool_input = hook_input.get("tool_input", {})
     command = tool_input.get("command", "")
 
-    # Only process git commit commands
-    if not re.match(r"^git\s+commit\b", command):
+    # Only process git commit commands (handles both `git commit` and `git -C <path> commit`)
+    if not re.search(r"(?:^|\s)git\s+(?:-C\s+\S+\s+)?commit\b", command):
         sys.exit(0)
 
     # Check if commit succeeded by checking tool_result
@@ -868,7 +868,87 @@ def post_commit_metadata() -> None:
     # Store metadata
     store_ai_metadata(commit_hash, agent_name, model)
 
+    # Auto-push after every successful commit
+    # Extracts -C <path> from original command to push from correct repo
+    auto_push_after_commit(command)
+
     sys.exit(0)
+
+
+def auto_push_after_commit(original_command: str) -> None:
+    """
+    Auto-push to origin after a successful git commit.
+
+    Strategy:
+    1. Try `git push` (uses upstream tracking branch if set)
+    2. If rejected (remote ahead), try `git pull --rebase && git push`
+    3. If no upstream, fall back to `git push -u origin <current-branch>`
+
+    Detects -C <path> from the original command to handle cross-repo commits.
+    Non-blocking: logs warnings but never blocks the hook on failure.
+    """
+    # Extract -C <path> if present (e.g., `git -C /some/path commit ...`)
+    git_args = []
+    c_match = re.search(r"git\s+(-C\s+(\S+))", original_command)
+    if c_match:
+        git_args = ["-C", c_match.group(2)]
+
+    def git_run(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git"] + git_args + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+    try:
+        # Get current branch name
+        branch_result = git_run(["branch", "--show-current"], timeout=5)
+        branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
+        if not branch:
+            print("Auto-push skipped: detached HEAD")
+            return
+
+        # Try simple push first (respects upstream tracking)
+        result = git_run(["push"])
+
+        if result.returncode == 0:
+            push_info = result.stderr.strip()
+            ref_line = [l for l in push_info.splitlines() if "->" in l]
+            print(f"Auto-pushed: {ref_line[0].strip()}" if ref_line else f"Auto-pushed {branch}.")
+            return
+
+        stderr = result.stderr.strip()
+
+        # Remote ahead — pull rebase then retry
+        if "fetch first" in stderr or "non-fast-forward" in stderr:
+            rebase = git_run(["pull", "--rebase", "origin", branch])
+            if rebase.returncode != 0:
+                print(f"Auto-push: rebase failed — resolve manually: git pull --rebase origin {branch}")
+                return
+            retry = git_run(["push"])
+            if retry.returncode == 0:
+                print(f"Auto-pushed {branch} (after rebase).")
+            else:
+                print(f"Auto-push failed after rebase: {retry.stderr.strip()[:200]}")
+            return
+
+        # No upstream — set it with -u
+        if "no upstream" in stderr or "has no upstream" in stderr:
+            result = git_run(["push", "-u", "origin", branch])
+            if result.returncode == 0:
+                print(f"Auto-pushed {branch} (set upstream).")
+            else:
+                print(f"Auto-push failed: {result.stderr.strip()[:200]}")
+            return
+
+        # Other failure
+        print(f"Auto-push failed: {stderr[:200]}")
+
+    except subprocess.TimeoutExpired:
+        print(f"Auto-push timed out (60s) — push manually: git push")
+    except (FileNotFoundError, OSError) as e:
+        print(f"Auto-push error: {e}")
 
 
 def store_ai_metadata(commit_hash: str, agent_name: str | None = None, model: str | None = None) -> None:

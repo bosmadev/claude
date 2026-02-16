@@ -509,7 +509,7 @@
           {
             "type": "command",
             "command": "python %USERPROFILE%/.claude/hooks/git.py post-commit-metadata",
-            "timeout": 5,
+            "timeout": 90,
             "async": true
           },
           {
