@@ -3,6 +3,19 @@
 
 ---
 
+## [![v1.11.5](https://img.shields.io/badge/v1.11.5-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/74f836d629f24b45f2f31cff094eb5511484272a) | Build 30
+
+fix: auto-push after every git commit via PostToolUse hook
+
+- [x] Added auto_push_after_commit() to git.py post-commit-metadata handler
+- [x] Strategy: try push → pull rebase on reject → set upstream if missing
+- [x] Handles -C <path> for cross-repo commits
+- [x] Bumped hook timeout from 5s to 90s to accommodate push operations
+- [x] Changed git commit regex to also match `git -C <path> commit`
+
+
+---
+
 ## [![v1.11.4](https://img.shields.io/badge/v1.11.4-2026--02--15-333333.svg)](https://github.com/bosmadev/claude/commit/2dd746977d3150e2f1527fa090e3a13119234750) | Build 29
 
 fix: CHANGELOG trivia filter + commit skill docs
