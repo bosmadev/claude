@@ -502,11 +502,12 @@ if [ -z "$PR_BODY" ]; then
   exit 1
 fi
 
-# Create the PR
+# Create the PR (auto-label 'claude' to trigger @claude review + security scan)
 gh pr create \
   --title "${PR_TITLE}" \
   --body "${PR_BODY}" \
-  --base "${BASE_BRANCH}"
+  --base "${BASE_BRANCH}" \
+  --label "claude"
 ```
 
 ### 7. Get PR URL

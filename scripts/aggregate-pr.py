@@ -24,6 +24,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Fix Windows cp1252 encoding — commit messages may contain Unicode (→, etc.)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 
 @dataclass
 class Commit:
@@ -287,7 +291,7 @@ def format_commits_by_type(commits_by_type: dict[str, list[Commit]], build_id: s
         commits = commits_by_type[ctype]
         type_lines = []
         for commit in commits:
-            type_lines.append(f"- b{build_id}-{commit_num}: {commit.subject}")
+            type_lines.append(f"- [x] b{build_id}-{commit_num}: {commit.subject}")
             commit_num += 1
         sections.append(f"### {ctype}\n{chr(10).join(type_lines)}")
 
@@ -323,11 +327,16 @@ def format_pr_body(pr: PRSummary) -> str:
     """Format PR body as markdown."""
     commits_section = format_commits_by_type(pr.commits_by_type, pr.build_id)
 
-    # Collect detailed changes from commit bodies
+    # Collect detailed changes from commit bodies (add [x] to bullet items)
     details = []
     for commit in pr.commits:
         if commit.body:
-            details.append(f"**{commit.hash}**: {commit.body}")
+            # Convert bare "- " bullets to "- [x] " checkmarks
+            body = "\n".join(
+                line.replace("- ", "- [x] ", 1) if line.strip().startswith("- ") and "[x]" not in line else line
+                for line in commit.body.split("\n")
+            )
+            details.append(f"**{commit.hash}**: {body}")
 
     details_section = "\n\n".join(details) if details else "_No detailed descriptions provided._"
 
