@@ -65,6 +65,30 @@ COMMIT_TYPE_DESCRIPTIONS = {
     "cleanup": "code cleanup",
 }
 
+# Boilerplate patterns to filter from commit body details.
+# These add no value in PR descriptions — obvious confirmations, negative statements,
+# or status updates that aren't actionable.
+BOILERPLATE_PATTERNS = [
+    re.compile(r"typescript compiles?\s*(successfully|ok|clean)", re.IGNORECASE),
+    re.compile(r"(all\s+)?tests?\s+pass(ing|ed|es)?", re.IGNORECASE),
+    re.compile(r"(no\s+)?(lint|biome|eslint)\s*(errors?|warnings?|clean|passes?)", re.IGNORECASE),
+    re.compile(r"builds?\s*(successfully|ok|clean|passes?)", re.IGNORECASE),
+    re.compile(r"^keep\s+.+\s+unchanged$", re.IGNORECASE),
+    re.compile(r"^no\s+changes?\s+(to|in|needed)", re.IGNORECASE),
+    re.compile(r"compiles?\s*(successfully|without\s+errors?|clean)", re.IGNORECASE),
+    re.compile(r"^works?\s+(as\s+expected|correctly|fine)", re.IGNORECASE),
+    re.compile(r"^verified\s+(locally|manually|working)", re.IGNORECASE),
+]
+
+
+def is_boilerplate(line: str) -> bool:
+    """Check if a commit body line is boilerplate/obvious and should be filtered."""
+    # Strip bullet prefix and whitespace for matching
+    text = re.sub(r"^[-*]\s*(\[[ xX]\]\s*)?", "", line).strip()
+    if not text:
+        return False
+    return any(p.search(text) for p in BOILERPLATE_PATTERNS)
+
 
 def run_git(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
     """Run a git command and return (returncode, stdout, stderr)."""
@@ -327,16 +351,22 @@ def format_pr_body(pr: PRSummary) -> str:
     """Format PR body as markdown."""
     commits_section = format_commits_by_type(pr.commits_by_type, pr.build_id)
 
-    # Collect detailed changes from commit bodies (add [x] to bullet items)
+    # Collect detailed changes from commit bodies (add [x] to bullet items, filter boilerplate)
     details = []
     for commit in pr.commits:
         if commit.body:
-            # Convert bare "- " bullets to "- [x] " checkmarks
-            body = "\n".join(
-                line.replace("- ", "- [x] ", 1) if line.strip().startswith("- ") and "[x]" not in line else line
-                for line in commit.body.split("\n")
-            )
-            details.append(f"**{commit.hash}**: {body}")
+            filtered_lines = []
+            for line in commit.body.split("\n"):
+                # Skip boilerplate lines
+                if line.strip() and is_boilerplate(line):
+                    continue
+                # Convert bare "- " bullets to "- [x] " checkmarks
+                if line.strip().startswith("- ") and "[x]" not in line and "[X]" not in line:
+                    line = line.replace("- ", "- [x] ", 1)
+                filtered_lines.append(line)
+            body = "\n".join(filtered_lines).strip()
+            if body:
+                details.append(f"**{commit.hash}**: {body}")
 
     details_section = "\n\n".join(details) if details else "_No detailed descriptions provided._"
 
@@ -374,11 +404,17 @@ def format_squash_message(pr: PRSummary, pr_url: str = "", version: str = "") ->
     """
     commits_list = format_commits_list(pr.commits, pr.build_id)
 
-    # Collect details from commit bodies
+    # Collect details from commit bodies (filter boilerplate)
     details = []
     for commit in pr.commits:
         if commit.body:
-            details.append(commit.body)
+            filtered_lines = [
+                line for line in commit.body.split("\n")
+                if not (line.strip() and is_boilerplate(line))
+            ]
+            body = "\n".join(filtered_lines).strip()
+            if body:
+                details.append(body)
     details_section = "\n".join(details) if details else ""
 
     # Add version to title if provided
