@@ -1,7 +1,7 @@
 ---
 name: openpr
 description: Create PR with squashed commits and auto-generated summary
-argument-hint: "[base-branch|confirm|help]"
+argument-hint: "[confirm|update|merge|base-branch|help]"
 user-invocable: true
 context: fork
 ---
@@ -46,22 +46,23 @@ Branch Hierarchy (auto-detected when no base-branch given):
 Workflow:
   1. Auto-detects target branch from hierarchy
   2. Checks if branch is behind target — auto-rebases if needed
-  3. Runs ~/.claude/scripts/aggregate-pr.py to gather and format commits
-  4. Generates .claude/pending-pr.md for review
-  5. On confirm:
-     - Creates squash commit with formatted message
-     - Pushes to origin
-     - Creates PR with auto-generated body
-     - Amends commit with PR URL reference
+  3. Runs aggregate-pr.py to generate unified PR body
+  4. Shows preview, asks for confirm
+  5. On confirm: pushes individual commits, creates PR (no squash)
+  6. /commit auto-updates PR body after each push
+  7. /openpr merge squash-merges with crafted commit message
 
 PR Format:
   dev→main:     Title: "Build {N+1}", Build ID from CHANGELOG
   feature→dev:  Title: conventional commit summary, no Build ID
 
-Examples:
-  /openpr              # Auto-detect target from branch hierarchy
+Subcommands:
+  /openpr              # Preview + create PR
+  /openpr confirm      # Create PR directly (skip preview)
+  /openpr update       # Regenerate PR body with latest commits
+  /openpr merge        # Squash merge the open PR
   /openpr main         # Force PR to main
-  /openpr cwchat-dev   # Force PR to cwchat-dev
+  /openpr help         # Show this help
 ```
 
 ---
@@ -71,8 +72,11 @@ Examples:
 **$ARGUMENTS**: "$ARGUMENTS"
 
 Parse arguments:
-- `base-branch` (optional): Target branch for PR (auto-detected if omitted)
-- `confirm`: Skip Phase 1 preview, use existing `.claude/pending-pr.md` and proceed directly to squash + PR creation (Phase 2). If no pending-pr.md exists, run Phase 1 first then auto-continue to Phase 2.
+- `(no args)`: Generate preview, ask for confirm
+- `confirm`: Push individual commits + create PR directly (skip preview)
+- `update`: Regenerate PR body for existing open PR with latest commits
+- `merge`: Squash merge open PR with unified format commit message
+- `[base-branch]`: Target branch for PR (auto-detected if omitted)
 - `help`: Show usage information
 
 ## Branch Hierarchy Detection
@@ -342,99 +346,33 @@ Or type "cancel" to abort.
 
 ---
 
-## Phase 2: Squash and Create PR
+## Phase 2: Create PR (confirm)
 
-**Only proceed when user confirms (types "confirm", "yes", "ok", "proceed", or similar).**
+**Proceed when user confirms OR when invoked as `/openpr confirm`.**
 
-### 1. Read Final PR Content
+**No pre-squash.** Individual commits stay on the branch. Squash only happens at merge time (`/openpr merge`).
+
+### 1. Push Individual Commits
 
 ```bash
-cat .claude/pending-pr.md
+git push origin HEAD || git push -u origin HEAD
 ```
 
-Parse the file to extract:
-- **Title**: From the `# Pull Request:` header
-- **Summary**: From `## Summary` section
-- **Commits**: From `## Commits Included` section
-- **Details**: From `## Detailed Changes` section
-
-### 2. Create Squash Commit Message
-
-Use aggregate-pr.py to generate the unified format (serves as both commit message and PR body):
+### 2. Generate PR Title and Body On-The-Fly
 
 ```bash
 BASE_BRANCH="${BASE_BRANCH:-main}"
 cd "$(git rev-parse --show-toplevel)"
 
-# Generate unified format (no --squash needed — single format for everything)
-python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}" > .claude/squash-message.txt
-
-# Verify the message was generated
-if [ ! -s .claude/squash-message.txt ]; then
-  echo "Error: Failed to generate squash commit message"
-  exit 1
-fi
+# Generate unified format (title = first line, body = rest)
+PR_OUTPUT=$(python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}")
+PR_TITLE=$(echo "$PR_OUTPUT" | head -1)
+PR_BODY=$(echo "$PR_OUTPUT" | tail -n +3)
 ```
 
-The unified format:
-```
-Build {id}
-
-## Summary
-{summary paragraph}
-
-## Changes
-### {type}
-- [x] b{id}-1: {commit subject}
-- [x] b{id}-2: {commit subject}
-
-## Details
-- [x] {detail line}
-```
-
-Note: The `PR: {url}` line will be appended after the PR is created (step 8).
-
-### 3. Soft Reset to Base
+### 3. Create Pull Request
 
 ```bash
-BASE_BRANCH="${BASE_BRANCH:-main}"
-MERGE_BASE=$(git merge-base ${BASE_BRANCH} HEAD)
-git reset --soft ${MERGE_BASE}
-```
-
-This stages all changes while removing individual commits.
-
-### 4. Create Squash Commit
-
-Use the generated squash message file:
-
-```bash
-git commit -F .claude/squash-message.txt
-```
-
-### 5. Push to Origin
-
-```bash
-git push origin HEAD --force-with-lease
-```
-
-Use `--force-with-lease` for safety (fails if remote has new commits).
-
-### 6. Create Pull Request
-
-Use the squash-message.txt as PR body (unified format — same content for commit and PR):
-
-```bash
-BASE_BRANCH="${BASE_BRANCH:-main}"
-cd "$(git rev-parse --show-toplevel)"
-
-# Extract title (first line of squash message)
-PR_TITLE=$(head -1 .claude/squash-message.txt)
-
-# PR body = everything after the title line
-PR_BODY=$(tail -n +3 .claude/squash-message.txt)
-
-# Create the PR (auto-label 'claude' to trigger @claude review + security scan)
 gh pr create \
   --title "${PR_TITLE}" \
   --body "${PR_BODY}" \
@@ -442,153 +380,185 @@ gh pr create \
   --label "claude"
 ```
 
-### 7. Get PR URL
+### 4. Handle PR Already Exists
+
+If `gh pr create` fails because a PR already exists:
+
+```bash
+EXISTING=$(gh pr view --json url,number -q '.url')
+echo "PR already exists: ${EXISTING}"
+echo "Updating PR body instead..."
+PR_NUMBER=$(gh pr view --json number -q '.number')
+gh pr edit "$PR_NUMBER" --body "$PR_BODY"
+```
+
+### 5. Success Output
 
 ```bash
 PR_URL=$(gh pr view --json url -q '.url')
-echo "$PR_URL"
-```
-
-### 8. Amend Commit with PR Reference
-
-Append the PR URL to the squash commit message:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-
-# Append PR URL to the squash message file
-echo "" >> .claude/squash-message.txt
-echo "PR: ${PR_URL}" >> .claude/squash-message.txt
-
-# Amend the commit with the updated message
-git commit --amend -F .claude/squash-message.txt
-
-# Push the amended commit
-git push origin HEAD --force-with-lease
-```
-
-### 9. Success Output
-
-Display the success message with cleanup of temporary files:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-
-# Cleanup temporary files
-rm -f .claude/squash-message.txt
-
 echo "Pull Request Created Successfully!"
-echo ""
 echo "Title: ${PR_TITLE}"
 echo "URL: ${PR_URL}"
 echo "Branch: ${BRANCH} -> ${BASE_BRANCH}"
 echo ""
-echo "The squashed commit now references: ${PR_URL}"
+echo "Next steps:"
+echo "  - @claude will auto-review (triggered by 'claude' label)"
+echo "  - Add fix commits with /commit (PR body auto-updates)"
+echo "  - When ready: /openpr merge"
+```
+
+### 6. Cleanup
+
+```bash
+rm -f .claude/pending-pr.md .claude/squash-message.txt
 ```
 
 ---
 
-## Phase 3: Cleanup
+## Phase 3: Update PR Body (`/openpr update`)
 
-### Prompt for Cleanup
-
-Ask the user:
-
-```
-Would you like to delete .claude/pending-pr.md? (yes/no)
-```
-
-### If Yes:
+Regenerate and update the PR body after adding new commits. Also triggered automatically by `/commit` after pushing to a branch with an open PR.
 
 ```bash
-rm .claude/pending-pr.md
-git status
+cd "$(git rev-parse --show-toplevel)"
+BRANCH=$(git branch --show-current)
+
+# Find open PR for current branch
+PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+if [ -z "$PR_NUMBER" ]; then
+  echo "Error: No open PR found for branch $BRANCH"
+  exit 1
+fi
+
+# Get base branch from PR
+BASE=$(gh pr view "$PR_NUMBER" --json baseRefName -q '.baseRefName')
+
+# Regenerate body from current commits
+PR_OUTPUT=$(python ~/.claude/scripts/aggregate-pr.py "$BASE")
+PR_BODY=$(echo "$PR_OUTPUT" | tail -n +3)
+
+# Update PR
+gh pr edit "$PR_NUMBER" --body "$PR_BODY"
+echo "PR #${PR_NUMBER} body updated with latest commits."
 ```
 
-Confirm: "Deleted .claude/pending-pr.md"
+---
 
-### If No:
+## Phase 4: Merge PR (`/openpr merge`)
 
-Keep the file and inform:
+Squash merge with the unified format as commit message. Squash only happens here — never before.
 
-```
-Keeping .claude/pending-pr.md for reference.
-You can delete it manually later with: rm .claude/pending-pr.md
+```bash
+cd "$(git rev-parse --show-toplevel)"
+BRANCH=$(git branch --show-current)
+
+# Find open PR
+PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+if [ -z "$PR_NUMBER" ]; then
+  echo "Error: No open PR found for branch $BRANCH"
+  exit 1
+fi
+
+# Get base and generate squash message
+BASE=$(gh pr view "$PR_NUMBER" --json baseRefName -q '.baseRefName')
+PR_OUTPUT=$(python ~/.claude/scripts/aggregate-pr.py "$BASE")
+SQUASH_TITLE=$(echo "$PR_OUTPUT" | head -1)
+SQUASH_BODY=$(echo "$PR_OUTPUT" | tail -n +3)
+
+# Squash merge with crafted message
+gh pr merge "$PR_NUMBER" --squash \
+  --subject "${SQUASH_TITLE}" \
+  --body "${SQUASH_BODY}"
+
+PR_URL=$(gh pr view "$PR_NUMBER" --json url -q '.url')
+echo "PR #${PR_NUMBER} merged!"
+echo "Squash commit: ${SQUASH_TITLE}"
+echo "URL: ${PR_URL}"
 ```
 
 ---
 
 ## Error Handling
 
+### Push Rejected
+
+If push fails due to diverged history:
+
+```bash
+git pull --rebase origin "$(git branch --show-current)"
+git push origin HEAD
+```
+
 ### No Remote Tracking
 
-If push fails due to no upstream:
+```bash
+git push -u origin HEAD
+```
+
+### Merge Blocked
+
+If merge fails (checks not passing, reviews needed):
 
 ```bash
-git push -u origin HEAD --force-with-lease
+gh pr checks "$PR_NUMBER"
+gh pr view "$PR_NUMBER" --json reviewDecision -q '.reviewDecision'
 ```
 
-### PR Already Exists
-
-If PR creation fails because one already exists:
-
-```bash
-gh pr view --json url,state -q '.url + " (" + .state + ")"'
-```
-
-Show the existing PR and ask if user wants to update it instead.
-
-### Merge Conflicts
-
-If reset fails due to conflicts, abort and inform user:
-
-```
-Error: Cannot squash due to conflicts with ${BASE_BRANCH}.
-Please resolve conflicts first:
-  git rebase ${BASE_BRANCH}
-Then run /openpr again.
-```
+Show status and instruct user to resolve before retrying.
 
 ---
 
 ## Safety Rules
 
 1. **Never run on main/master** - Always verify branch first
-2. **Use --force-with-lease** - Never use --force directly
-3. **Show preview before squash** - User must confirm
-4. **Preserve commit content** - All original commit messages are preserved in PR body
-5. **Handle errors gracefully** - Provide clear recovery instructions
+2. **No pre-squash** - Individual commits stay on branch until merge
+3. **Squash only at merge time** - Via `gh pr merge --squash`
+4. **Preserve commit content** - All original commit messages in PR body
+5. **Handle errors gracefully** - Clear recovery instructions
 
 ---
 
 ## Example Workflows
 
-### Example 1: Dev → Main (with Build ID)
+### Example 1: Dev → Main (full lifecycle)
 
 ```
 User: /openpr
 
 Claude: **SKILL_STARTED:** openpr
 
-Current branch: cwchat-dev → Target: main
-
-Checking branch currency...
+Current branch: gswarm-dev → Target: main
 ✓ Branch is up to date with origin/main
+8 commits ahead of main.
 
-Gathering commits...
-Auto-detected Build 3 from CHANGELOG.md (highest: Build 2)
+Build 8
 
-Created: .claude/pending-pr.md
-[... shows PR preview ...]
+## Summary
+This PR includes 4 new features, 2 bug fixes...
 
-Type "confirm" to squash and create the PR.
+## Changes
+### feat
+- [x] b8-1: feat: add CLAUDE.md...
+[...]
+
+Type "confirm" or run /openpr confirm to create the PR.
 
 User: confirm
 
 Claude: Pull Request Created Successfully!
-Title: Build 3
-URL: https://github.com/bosmadev/cwchat/pull/5
-Branch: cwchat-dev -> main
+Title: Build 8
+URL: https://github.com/bosmadev/gswarm/pull/5
+Branch: gswarm-dev -> main
+
+[... @claude reviews, user fixes issues ...]
+
+User: /commit
+Claude: [commits fix, pushes, auto-updates PR body]
+PR #5 body updated with latest commits.
+
+User: /openpr merge
+Claude: PR #5 merged!
+Squash commit: Build 8
 ```
 
 ### Example 2: Feature → Dev (no Build ID)
@@ -596,26 +566,13 @@ Branch: cwchat-dev -> main
 ```
 User: /openpr
 
-Claude: **SKILL_STARTED:** openpr
-
-Current branch: feature/auth → Target: cwchat-dev (auto-detected)
-
-Checking branch currency...
-⚠️  Branch is 2 commits behind origin/cwchat-dev
-Rebasing on origin/cwchat-dev...
-✓ Rebase successful
-
-Gathering commits...
-
-Created: .claude/pending-pr.md
-
-# Pull Request: feat: auth system with JWT validation
-[... conventional commit summary, no Build ID ...]
+Claude: Current branch: feature/auth → Target: cwchat-dev
+[... preview ...]
 
 User: confirm
 
-Claude: Pull Request Created Successfully!
-Title: feat: auth system with JWT validation
-URL: https://github.com/bosmadev/cwchat/pull/6
-Branch: feature/auth -> cwchat-dev
+Claude: PR Created: https://github.com/bosmadev/cwchat/pull/6
+
+User: /openpr merge
+Claude: PR #6 merged! Squash commit: feat: auth system with JWT
 ```

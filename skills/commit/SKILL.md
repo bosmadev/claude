@@ -337,7 +337,22 @@ When user runs `/commit confirm`:
    - **Never force push** — let the user resolve merge conflicts manually
    - This ensures commits are never stranded locally
 
-8. **Clean up**
+8. **Open PR auto-update (after successful push)**
+   After pushing, check if the current branch has an open PR and update its body:
+   ```bash
+   OPEN_PR=$(gh pr list --head "$(git branch --show-current)" --state open --json number -q '.[0].number' 2>/dev/null)
+   if [ -n "$OPEN_PR" ]; then
+       echo "Open PR #${OPEN_PR} detected — updating PR body..."
+       BASE=$(gh pr view "$OPEN_PR" --json baseRefName -q '.baseRefName')
+       PR_BODY=$(python ~/.claude/scripts/aggregate-pr.py "$BASE" 2>/dev/null | tail -n +3)
+       if [ -n "$PR_BODY" ]; then
+           gh pr edit "$OPEN_PR" --body "$PR_BODY"
+           echo "PR #${OPEN_PR} body updated with latest commits."
+       fi
+   fi
+   ```
+
+9. **Clean up**
    - Clear both `## Pending` and `## Ready` sections in `.claude/commit.md`
    - Keep the file structure intact:
      ```markdown
