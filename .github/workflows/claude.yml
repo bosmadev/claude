@@ -419,3 +419,47 @@ jobs:
 
             // Clean up temp file
             fs.unlinkSync(notesPath);
+
+  # ============================================
+  # Job 4: Reset Dev Branches to Latest Main
+  # ============================================
+  # After changelog commit and release, force-reset dev branches to include all
+  # auto-generated commits (CHANGELOG, version bump). This replaces the standalone
+  # reset-dev.yml workflow to eliminate the race condition where reset-dev ran
+  # BEFORE the changelog commit was pushed, leaving dev perpetually behind main.
+  reset-dev:
+    name: Reset Dev Branches
+    needs: [changelog, create-release]
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      needs.changelog.result != 'failure' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.ADMIN_TOKEN || github.token }}
+
+      - name: Reset dev branches to latest main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch latest main (includes changelog commit from earlier job)
+          git fetch origin main
+          LATEST=$(git rev-parse FETCH_HEAD)
+          echo "Latest main: $(git log -1 --oneline $LATEST)"
+
+          REPO=$(basename "$GITHUB_REPOSITORY")
+          for BRANCH in "${REPO}-dev" "${REPO}-night-dev"; do
+            if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+              git push --force origin "$LATEST:refs/heads/$BRANCH"
+              echo "✓ Reset $BRANCH to $(git rev-parse --short $LATEST)"
+            else
+              echo "⊘ Branch $BRANCH does not exist, skipping"
+            fi
+          done

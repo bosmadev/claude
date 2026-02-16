@@ -259,7 +259,10 @@ def play_sound(wav_path: Path) -> None:
     """
     Play a WAV sound file, cross-platform.
 
-    On Windows: uses winsound.PlaySound() with SND_ASYNC for non-blocking.
+    On Windows: uses winsound.PlaySound() synchronously (SND_FILENAME only).
+    SND_ASYNC was removed because hook processes exit immediately after calling
+    play_sound, killing the async playback before it finishes. Synchronous
+    playback blocks ~1s which fits within the 5s hook timeout.
     On Linux: tries aplay, then paplay as fallback (non-blocking via Popen).
 
     Args:
@@ -271,7 +274,7 @@ def play_sound(wav_path: Path) -> None:
     if IS_WINDOWS:
         try:
             import winsound
-            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
+            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
         except Exception:
             pass  # Silently ignore errors
     else:
