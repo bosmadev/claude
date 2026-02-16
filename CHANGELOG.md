@@ -3,6 +3,19 @@
 
 ---
 
+## [![v1.13.0](https://img.shields.io/badge/v1.13.0-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/10380fcf116ca06dbc06627f403e14ca43e3318f) | Build 36
+
+feat(openpr): no-squash PR lifecycle + inline review + auto PR body update
+
+- [x] Rewrite /openpr to keep individual commits on PR branch (squash only at merge)
+- [x] Add subcommands: confirm, update, merge (lifecycle management)
+- [x] Add auto PR body update to /commit (detects open PR, regenerates body)
+- [x] Enable @claude inline review comments in claude.yml allowedTools
+- [x] Remove pre-squash logic (soft reset, squash commit, force push)
+
+
+---
+
 ## [![v1.12.1](https://img.shields.io/badge/v1.12.1-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/2a4aac4df720c0888aa2508ac92aabaa209e5bdb) | Build 35
 
 refactor(openpr): unify PR body and squash message into single format
