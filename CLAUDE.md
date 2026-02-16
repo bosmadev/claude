@@ -24,7 +24,7 @@
 
 | File Type | Location | Example |
 |-----------|----------|---------|
-| Pending commit/PR | `{repo}/.claude/` | `{repo}/.claude/pending-commit.md` |
+| Pending commit/PR | `{repo}/.claude/` | `{repo}/.claude/commit.md` |
 | Scratch/notes/research | `%LOCALAPPDATA%\Temp\claude-tmp\` | `C:\Users\Dennis\AppData\Local\Temp\claude-tmp\research.md` |
 | Install notes/logs | `%LOCALAPPDATA%\Temp\claude-tmp\` | Never in repo |
 | Script temp output | `%LOCALAPPDATA%\Temp\claude-tmp\` | Never in repo |

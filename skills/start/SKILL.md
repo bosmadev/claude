@@ -728,7 +728,7 @@ Changes are automatically tracked during RALPH sessions via the change-tracker h
 
 1. Hook detects file modifications during session
 2. Automatically logs to `.claude/commit.md` with timestamps
-3. When ready to commit, run `/commit` to generate `pending-commit.md`
+3. When ready to commit, run `/commit` to generate commit message in `commit.md ## Ready`
 4. Review and run `/commit confirm` to finalize
 
 **Manual tracking (if needed):**

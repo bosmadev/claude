@@ -3,7 +3,7 @@
 Commit Helper - Branch-aware commit naming and pending commit generation.
 
 Usage:
-    commit-helper.py generate <file-path>     - Generate pending-commit.md
+    commit-helper.py generate <file-path>     - Generate commit message in commit.md
     commit-helper.py get-branch <file-path>   - Get current branch name
     commit-helper.py get-increment <file-path> - Get next commit increment
     commit-helper.py detect-type <file-path>  - Detect conventional commit type
@@ -315,7 +315,7 @@ def get_git_diff_stat(repo_root: Path) -> str:
 
 
 def generate_pending_commit(repo_root: Path) -> str:
-    """Generate pending-commit.md content.
+    """Generate commit message content for commit.md ## Ready.
 
     Format: Clean text with NO markdown headings.
     - Line 1: Subject ({branch}-{increment})
@@ -384,7 +384,7 @@ def generate_pending_commit(repo_root: Path) -> str:
 
 
 def cmd_generate(file_path: str) -> int:
-    """Generate pending-commit.md."""
+    """Generate commit message in commit.md ## Ready."""
     repo_root = get_repo_root(file_path)
     if not repo_root:
         print(f"Error: '{file_path}' is not in a git repository", file=sys.stderr)
@@ -392,17 +392,12 @@ def cmd_generate(file_path: str) -> int:
 
     claude_dir = repo_root / ".claude"
     claude_dir.mkdir(exist_ok=True)
-    pending_path = claude_dir / "pending-commit.md"
-
-    if pending_path.exists():
-        print(f"Warning: pending-commit.md already exists at {pending_path}")
-        print("Run '/commit abort' first or delete the file manually.")
-        return 1
+    commit_path = claude_dir / "commit.md"
 
     content = generate_pending_commit(repo_root)
-    pending_path.write_text(content)
+    commit_path.write_text(content)
 
-    print(f"Generated: {pending_path}")
+    print(f"Generated: {commit_path}")
     print(content)
     return 0
 

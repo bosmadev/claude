@@ -272,7 +272,6 @@ Full setup including workflows, CLAUDE.md, and configuration.
        cat >> .gitignore << 'EOF'
 
    # Claude Code
-   .claude/pending-commit.md
    .claude/pending-pr.md
    .claude/review-*.md
    .claude/debug/
@@ -419,7 +418,6 @@ Key features:
 
 ```gitignore
 # Claude Code
-.claude/pending-commit.md
 .claude/pending-pr.md
 .claude/review-*.md
 .claude/debug/

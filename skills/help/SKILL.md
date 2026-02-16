@@ -35,7 +35,7 @@ contexts = {
     "ralph_active": Path(".claude/ralph/state.json").exists(),
     "plan_pending": any(Path("plans/").glob("*.md")),
     "uncommitted": run("git status --porcelain"),
-    "pending_commit": Path(".claude/pending-commit.md").exists(),
+    "pending_commit": Path(".claude/commit.md").exists(),
     "pending_pr": Path(".claude/pending-pr.md").exists(),
     "build_errors": run("pnpm validate 2>&1 | head -20"),
     "recent_files": run("git diff --name-only HEAD~3"),

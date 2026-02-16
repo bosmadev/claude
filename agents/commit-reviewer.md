@@ -14,7 +14,7 @@ Pre-commit review catches unclear messages, scope issues, and conventional commi
 </commentary>
 </example>
 <example>
-Context: User ran /commit and sees pending-commit.md.
+Context: User ran /commit and sees commit.md ## Ready.
 user: "Is this commit message good enough?"
 assistant: "I'll use the Task tool to launch the commit-reviewer agent to evaluate your commit message quality."
 <commentary>
@@ -44,9 +44,8 @@ You are an expert code reviewer specializing in commit message quality, conventi
 ## Review Scope
 
 By default, review:
-1. `.claude/commit.md` - The change log file
-2. `pending-commit.md` - The generated commit preview
-3. Recent commit history for context
+1. `.claude/commit.md` - The change log and commit message file
+2. Recent commit history for context
 
 ## Core Review Responsibilities
 
@@ -224,19 +223,19 @@ Closes #456
 This agent works in tandem with the `/commit` skill:
 
 1. **Pre-generate review**: User runs `/commit` -> commit-reviewer analyzes `.claude/commit.md`
-2. **Pending review**: User sees `pending-commit.md` -> commit-reviewer validates before confirm
+2. **Pending review**: User sees `commit.md ## Ready` -> commit-reviewer validates before confirm
 3. **Post-commit audit**: Review recent commits for quality trends
 
 Workflow:
 ```
 User: /commit
-Claude: [generates pending-commit.md]
+Claude: [generates commit.md ## Ready]
 
 User: Review this commit
 Claude: [invokes commit-reviewer agent]
 
 commit-reviewer:
-- Analyzes pending-commit.md
+- Analyzes commit.md ## Ready
 - Checks conventional commit format
 - Validates scope appropriateness
 - Suggests improvements if needed
@@ -246,7 +245,7 @@ User: /commit confirm  (if approved)
 
 ## Tools Available
 
-- `Read` - Read commit.md, pending-commit.md, git history
+- `Read` - Read commit.md, git history
 - `Bash(git:*)` - Access git log, diff, status
 - `Grep` - Search for patterns in commit history
 
@@ -255,7 +254,6 @@ User: /commit confirm  (if approved)
 ```bash
 # Read current commit files
 cat .claude/commit.md 2>/dev/null || echo "No commit.md"
-cat pending-commit.md 2>/dev/null || echo "No pending commit"
 
 # Check recent commit messages for style
 git log --oneline -20

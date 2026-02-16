@@ -82,7 +82,7 @@ All implementation agents must push their work to remote before completion (Push
 
 | Command | Description |
 |---------|-------------|
-| `/commit` | Generate pending-commit.md (scope: description) |
+| `/commit` | Generate commit message in commit.md (scope: description) |
 | `/commit confirm` | Execute pending commit + auto-cleanup |
 | `/commit abort` | Cancel pending commit |
 | `/commit show` | Show pending changes |

@@ -195,7 +195,7 @@ def check_unpushed_commits(cwd: str | None = None) -> tuple[bool, int, str]:
 def commit_review() -> None:
     """
     Creates editable commit message file before git commit.
-    User can edit .claude/pending-commit.md before confirming.
+    User can edit .claude/commit.md before confirming.
     """
     try:
         hook_input = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace'))
@@ -236,7 +236,7 @@ def commit_review() -> None:
 
     # Get project directory
     project_dir = hook_input.get("cwd", ".")
-    commit_file = Path(project_dir) / ".claude" / "pending-commit.md"
+    commit_file = Path(project_dir) / ".claude" / "commit.md"
 
     # Error handling for mkdir/write failures
     try:
@@ -278,7 +278,7 @@ def commit_review() -> None:
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "ask",
-            "permissionDecisionReason": "Commit message saved to .claude/pending-commit.md - Edit if needed, then confirm."
+            "permissionDecisionReason": "Commit message saved to .claude/commit.md - Edit if needed, then confirm."
         }
     }
     print(json.dumps(output))
@@ -660,7 +660,6 @@ def change_tracker() -> None:
     # Skip commit.md itself, temporary files, and internal docs
     skip_patterns = [
         "commit.md",
-        "pending-commit.md",
         "pending-pr.md",
         ".claude/ralph/",
         ".claude/ralph-",
