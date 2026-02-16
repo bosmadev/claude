@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.11.6](https://img.shields.io/badge/v1.11.6-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/6d1732fef083f342d371449ea7ca2921ed3239ed) | Build 31
+
+fix: CHANGELOG Action processes all new commits, not just HEAD
+
+- [x] Fixed changelog.ts to process ALL commits since last bot commit, preventing silent loss when multiple commits are pushed in a single event
+- [x] Increased workflow fetch-depth from 2 to 50 commits to support batch processing
+- [x] Added auto-push skip for main/master branches in git.py PostToolUse hook to prevent racing with CHANGELOG GitHub Action
+
+
+---
+
 ## [![v1.11.5](https://img.shields.io/badge/v1.11.5-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/74f836d629f24b45f2f31cff094eb5511484272a) | Build 30
 
 fix: auto-push after every git commit via PostToolUse hook
