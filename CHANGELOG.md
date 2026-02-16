@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.13.2](https://img.shields.io/badge/v1.13.2-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/51ed3447218ba4880f9046c8cfdb994a00f46f0d) | Build 38
+
+fix(ci): auto-detect pnpm/npm for Node.js cache in claude.yml
+
+- [x] Detect pnpm-lock.yaml to choose package manager
+- [x] Setup pnpm via pnpm/action-setup@v4 when needed
+- [x] Fixes cache failure on pnpm repos (gswarm, pulsona)
+
+
+---
+
 ## [![v1.13.1](https://img.shields.io/badge/v1.13.1-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/b420e8a73024d12d343446150e062897f8b9899b) | Build 37
 
 fix(ci): remove MCP inline comment tool, use gh api instead
