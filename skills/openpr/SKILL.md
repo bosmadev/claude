@@ -1,7 +1,7 @@
 ---
 name: openpr
 description: Create PR with squashed commits and auto-generated summary
-argument-hint: "[base-branch|help]"
+argument-hint: "[base-branch|confirm|help]"
 user-invocable: true
 context: fork
 ---
@@ -29,9 +29,11 @@ When arguments equal "help":
 
 Usage:
   /openpr [base-branch]
+  /openpr confirm
 
 Commands:
-  (no args)        Auto-detect target branch (see hierarchy below)
+  (no args)        Auto-detect target branch, generate preview
+  confirm          Squash + create PR (uses existing pending-pr.md or generates fresh)
   [branch]         Create PR targeting specified branch
   help             Show this help
 
@@ -70,6 +72,7 @@ Examples:
 
 Parse arguments:
 - `base-branch` (optional): Target branch for PR (auto-detected if omitted)
+- `confirm`: Skip Phase 1 preview, use existing `.claude/pending-pr.md` and proceed directly to squash + PR creation (Phase 2). If no pending-pr.md exists, run Phase 1 first then auto-continue to Phase 2.
 - `help`: Show usage information
 
 ## Branch Hierarchy Detection
@@ -292,108 +295,42 @@ If no commits to include, abort with: "Error: No commits found to include in PR.
 
 ### 1. Run aggregate-pr.py
 
-Use the aggregation script to gather and format all commit data.
-The `BASE_BRANCH` was determined in the Branch Hierarchy Detection step above.
+Use the aggregation script to generate the unified format (same output serves as commit message, PR body, and preview).
 
 ```bash
 # BASE_BRANCH already set from hierarchy detection
 cd "$(git rev-parse --show-toplevel)"
 
-# For non-main targets, pass --no-build-id to skip Build ID injection
-if [ "${BASE_BRANCH}" != "main" ] && [ "${BASE_BRANCH}" != "master" ]; then
-  python ~/.claude/scripts/aggregate-pr.py --no-build-id "${BASE_BRANCH}" > .claude/pending-pr-raw.md 2>&1
-else
-  python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}" > .claude/pending-pr-raw.md 2>&1
-fi
-```
-
-The script handles:
-- Extracting build ID from branch name (e.g., `b101` → `101`)
-- Parsing all commits since base branch
-- Grouping commits by conventional type (feat, fix, refactor, etc.)
-- Generating summary paragraph from commit types
-- Formatting commits with `b{buildId}-{n}: {subject}` pattern
-- Collecting detailed changes from commit bodies
-
-**Output format from script:**
-```markdown
-# Build {number}
-
-## Summary
-
-{Auto-generated summary paragraph: "This PR includes X feat, Y fixes, and Z refactoring."}
-
-## Commits
-
-### feat
-- b{buildId}-1: feat(scope): description
-- b{buildId}-2: feat: another feature
-
-### fix
-- b{buildId}-3: fix(scope): bug description
-
-## Details
-
-**{hash}**: {commit body content}
-**{hash}**: {commit body content}
+python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}" > .claude/pending-pr.md 2>&1
 ```
 
 ### 2. Verify Script Success
 
-Check that aggregate-pr.py ran successfully:
-
 ```bash
-if [ ! -f .claude/pending-pr-raw.md ] || [ ! -s .claude/pending-pr-raw.md ]; then
+if [ ! -s .claude/pending-pr.md ]; then
   echo "Error: Failed to generate PR summary. Check that you have commits to include."
   exit 1
 fi
 ```
 
-### 3. Write .claude/pending-pr.md
-
-Transform the raw output into the pending PR format:
+### 3. Append Edit Note
 
 ```bash
-# Extract components from raw output
-TITLE=$(grep '^# Build' .claude/pending-pr-raw.md | sed 's/^# //')
-SUMMARY=$(sed -n '/^## Summary$/,/^## /p' .claude/pending-pr-raw.md | grep -v '^## ')
-COMMITS=$(sed -n '/^## Commits$/,/^## /p' .claude/pending-pr-raw.md | grep -v '^## ')
-DETAILS=$(sed -n '/^## Details$/,$p' .claude/pending-pr-raw.md | grep -v '^## Details')
-
-# Write formatted pending PR
-cat > .claude/pending-pr.md <<EOF
-# Pull Request: ${TITLE}
-
-## Summary
-
-${SUMMARY}
-
-## Commits Included
-
-${COMMITS}
-
-## Detailed Changes
-
-${DETAILS}
-
----
-**Note:** Edit this file as needed. Run \`/openpr\` again or type "confirm" to squash and create the PR.
-EOF
-
-# Cleanup temp file
-rm .claude/pending-pr-raw.md
+echo "" >> .claude/pending-pr.md
+echo "---" >> .claude/pending-pr.md
+echo '**Note:** Edit this file as needed. Run `/openpr` again or `/openpr confirm` to squash and create the PR.' >> .claude/pending-pr.md
 ```
 
-### 6. Prompt User
+### 4. Prompt User
 
-After creating `.claude/pending-pr.md`, display:
+After creating `.claude/pending-pr.md`, display its contents and:
 
 ```
 Created: .claude/pending-pr.md
 
 Please review and edit the PR description if needed.
 
-When ready, type "confirm" to:
+When ready, type **"confirm"** or run `/openpr confirm` to:
 1. Squash all commits into a single commit
 2. Push to origin
 3. Create the pull request
@@ -401,7 +338,7 @@ When ready, type "confirm" to:
 Or type "cancel" to abort.
 ```
 
-**STOP HERE** and wait for user response.
+**STOP HERE** and wait for user response (unless invoked as `/openpr confirm`).
 
 ---
 
@@ -423,14 +360,14 @@ Parse the file to extract:
 
 ### 2. Create Squash Commit Message
 
-Use aggregate-pr.py to generate the properly formatted squash commit message:
+Use aggregate-pr.py to generate the unified format (serves as both commit message and PR body):
 
 ```bash
 BASE_BRANCH="${BASE_BRANCH:-main}"
 cd "$(git rev-parse --show-toplevel)"
 
-# Generate squash message format (without PR URL - will be added after PR creation)
-python ~/.claude/scripts/aggregate-pr.py --squash "${BASE_BRANCH}" > .claude/squash-message.txt
+# Generate unified format (no --squash needed — single format for everything)
+python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}" > .claude/squash-message.txt
 
 # Verify the message was generated
 if [ ! -s .claude/squash-message.txt ]; then
@@ -439,19 +376,20 @@ if [ ! -s .claude/squash-message.txt ]; then
 fi
 ```
 
-The `--squash` flag outputs the commit in this format:
+The unified format:
 ```
-Build {id}: {summary title}
+Build {id}
 
 ## Summary
 {summary paragraph}
 
 ## Changes
-- b{id}-1: {commit subject}
-- b{id}-2: {commit subject}
+### {type}
+- [x] b{id}-1: {commit subject}
+- [x] b{id}-2: {commit subject}
 
 ## Details
-{commit body content}
+- [x] {detail line}
 ```
 
 Note: The `PR: {url}` line will be appended after the PR is created (step 8).
@@ -484,23 +422,17 @@ Use `--force-with-lease` for safety (fails if remote has new commits).
 
 ### 6. Create Pull Request
 
-Read the pending PR file to extract the title and use aggregate-pr.py to generate the PR body:
+Use the squash-message.txt as PR body (unified format — same content for commit and PR):
 
 ```bash
 BASE_BRANCH="${BASE_BRANCH:-main}"
 cd "$(git rev-parse --show-toplevel)"
 
-# Extract title from pending PR
-PR_TITLE=$(grep '^# Pull Request:' .claude/pending-pr.md | sed 's/^# Pull Request: //')
+# Extract title (first line of squash message)
+PR_TITLE=$(head -1 .claude/squash-message.txt)
 
-# Generate PR body using aggregate-pr.py (outputs the markdown body directly)
-PR_BODY=$(python ~/.claude/scripts/aggregate-pr.py "${BASE_BRANCH}")
-
-# Verify PR body was generated
-if [ -z "$PR_BODY" ]; then
-  echo "Error: Failed to generate PR body"
-  exit 1
-fi
+# PR body = everything after the title line
+PR_BODY=$(tail -n +3 .claude/squash-message.txt)
 
 # Create the PR (auto-label 'claude' to trigger @claude review + security scan)
 gh pr create \

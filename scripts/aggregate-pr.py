@@ -347,13 +347,10 @@ def aggregate_pr(base_branch: str = "main") -> PRSummary:
     )
 
 
-def format_pr_body(pr: PRSummary) -> str:
-    """Format PR body as markdown."""
-    commits_section = format_commits_by_type(pr.commits_by_type, pr.build_id)
-
-    # Collect detailed changes from commit bodies (add [x] to bullet items, filter boilerplate)
+def collect_details(commits: list[Commit]) -> str:
+    """Collect commit body details with boilerplate filtering and [x] checkmarks."""
     details = []
-    for commit in pr.commits:
+    for commit in commits:
         if commit.body:
             filtered_lines = []
             for line in commit.body.split("\n"):
@@ -366,56 +363,31 @@ def format_pr_body(pr: PRSummary) -> str:
                 filtered_lines.append(line)
             body = "\n".join(filtered_lines).strip()
             if body:
-                details.append(f"**{commit.hash}**: {body}")
-
-    details_section = "\n\n".join(details) if details else "_No detailed descriptions provided._"
-
-    return f"""## Summary
-
-{pr.summary}
-
-## Commits
-
-{commits_section}
-
-## Details
-
-{details_section}
-"""
+                details.append(body)
+    return "\n".join(details)
 
 
-def format_squash_message(pr: PRSummary, pr_url: str = "", version: str = "") -> str:
+def format_pr(pr: PRSummary, pr_url: str = "", version: str = "") -> str:
     """
-    Format the squash commit message.
+    Unified PR format — serves as both commit message and PR body.
 
     Format:
-    Build {id}: {summary title} ({version})
+    Build {id} ({version})
 
     ## Summary
     {summary paragraph}
 
     ## Changes
-    {commits list}
+    ### {type}
+    - [x] b{id}-{n}: {subject}
 
     ## Details
-    {commit bodies}
+    - [x] {detail line}
 
     PR: {url}
     """
-    commits_list = format_commits_list(pr.commits, pr.build_id)
-
-    # Collect details from commit bodies (filter boilerplate)
-    details = []
-    for commit in pr.commits:
-        if commit.body:
-            filtered_lines = [
-                line for line in commit.body.split("\n")
-                if not (line.strip() and is_boilerplate(line))
-            ]
-            body = "\n".join(filtered_lines).strip()
-            if body:
-                details.append(body)
-    details_section = "\n".join(details) if details else ""
+    changes_section = format_commits_by_type(pr.commits_by_type, pr.build_id)
+    details_section = collect_details(pr.commits)
 
     # Add version to title if provided
     title = pr.title
@@ -428,7 +400,7 @@ def format_squash_message(pr: PRSummary, pr_url: str = "", version: str = "") ->
 {pr.summary}
 
 ## Changes
-{commits_list}
+{changes_section}
 """
 
     if details_section:
@@ -438,6 +410,17 @@ def format_squash_message(pr: PRSummary, pr_url: str = "", version: str = "") ->
         msg += f"\nPR: {pr_url}"
 
     return msg
+
+
+# Keep backward-compatible aliases
+def format_pr_body(pr: PRSummary) -> str:
+    """Format PR body — delegates to unified format_pr."""
+    return format_pr(pr)
+
+
+def format_squash_message(pr: PRSummary, pr_url: str = "", version: str = "") -> str:
+    """Format squash commit message — delegates to unified format_pr."""
+    return format_pr(pr, pr_url, version)
 
 
 def to_json(pr: PRSummary, version: str = "") -> str:
@@ -458,7 +441,7 @@ def to_json(pr: PRSummary, version: str = "") -> str:
             }
             for c in pr.commits
         ],
-        "body": format_pr_body(pr),
+        "body": format_pr(pr),
     }
 
     if version:
@@ -476,18 +459,19 @@ Usage:
 
 Options:
   --json          Output as JSON (for GitHub Actions)
-  --squash        Output squash commit message format
   --version VER   Include version in output (e.g., 1.0.6)
   --help          Show this help
 
 Arguments:
   base-branch     Target branch for PR (default: main)
 
+Output: Unified format that serves as both PR body and squash commit message.
+
 Examples:
   python aggregate-pr.py                        # PR to main, markdown output
   python aggregate-pr.py develop                # PR to develop
   python aggregate-pr.py --json                 # JSON output for Actions
-  python aggregate-pr.py --squash --version 1.0.6  # With version number
+  python aggregate-pr.py --version 1.0.6        # With version number
 """)
 
 
@@ -497,7 +481,6 @@ def main():
 
     # Parse flags
     output_json = "--json" in args
-    output_squash = "--squash" in args
     show_help = "--help" in args or "-h" in args
 
     # Parse --version flag
@@ -541,18 +524,11 @@ def main():
         print("Error: No commits found to include in PR", file=sys.stderr)
         sys.exit(1)
 
-    # Output
+    # Output — unified format for all modes (same output serves as commit msg + PR body)
     if output_json:
         print(to_json(pr, version))
-    elif output_squash:
-        print(format_squash_message(pr, "", version))
     else:
-        # For markdown output, add version to title if provided
-        title = pr.title
-        if version:
-            title += f" ({version})"
-        print(f"# {title}\n")
-        print(format_pr_body(pr))
+        print(format_pr(pr, "", version))
 
 
 if __name__ == "__main__":
