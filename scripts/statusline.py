@@ -30,7 +30,11 @@ from hooks.utils import parse_model_id
 
 # ---------------------------------------------------------------------------
 # Timeout guard — kill process if stdin hangs (Windows-safe)
+# Started in main() only (not --refresh-cache mode).
 # ---------------------------------------------------------------------------
+_kill_timer: threading.Timer | None = None
+
+
 def _timeout_cleanup():
     """Clean shutdown on timeout - allows proper cleanup."""
     try:
@@ -38,9 +42,14 @@ def _timeout_cleanup():
     except SystemExit:
         os._exit(0)
 
-_kill_timer = threading.Timer(5, _timeout_cleanup)
-_kill_timer.daemon = True
-_kill_timer.start()
+
+def _start_kill_timer(seconds: float = 5.0) -> None:
+    """Start the stdin-hang kill timer. Call only from main()."""
+    global _kill_timer
+    _kill_timer = threading.Timer(seconds, _timeout_cleanup)
+    _kill_timer.daemon = True
+    _kill_timer.start()
+
 
 try:
     from zoneinfo import ZoneInfo
@@ -453,67 +462,129 @@ def minutes_until_reset(resets_at: str) -> str:
         return "?"
 
 
+def _do_sync_refresh(cache_path: Path, timeout: float = 3.0) -> bool:
+    """Synchronous HTTP refresh of usage cache. Returns True on success.
+
+    Args:
+        cache_path: Path to write the cache file.
+        timeout: HTTP timeout in seconds. Keep short (3s) when called from
+                 main() to avoid blocking statusline rendering. The detached
+                 --refresh-cache subprocess can use a longer timeout (6s).
+    """
+    import urllib.request
+
+    creds_path = Path.home() / ".claude" / ".credentials.json"
+    token = ""
+    try:
+        creds = json.loads(creds_path.read_text(encoding="utf-8"))
+        token = creds.get("claudeAiOauth", {}).get("accessToken", "")
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    if not token or token == "null" or not isinstance(token, str) or len(token) < 10:
+        return False
+
+    try:
+        req = urllib.request.Request(
+            "https://api.anthropic.com/api/oauth/usage",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "anthropic-beta": "oauth-2025-04-20",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+        # Atomic write: temp file then rename
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = cache_path.with_suffix(".tmp")
+        tmp_path.write_text(body, encoding="utf-8")
+        tmp_path.replace(cache_path)
+        return True
+    except Exception as exc:
+        print(f"[!] Usage cache refresh failed: {exc}", file=sys.stderr)
+        return False
+
+
 def refresh_usage_cache_bg(cache_path: Path) -> None:
-    """Refresh usage cache in background thread (fire-and-forget)."""
-    def _refresh():
-        import urllib.request
+    """Refresh usage cache in a detached subprocess (survives parent exit).
 
-        creds_path = Path.home() / ".claude" / ".credentials.json"
-        token = ""
-        try:
-            creds = json.loads(creds_path.read_text(encoding="utf-8"))
-            token = creds.get("claudeAiOauth", {}).get("accessToken", "")
-        except (OSError, json.JSONDecodeError):
-            return
+    Spawns `python statusline.py --refresh-cache <path>` as a detached process.
+    This replaces the old daemon-thread approach which was killed on parent exit.
+    """
+    try:
+        # Use CREATE_NO_WINDOW on Windows to avoid flashing console
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "--refresh-cache", str(cache_path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=creation_flags,
+        )
+    except Exception:
+        pass
 
-        if not token or token == "null" or not isinstance(token, str) or len(token) < 10:
-            return
 
-        try:
-            req = urllib.request.Request(
-                "https://api.anthropic.com/api/oauth/usage",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "anthropic-beta": "oauth-2025-04-20",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=4) as resp:
-                body = resp.read().decode("utf-8")
-            # Atomic write: write to temp file then rename to prevent
-            # empty cache from timeout-kill interrupting mid-write
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp_path = cache_path.with_suffix(".tmp")
-            tmp_path.write_text(body, encoding="utf-8")
-            tmp_path.replace(cache_path)
-        except Exception as exc:
-            print(f"[!] Usage cache refresh failed: {exc}", file=sys.stderr)
+def _is_usage_post_reset(cache_path: Path) -> bool:
+    """Check if cached usage data is from before a known reset window.
 
-    t = threading.Thread(target=_refresh, daemon=True)
-    t.start()
+    The API response includes resets_at timestamps for each usage window.
+    If current time > resets_at for any window, the cached percentage is
+    from a previous window and is guaranteed stale.
+    """
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        for key in ("seven_day", "five_hour"):
+            entry = data.get(key)
+            if not isinstance(entry, dict):
+                continue
+            resets_at = entry.get("resets_at", "")
+            if not resets_at:
+                continue
+            reset_dt = datetime.fromisoformat(resets_at.replace("Z", "+00:00"))
+            now = datetime.now(reset_dt.tzinfo)
+            if now > reset_dt:
+                return True  # Reset has passed, cached data is from previous window
+    except Exception:
+        pass
+    return False
 
 
 def fetch_usage_data(cache_path: Path) -> dict:
     """Return usage data using stale-while-revalidate pattern.
 
-    Always returns immediately from cache. Triggers background refresh
-    if cache is older than 5 minutes.
+    - Post-reset: synchronous fetch (cached data is from previous window)
+    - Very stale (>15 min): synchronous fetch (background refresh likely failing)
+    - Moderately stale (>5 min): background subprocess refresh, return stale data
+    - Fresh (<5 min): return cached data immediately
     """
     now = int(time.time())
-    cached = read_usage_cache(cache_path)
+    cache_exists = cache_path.exists() and cache_path.stat().st_size > 0
+    cache_age = float("inf")
 
-    # Check if cache needs refresh (>5 min old or missing)
-    needs_refresh = True
-    if cache_path.exists() and cache_path.stat().st_size > 0:
+    if cache_exists:
         try:
             mtime = int(os.path.getmtime(cache_path))
-            needs_refresh = (now - mtime) > 300
+            cache_age = now - mtime
         except OSError:
             pass
 
-    if needs_refresh:
+    # Post-reset detection: cached percentages are from a previous window
+    # Do synchronous fetch to show correct data immediately
+    if cache_exists and _is_usage_post_reset(cache_path):
+        _do_sync_refresh(cache_path)
+        return read_usage_cache(cache_path)
+
+    # Very stale (>15 min): background refresh has been failing, go synchronous
+    if cache_age > 900:
+        _do_sync_refresh(cache_path)
+        return read_usage_cache(cache_path)
+
+    # Moderately stale (>5 min): fire-and-forget subprocess refresh
+    if cache_age > 300:
         refresh_usage_cache_bg(cache_path)
 
-    return cached
+    return read_usage_cache(cache_path)
 
 
 def save_last_output(output: str) -> None:
@@ -688,13 +759,18 @@ def run_test_mode() -> None:
 
 def main() -> None:
     # ------------------------------------------------------------------
-    # Read JSON input from stdin
+    # Read JSON input from stdin (kill timer protects against hang)
     # ------------------------------------------------------------------
+    _start_kill_timer(8.0)
     try:
         raw_input = sys.stdin.read()
     except (OSError, ValueError) as e:
         print(f"Error reading stdin: {e}", file=sys.stderr)
         raw_input = "{}"
+    finally:
+        # Cancel kill timer — stdin phase done, rest of main() is safe
+        if _kill_timer:
+            _kill_timer.cancel()
 
     try:
         inp = json.loads(raw_input)
@@ -1042,9 +1118,16 @@ def main() -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Claude Code Statusline")
     parser.add_argument("--test", action="store_true", help="Run test mode with mock scenarios")
+    parser.add_argument("--refresh-cache", type=str, metavar="PATH",
+                        help="Refresh usage cache at PATH and exit (used by background subprocess)")
     args = parser.parse_args()
 
-    if args.test:
+    if args.refresh_cache:
+        # Detached subprocess mode: sync HTTP fetch, write cache, exit.
+        # No kill timer — this runs independently of the statusline process.
+        # Longer timeout (6s) since we're not blocking the statusline.
+        _do_sync_refresh(Path(args.refresh_cache), timeout=6.0)
+    elif args.test:
         run_test_mode()
     else:
         main()
