@@ -194,7 +194,7 @@ jobs:
             --max-turns ${{ github.event.inputs.max_turns <= 50 && github.event.inputs.max_turns || '25' }}
             --model ${{ github.event.inputs.model || 'claude-sonnet-4-5-20250929' }}
             --mcp-config /tmp/mcp-config.json
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__sequential-thinking__sequentialthinking,mcp__context7__*,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh:*),Bash(npm:*),Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(tree:*),Bash(find:*),Bash(wc:*),Bash(grep:*),Bash(echo:*),Bash(pwd:*),Read,Write,Edit,MultiEdit,Glob,Grep,Task"
+            --allowedTools "mcp__sequential-thinking__sequentialthinking,mcp__context7__*,Bash(gh:*),Bash(npm:*),Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(tree:*),Bash(find:*),Bash(wc:*),Bash(grep:*),Bash(echo:*),Bash(pwd:*),Read,Write,Edit,MultiEdit,Glob,Grep,Task"
           prompt: |
             ## Context
             - Repository: ${{ github.repository }}
