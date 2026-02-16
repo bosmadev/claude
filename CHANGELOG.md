@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.11.8](https://img.shields.io/badge/v1.11.8-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/9c84eb1dd1bb25128484634dbfe3be88fa1e1083) | Build 33
+
+ci: add clone config step to claude.yml, fix aggregate-pr.py, add --label claude
+
+- [x] Clone bosmadev/claude to ~/.claude on GitHub runner for full context
+- [x] Fix aggregate-pr.py: UTF-8 encoding on Windows, [x] checkmarks in PR body
+- [x] Add --label claude to /openpr skill for auto-triggering @claude review
+
+
+---
+
 ## [![v1.11.7](https://img.shields.io/badge/v1.11.7-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/19fe67c4b186bb656eaf8c872fbe1a329de8379f) | Build 32
 
 cleanup: remove pending-commit.md legacy references
