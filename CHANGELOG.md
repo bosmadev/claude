@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.13.1](https://img.shields.io/badge/v1.13.1-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/b420e8a73024d12d343446150e062897f8b9899b) | Build 37
+
+fix(ci): remove MCP inline comment tool, use gh api instead
+
+- [x] Remove mcp__github_inline_comment__create_inline_comment (redundant)
+- [x] Remove redundant Bash(gh pr *) patterns (covered by Bash(gh:*))
+- [x] @claude can use gh api for inline PR comments without MCP overhead
+
+
+---
+
 ## [![v1.13.0](https://img.shields.io/badge/v1.13.0-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/10380fcf116ca06dbc06627f403e14ca43e3318f) | Build 36
 
 feat(openpr): no-squash PR lifecycle + inline review + auto PR body update
