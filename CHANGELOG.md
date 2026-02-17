@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.14.1](https://img.shields.io/badge/v1.14.1-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/5e3b71bfd957e160feea5a04b2dbfac728dfbbb0) | Build 42
+
+fix(ci): conditionally enable track_progress (unsupported on labeled event)
+
+
+
+---
+
 ## [![v1.14.0](https://img.shields.io/badge/v1.14.0-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/be3058d35f09eb84a2ef8d6d0253029d46a3eebb) | Build 41
 
 feat(x): add campaign mode + TTY confirmation for git writes in bypass guard
