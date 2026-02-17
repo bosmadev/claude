@@ -3,6 +3,16 @@
 
 ---
 
+## [![v1.13.3](https://img.shields.io/badge/v1.13.3-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/6a47030393bf1006cf025f1baca27cf72affb037) | Build 39
+
+fix(ci): remove Node.js cache from claude job — no project deps needed
+
+- [x] Remove pnpm detection and setup (unnecessary for MCP-only job)
+- [x] npx downloads MCP servers fresh, caching adds complexity for no benefit
+
+
+---
+
 ## [![v1.13.2](https://img.shields.io/badge/v1.13.2-2026--02--16-333333.svg)](https://github.com/bosmadev/claude/commit/51ed3447218ba4880f9046c8cfdb994a00f46f0d) | Build 38
 
 fix(ci): auto-detect pnpm/npm for Node.js cache in claude.yml
