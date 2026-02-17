@@ -183,7 +183,7 @@ jobs:
           branch_prefix: ""
           branch_name_template: "{{entityType}}-{{entityNumber}}-{{description}}"
           allowed_bots: "dependabot[bot],renovate[bot]"
-          track_progress: true
+          track_progress: ${{ github.event_name == 'pull_request' && contains(fromJSON('["opened","synchronize","ready_for_review","reopened"]'), github.event.action) }}
           use_sticky_comment: true
           include_fix_links: true
           use_commit_signing: true
