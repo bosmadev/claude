@@ -142,7 +142,7 @@ jobs:
       - name: Validate Required Packages
         run: |
           npm view @modelcontextprotocol/server-sequential-thinking version || exit 1
-          npm view @context7/mcp-server version || exit 1
+          npm view @upstash/context7-mcp version || exit 1
 
       - name: Create MCP Configuration
         run: |
@@ -155,7 +155,7 @@ jobs:
               },
               "context7": {
                 "command": "npx",
-                "args": ["-y", "@context7/mcp-server"]
+                "args": ["-y", "@upstash/context7-mcp"]
               }
             }
           }
