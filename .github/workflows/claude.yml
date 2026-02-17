@@ -117,7 +117,10 @@ jobs:
       cancel-in-progress: true  # New push invalidates old review
     timeout-minutes: ${{ github.event.inputs.timeout && github.event.inputs.timeout <= 60 && github.event.inputs.timeout || 30 }}
     permissions:
-      contents: read  # Read code only, no write access
+      id-token: write  # Required for Claude OAuth OIDC token exchange
+      contents: read   # Read code only, no write access
+      issues: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v5
