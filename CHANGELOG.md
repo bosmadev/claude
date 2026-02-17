@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.13.4](https://img.shields.io/badge/v1.13.4-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/8c334dbb49e87c33b262dfb8e29d1712642ab2e4) | Build 40
+
+fix(ci): correct context7 MCP package name to @upstash/context7-mcp
+
+
+
+---
+
 ## [![v1.13.3](https://img.shields.io/badge/v1.13.3-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/6a47030393bf1006cf025f1baca27cf72affb037) | Build 39
 
 fix(ci): remove Node.js cache from claude job — no project deps needed
