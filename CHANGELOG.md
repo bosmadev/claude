@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.14.0](https://img.shields.io/badge/v1.14.0-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/be3058d35f09eb84a2ef8d6d0253029d46a3eebb) | Build 41
+
+feat(x): add campaign mode + TTY confirmation for git writes in bypass guard
+
+
+
+---
+
 ## [![v1.13.4](https://img.shields.io/badge/v1.13.4-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/8c334dbb49e87c33b262dfb8e29d1712642ab2e4) | Build 40
 
 fix(ci): correct context7 MCP package name to @upstash/context7-mcp
