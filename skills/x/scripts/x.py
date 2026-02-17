@@ -2178,6 +2178,31 @@ def cmd_log(args):
     history["replies"].append(reply_entry)
     history["daily_counts"][today] = history["daily_counts"].get(today, 0) + 1
     save_history(history)
+
+
+async def cmd_check_author(tweet_id: str):
+    """Check if tweet author matches our X_HANDLE (exit 0=safe, 1=own post)"""
+    config = load_config()
+    my_handle = config.get("handle", "").lstrip("@").lower() if config else ""
+
+    if not my_handle:
+        print("WARNING: No X_HANDLE configured, cannot check author — allowing post")
+        sys.exit(0)
+
+    tweet_info = await get_tweet_details(tweet_id)
+    if not tweet_info:
+        print(f"WARNING: Could not fetch tweet {tweet_id} — allowing post")
+        sys.exit(0)
+
+    author = tweet_info.get("author", "").lstrip("@").lower()
+    if author == my_handle:
+        print(f"BLOCKED: Tweet {tweet_id} is by @{author} (our own post)")
+        sys.exit(1)
+
+    print(f"OK: Tweet {tweet_id} is by @{author} (safe to reply)")
+    sys.exit(0)
+
+
 def cmd_check(args):
     """Check if target URL already replied to (exit 0=ok, 1=already replied)"""
     history = load_history()
@@ -2866,6 +2891,9 @@ Examples:
     check_p = subparsers.add_parser("check", help="Check if already replied to URL")
     check_p.add_argument("target_url", help="Target post URL")
 
+    ca_p = subparsers.add_parser("check-author", help="Check if tweet author is our own handle (exit 0=safe, 1=own post)")
+    ca_p.add_argument("tweet_id", help="Tweet ID to check")
+
     history_p = subparsers.add_parser("history", help="Show posting history")
     history_p.add_argument("--days", type=int, help="Filter by days ago")
     history_p.add_argument("--topic", help="Filter by topic")
@@ -2949,6 +2977,8 @@ Examples:
         cmd_log(args)
     elif cmd == "check":
         cmd_check(args)
+    elif cmd == "check-author":
+        asyncio.run(cmd_check_author(args.tweet_id))
     elif cmd == "history":
         cmd_history(args)
     elif cmd == "status":

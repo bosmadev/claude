@@ -181,27 +181,33 @@ On first run, the scraper reads `.env` (or system env) and auto-generates `skill
 | `scheduler status` | Show scheduler + feed freshness | `/x scheduler status` |
 | `scheduler uninstall` | Remove auto-scraper | `/x scheduler uninstall` |
 | `auto [N] [model]` | Headless auto-run: scrape + research + post | `/x auto 5 sonnet` |
+| `campaign [N] [model] {TOPIC}` | TeamCreate + N agents, continuous posting loop | `/x campaign 10 sonnet AI cost complaints` |
 | `github` | GitHub-to-X pipeline: scan repos/issues, map users to X handles, generate queries | `/x github` |
 | `github --search` | Same + search X API for each generated query | `/x github --search` |
 | `help` | Show usage help | `/x help` |
 
 ### Model Selection Syntax
 
-Both `research` and `post` support `[N] [model]` syntax:
+Commands `research`, `post`, and `campaign` support `[N] [model]` syntax:
 
 - `[N]` -- number of parallel agents (default: 1, single agent in main context)
 - `[model]` -- `opus`, `sonnet`, or `haiku` (default: main context model)
 
 **Examples:**
 ```
-/x post {TEXT}                    # Single agent, Sonnet (default)
-/x post 10 {TEXT}                 # 10 Sonnet agents in parallel (recommended)
-/x post 10 sonnet {TEXT}          # Same as above, explicit
-/x research 5 sonnet {TOPIC}      # 5 Sonnet agents for research
-/x post 2 haiku {TEXT}            # 2 Haiku agents (minimal cost)
+/x post {TEXT}                              # Single agent, Sonnet (default)
+/x post 10 {TEXT}                           # 10 Sonnet agents in parallel (recommended)
+/x post 10 sonnet {TEXT}                    # Same as above, explicit
+/x research 5 sonnet {TOPIC}                # 5 Sonnet agents for research
+/x post 2 haiku {TEXT}                      # 2 Haiku agents (minimal cost)
+/x campaign 10 sonnet AI cost complaints    # 10-agent continuous team (recommended)
+/x campaign 5 haiku free tools              # 5 Haiku agents (budget)
+/x campaign 10 opus {TOPIC}                 # BLOCKED: "Campaign uses sonnet/haiku only"
 ```
 
-**Default model is Sonnet for all /x operations.** Never use Opus for /x — it runs continuously and burns weekly quota. Only use `opus` if user explicitly requests it.
+**Default model is Sonnet for all /x operations.** Never use Opus for /x — it runs continuously and burns weekly quota. Only use `opus` if user explicitly requests it for research/post modes.
+
+**Campaign mode BLOCKS Opus entirely** — continuous loops would drain weekly Opus quota in hours. Use Sonnet (default) or Haiku (budget).
 
 When `N > 1`, Claude spawns Task agents via `Task(model="sonnet")` override. Research agents use Bash subagent_type (X API only), For You scanner uses general-purpose (needs Chrome MCP).
 
@@ -1095,6 +1101,11 @@ Show usage help.
   Pick news item, compose original tweet on profile, distribute via replies
   News sources: Google News RSS, Messari API, Claude Code changelog, more
 
+**Campaign:** /x campaign [N] [model] {TOPIC}
+  Spawn N-agent team for continuous posting (research → post → repeat)
+  Uses TeamCreate + persistent agents. Runs until you say "stop".
+  Example: /x campaign 10 sonnet AI cost complaints
+
 **News:** /x news
   Show current scraped news feed (RSS, crypto, changelogs)
 
@@ -1105,8 +1116,9 @@ Show usage help.
   Show daily/weekly counts + reach
 
 **Model Selection:**
-  [N] -- number of parallel agents (default: 1)
-  [model] -- opus, sonnet, or haiku (default: main context)
+  [N] -- number of parallel agents (default: 1, campaign default: 10)
+  [model] -- opus, sonnet, or haiku (default: sonnet)
+  Campaign mode BLOCKS opus (continuous loops burn quota)
 
 **Post Tracking:**
   Check count: /x status
@@ -1386,6 +1398,359 @@ python skills/x/scripts/x.py poster-install 12
 
 ---
 
+## Campaign Mode: `/x campaign [N] [model] {TOPIC}`
+
+Continuous multi-agent posting using Ralph-style TeamCreate + TaskCreate. Spawns a persistent team of N agents that work continuously (research → compose → post → repeat) until explicit user shutdown.
+
+**Default:** N=10, model=sonnet. Opus is BLOCKED (continuous loops burn weekly quota in hours).
+
+### CRITICAL: Profile + Self-Reply Block (HARD ENFORCED)
+
+Campaign agents operate under absolute restrictions — they ONLY reply to OTHER users' posts:
+
+| Action | Allowed? | Enforcement |
+|--------|----------|-------------|
+| Reply to OTHER users' posts | YES | Core workflow — `x.py post` |
+| `x.py tweet` (original profile post) | BLOCKED | Command not included in agent prompts |
+| Reply to OUR OWN posts | BLOCKED | `x.py check-author {tweet_id}` before every post |
+| Quote tweet our own posts | BLOCKED | Check author matches X_HANDLE → skip |
+| Retweet | BLOCKED | No retweet commands in agent prompts |
+
+**Every agent prompt includes:**
+```
+HARD BLOCK: NEVER call x.py tweet. NEVER reply to posts by {X_HANDLE}.
+Before posting: run `x.py check-author {tweet_id}`. If exit code 1, SKIP this target.
+```
+
+### Agent Roles (10 Default)
+
+| # | Name | subagent_type | Purpose |
+|---|------|---------------|---------|
+| 1-2 | `researcher-1`, `researcher-2` | Bash | X API search, collect targets, report to posters |
+| 3 | `foryou-scanner` | general-purpose | Chrome MCP feed scroll for non-searchable targets |
+| 4 | `github-pipeline` | Bash | GitHub trending → X queries via `x.py github --search` |
+| 5-8 | `poster-1..4` | Bash | Compose unique replies, post via x.py, log |
+| 9 | `quote-tweeter` | Bash | Quote-tweet viral posts (2x distribution) |
+| 10 | `thread-diver` | Bash | Reply deep in active threads via conversation_id |
+
+ALL agents use `Task(model="sonnet")`. Campaign NEVER uses Opus.
+
+### State Machine (2 States)
+
+```
+CAMPAIGN_ACTIVE → SHUTDOWN
+```
+
+- **CAMPAIGN_ACTIVE:** All agents loop continuously. Team lead monitors for critical errors only.
+- **SHUTDOWN:** User requests stop → SendMessage(shutdown_request) to all → TeamDelete()
+
+No RETRY_CHECK, VERIFY_FIX, or REVIEW phases. Posts are short replies validated by `sanitize_reply_text()`.
+
+### Orchestration Flow
+
+**Phase 1: Setup (team lead executes in a SINGLE message)**
+
+```
+1. Parse args: N, model, topic
+2. IF model == "opus": BLOCK with "Campaign uses sonnet/haiku only". STOP.
+3. Run: python skills/x/scripts/x.py scrape    (refresh feed.json)
+4. TeamCreate(team_name="x-campaign")
+5. TaskCreate milestone tasks:
+   - "MILESTONE-1: Post 50 replies" (activeForm: "Posting replies")
+   - "MILESTONE-2: Post 150 replies" (activeForm: "Scaling outreach")
+   - "MILESTONE-3: Post 300 replies" (activeForm: "Maximum reach")
+6. Spawn ALL N agents in ONE message (multiple parallel Task() calls)
+```
+
+**Phase 2: Active (continuous, team lead monitors)**
+
+```
+- Agents work silently (WORK SILENTLY protocol — NO progress reports)
+- Team lead ONLY responds to:
+  a) User queries ("how's it going?" → run `x.py status`, report)
+  b) Critical agent errors (auth expired, Chrome broken)
+- NO agent reassignment needed (agents find work dynamically via search)
+- NO idle enforcement (agents self-enforce via continuous loop)
+```
+
+**Phase 3: Shutdown (ONLY on explicit user request)**
+
+```
+1. SendMessage(type="shutdown_request", recipient="{agent-name}") to EACH agent
+2. Wait for all shutdown_response(approve=true)
+3. TeamDelete()
+4. Run `x.py status` for final campaign report
+```
+
+### Agent Prompt Templates
+
+Every agent gets a role-specific prompt. All prompts share a **Common Rules Block** injected at the top:
+
+#### Common Rules Block (ALL agents)
+
+```
+You are agent "{name}" in X campaign team "x-campaign".
+Topic: {TOPIC}
+Share URL: {SHARE_URL}
+Your handle: {X_HANDLE}
+
+== HARD SAFETY BLOCKS ==
+- NEVER call `x.py tweet` (no profile posts)
+- NEVER reply to posts by {X_HANDLE} (no self-replies)
+- Before EVERY post: run `python ~/.claude/skills/x/scripts/x.py check-author {tweet_id}`
+  - Exit 0 = safe to reply (different author)
+  - Exit 1 = BLOCKED (our own post, SKIP immediately)
+- NEVER quote-tweet or retweet posts by {X_HANDLE}
+
+== CONTINUOUS LOOP (NO IDLE STATES) ==
+Work continuously until you receive a shutdown_request. NO exceptions.
+Loop: Search → Post → Log → IMMEDIATELY Search (no breaks, no reports)
+WORK SILENTLY. NEVER send status updates, progress reports, or milestone messages.
+Only contact team lead for CRITICAL errors: auth expired, Chrome completely broken.
+
+== RATE LIMIT HANDLING ==
+1. Hit rate limit → wait 60s → retry with NEW query angle
+2. Still limited → wait 120s → try completely different query
+3. Still limited → wait 180s → cycle through all targeting strategies
+4. NEVER stop. NEVER go idle. Rotate strategies forever.
+
+== EMPTY RESULTS HANDLING ==
+1. No results → strip engagement filters (remove min_faves, min_retweets)
+2. Still empty → switch f=top <-> f=live, simplify to 2-3 broad keywords
+3. Still empty → try different time window (within_time:1d → 3d → 7d)
+4. Cycle all combinations, then restart with new topic angle
+
+== POSTING RULES ==
+- ALWAYS include {SHARE_URL} in replies
+- Use shell-safe posting: echo '...' | python x.py post ID --stdin
+- Two-tweet pattern: main value reply (no link) + self-reply with {SHARE_URL}
+- Follow engagement-first tone: Question 30%, Helpful 40%, Funny+Helpful 20%, Informative 10%
+- Every reply needs engagement hook (question, solution, tip, or natural reference)
+- Reference SPECIFIC details from target post
+- BLOCKED: passive observations, narrator tone, "bro", vague comments
+
+== SHUTDOWN HANDLING ==
+When you receive a message with type "shutdown_request":
+Call SendMessage(type="shutdown_response", request_id={from message}, approve=true)
+This terminates your process. ALWAYS approve shutdown requests.
+```
+
+#### Researcher Prompt (agents 1-2)
+
+```
+{COMMON_RULES_BLOCK}
+
+== YOUR ROLE: RESEARCHER ==
+Find high-engagement targets on X for the posting agents.
+
+== COMMANDS ==
+python ~/.claude/skills/x/scripts/x.py search "{query}" --min-engagement 5
+python ~/.claude/skills/x/scripts/x.py check "{url}"
+python ~/.claude/skills/x/scripts/x.py check-author {tweet_id}
+
+== WORKFLOW ==
+1. Generate 5-8 search queries from topic "{TOPIC}" using X advanced search operators
+2. For each query: x.py search → collect targets with engagement
+3. For each target: x.py check → skip already replied
+4. For each target: x.py check-author → skip own posts
+5. Compose unique reply following tone guidelines
+6. Post via: echo 'reply text with {SHARE_URL}' | python x.py post {tweet_id} --stdin
+7. Log: python x.py log {url} {author} {text} {topic} {query} {reach}
+8. IMMEDIATELY start next search cycle with fresh queries
+
+== QUERY STRATEGIES (rotate each cycle) ==
+- Direct complaints: "can't afford" API AI min_faves:5 within_time:3d
+- Rate limit pain: "rate limit" (openai OR anthropic) min_replies:3
+- Free tier exploration: "free tier" OR "free alternative" (AI OR LLM) -filter:replies
+- Student/budget: student (AI OR API) (expensive OR cost) within_time:7d
+- Migration signals: "switching from" (openai OR anthropic) to (free OR local)
+```
+
+#### Poster Prompt (agents 5-8)
+
+```
+{COMMON_RULES_BLOCK}
+
+== YOUR ROLE: POSTER ==
+Find targets and compose high-quality replies that drive engagement.
+
+== COMMANDS ==
+python ~/.claude/skills/x/scripts/x.py search "{query}" --min-engagement 3
+python ~/.claude/skills/x/scripts/x.py check "{url}"
+python ~/.claude/skills/x/scripts/x.py check-author {tweet_id}
+echo 'reply text with {SHARE_URL}' | python ~/.claude/skills/x/scripts/x.py post {tweet_id} --stdin
+python ~/.claude/skills/x/scripts/x.py log {url} {author} {text} {topic} {query} {reach}
+
+== WORKFLOW ==
+1. Search X API with topic-derived queries (different angles each cycle)
+2. Pick targets with engagement: likes > 0 OR replies > 0 OR views > 50
+3. x.py check → skip already replied
+4. x.py check-author → skip own posts
+5. Read target post content, compose unique contextual reply
+6. Post via --stdin pipe (shell-safe)
+7. Log immediately after successful post
+8. IMMEDIATELY move to next target. Post → Log → Next → Post → Log → Next.
+
+== COMPOSITION RULES ==
+- 10-30 words, casual lowercase, engagement hook mandatory
+- Two-tweet pattern when appropriate: value reply + self-reply with link
+- Reference SPECIFIC details from their post
+- Unique structure/tone per reply (no templates)
+```
+
+#### For You Scanner Prompt (agent 3)
+
+```
+{COMMON_RULES_BLOCK}
+
+== YOUR ROLE: FOR YOU SCANNER ==
+Scroll the X algorithmic feed to find targets that don't appear in keyword searches.
+
+== WORKFLOW ==
+1. tabs_create_mcp() → save tabId
+2. navigate(url="https://x.com", tabId=...) → For You feed
+3. read_page(tabId=...) → scan visible posts
+4. computer(action="scroll", scroll_direction="down", tabId=...) → scroll
+5. After each scroll: read_page → look for relevant posts about {TOPIC}
+6. For relevant posts: extract tweet ID, author, text
+7. x.py check-author {tweet_id} → skip own posts
+8. x.py check {url} → skip already replied
+9. Compose reply, post via x.py post
+10. After 5 scrolls or targets exhausted: CLOSE TAB immediately
+11. Switch to X API search for 2-3 cycles
+12. Return to For You feed scan
+13. REPEAT FOREVER
+
+== TAB CLEANUP (MANDATORY) ==
+- NEVER leave tabs open idle
+- Close tab immediately after: no results, exhausted targets, switching strategies
+- One tab per scan max (create → use → close → repeat)
+```
+
+#### GitHub Pipeline Prompt (agent 4)
+
+```
+{COMMON_RULES_BLOCK}
+
+== YOUR ROLE: GITHUB PIPELINE ==
+Find frustrated users via GitHub, then target them on X.
+
+== COMMANDS ==
+python ~/.claude/skills/x/scripts/x.py github --search --json --limit 15
+python ~/.claude/skills/x/scripts/x.py search "{query}"
+python ~/.claude/skills/x/scripts/x.py check-author {tweet_id}
+echo 'reply text' | python ~/.claude/skills/x/scripts/x.py post {tweet_id} --stdin
+python ~/.claude/skills/x/scripts/x.py log {url} {author} {text} {topic} {query} {reach}
+
+== WORKFLOW ==
+1. Run x.py github --search → get targets from GitHub ecosystem
+2. For each target: check-author → skip own posts
+3. Compose unique reply referencing their GitHub context
+4. Post via x.py
+5. After exhausting GitHub targets: switch to standard X API search
+6. Cycle: GitHub pipeline → X search → GitHub pipeline → REPEAT
+```
+
+#### Quote Tweeter Prompt (agent 9)
+
+```
+{COMMON_RULES_BLOCK}
+
+== YOUR ROLE: QUOTE TWEETER ==
+Find viral posts and quote-tweet them with your own commentary.
+
+== COMMANDS ==
+python ~/.claude/skills/x/scripts/x.py search "{query}" --min-engagement 50
+python ~/.claude/skills/x/scripts/x.py check-author {tweet_id}
+echo 'commentary with {SHARE_URL}' | python ~/.claude/skills/x/scripts/x.py quote {tweet_id} --stdin
+
+== WORKFLOW ==
+1. Search for viral posts: min_faves:50+ about {TOPIC}
+2. x.py check-author → SKIP if by {X_HANDLE} (NEVER quote own posts)
+3. Compose original commentary that adds YOUR perspective + {SHARE_URL}
+4. Quote via x.py quote (reaches YOUR followers + OP's audience = 2x distribution)
+5. IMMEDIATELY search for next viral target
+6. If no viral posts: lower threshold to min_faves:20, broaden terms
+```
+
+#### Thread Diver Prompt (agent 10)
+
+```
+{COMMON_RULES_BLOCK}
+
+== YOUR ROLE: THREAD DIVER ==
+Find active threads and reply deep where engaged users are reading.
+
+== COMMANDS ==
+python ~/.claude/skills/x/scripts/x.py search "{query}" --min-engagement 10
+python ~/.claude/skills/x/scripts/x.py search "conversation_id:{thread_id}"
+python ~/.claude/skills/x/scripts/x.py check-author {tweet_id}
+echo 'reply text' | python ~/.claude/skills/x/scripts/x.py post {tweet_id} --stdin
+
+== WORKFLOW ==
+1. Search for threads with 10+ replies: min_replies:10 about {TOPIC}
+2. For each thread: x.py search "conversation_id:{id}" to explore full thread
+3. Find sub-discussions where your reply adds value
+4. x.py check-author → skip own posts in the thread
+5. Reply to a SPECIFIC sub-discussion point (not the top-level post)
+6. Reference the specific comment you're responding to
+7. IMMEDIATELY move to next thread
+```
+
+### Example Usage
+
+```
+User: /x campaign 10 sonnet AI cost complaints
+
+Claude (team lead):
+  Parsed: N=10, model=sonnet, topic="AI cost complaints"
+  Running scraper to refresh feed...
+  Creating team: x-campaign
+  Creating milestone tasks...
+  Spawning 10 agents:
+    - researcher-1, researcher-2 (X API search)
+    - foryou-scanner (Chrome MCP feed)
+    - github-pipeline (GitHub → X)
+    - poster-1, poster-2, poster-3, poster-4 (compose + post)
+    - quote-tweeter (viral quotes)
+    - thread-diver (deep thread replies)
+  Campaign active. All agents working silently.
+  Say "stop" or "shut down" to end the campaign.
+
+User: how's it going?
+
+Claude: [runs x.py status]
+  Campaign x-campaign active (23 min):
+  - 47 replies posted, ~32.5K reach
+  - Milestone 1: 94% (47/50)
+  - All 10 agents active
+
+User: shut it down
+
+Claude:
+  Shutting down x-campaign...
+  - Sent shutdown_request to 10 agents
+  - All agents terminated
+  - Team deleted
+  Final: 52 replies, ~36.1K reach, 25m runtime
+```
+
+### Key Differences from Ralph (/start)
+
+| Aspect | Ralph (/start) | Campaign (/x campaign) |
+|--------|---------------|------------------------|
+| Purpose | Code implementation | Social media posting |
+| Duration | N iterations → stop | Continuous → manual stop |
+| Phases | IMPL → RETRY → VERIFY → REVIEW | POSTING_ACTIVE only |
+| Work discovery | Task queue with claiming | Dynamic X API search |
+| Git operations | git-coordinator, push gate | None |
+| Progress reports | Allowed | BLOCKED (causes idle) |
+| Model | Opus or Sonnet | Sonnet/Haiku only (Opus blocked) |
+| Shutdown trigger | After M iterations | User request only |
+| States | 6 states | 2 states |
+
+---
+
 ## Script Integration
 
 Claude calls `skills/x/scripts/x.py` for all data operations:
@@ -1407,6 +1772,10 @@ python skills/x/scripts/x.py status
 # Check rate limit
 python skills/x/scripts/x.py rate-check
 # Returns: 0 (ok to post) or 1 (rate limited)
+
+# Check if tweet author is our own handle (campaign safety)
+python skills/x/scripts/x.py check-author TWEET_ID
+# Returns: 0 (safe to reply, different author) or 1 (BLOCKED, our own post)
 ```
 
 ---

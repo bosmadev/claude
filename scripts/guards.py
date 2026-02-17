@@ -1292,6 +1292,22 @@ def bypass_permissions_guard() -> None:
         }))
         sys.exit(0)
 
+    def _deny_tty_confirm(command_preview: str):
+        """Helper: block but instruct Claude to use AskUserQuestion then retry with TTY_CONFIRMED=1 prefix."""
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    f"⚠️ TTY confirmation required for git write operation.\n\n"
+                    f"1. Use AskUserQuestion to confirm with user: \"{command_preview[:120]}\"\n"
+                    f"2. After user approves, retry with prefix: TTY_CONFIRMED=1 {command_preview[:120]}\n"
+                    f"3. If user denies, do NOT retry."
+                )
+            }
+        }))
+        sys.exit(0)
+
     # ── Universal blocklist (both profiles) ──────────────────────────
     # Commands that are NEVER allowed in bypass mode regardless of profile
     universal_blocklist = [
@@ -1485,6 +1501,48 @@ def bypass_permissions_guard() -> None:
     # ═══════════════════════════════════════════════════════════════════
     # PROFILE: /x and default (restrictive — read-only + x.py)
     # ═══════════════════════════════════════════════════════════════════
+
+    # ── TTY Confirmation: git writes require AskUserQuestion first ──
+    # Flow: Claude tries git write → guard blocks with instructions →
+    # Claude uses AskUserQuestion → user approves →
+    # Claude retries with TTY_CONFIRMED=1 prefix → guard allows.
+    #
+    # Also handle "cd /path && git ..." pattern (strip cd prefix for matching).
+
+    # Strip TTY_CONFIRMED=1 prefix if present
+    tty_confirmed = False
+    effective_cmd = command
+    if re.match(r"^TTY_CONFIRMED=1\s+", command):
+        tty_confirmed = True
+        effective_cmd = re.sub(r"^TTY_CONFIRMED=1\s+", "", command)
+
+    # Strip leading "cd ... && " prefix for matching (git commands often chained with cd)
+    core_cmd = re.sub(r"^cd\s+[^\s]+\s*&&\s*", "", effective_cmd)
+
+    # Git write commands that need TTY confirmation
+    tty_confirm_patterns = [
+        r"^git\s+add\b",
+        r"^git\s+commit\b",
+        r"^git\s+push\b",         # non-force (force already in universal blocklist)
+        r"^git\s+pull\b",         # modifies working tree
+        r"^git\s+rebase\b",       # modifies history
+        r"^git\s+merge\b",        # modifies history
+        r"^git\s+stash\b",
+        r"^git\s+tag\b",
+        r"^git\s+checkout\b",     # can modify working tree
+        r"^git\s+switch\b",       # can modify working tree
+    ]
+
+    for pattern in tty_confirm_patterns:
+        if re.match(pattern, core_cmd, re.IGNORECASE):
+            if tty_confirmed:
+                # User already confirmed via AskUserQuestion — allow through
+                # (universal blocklist + branch protection already checked above)
+                sys.exit(0)
+            else:
+                # Block and instruct Claude to confirm with user first
+                _deny_tty_confirm(core_cmd)
+
     # Allowlist patterns for /x bypass mode
     x_allowlist = [
         # Python x.py commands
@@ -1510,7 +1568,8 @@ def bypass_permissions_guard() -> None:
     ]
 
     for pattern in x_allowlist:
-        if re.match(pattern, command, re.IGNORECASE):
+        # Match against both full command and cd-stripped version
+        if re.match(pattern, command, re.IGNORECASE) or re.match(pattern, core_cmd, re.IGNORECASE):
             sys.exit(0)
 
     # /x: block everything else

@@ -330,6 +330,7 @@ Autonomous development cycle manager for off-hours work. Spawns scout agents in 
 | `/x scheduler status` | Show scheduler + feed freshness |
 | `/x scheduler uninstall` | Remove auto-scraper |
 | `/x auto [N] [model]` | Headless auto-run: scrape + research + post |
+| `/x campaign [N] [model] {TOPIC}` | TeamCreate + N agents, continuous posting loop until shutdown |
 | `/x github` | GitHub-to-X pipeline: scan repos/issues, map users to X handles, generate queries |
 | `/x github --search` | Same + search X API for each generated query |
 | `/x help` | Show usage |
