@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.14.4](https://img.shields.io/badge/v1.14.4-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/83a4edb4a4126abe58b28b55da79ac07607fdcf3) | Build 45
+
+fix: add Build ID guard + reset-dev open PR protection
+
+- [x] Added check_build_id() hook in git.py that blocks commits to main/master without 'Build N:' prefix (prevents CHANGELOG automation bypass)
+- [x] Added open PR guard in reset-dev CI job — skips force-reset when dev branch has an open PR (prevents wiping unmerged work)
+- [x] Added --author fast path to x.py check-author command (skips API fetch when author known from search results)
+
+
+---
+
 ## [![v1.14.3](https://img.shields.io/badge/v1.14.3-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/a0c14aa4aced6f1f7add39200fec585998f83bd9) | Build 44
 
 debug: enable show_full_output for @claude action
