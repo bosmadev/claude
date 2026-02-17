@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.14.2](https://img.shields.io/badge/v1.14.2-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/f354ec53f0306f9e38cc6117440525a2c96a99fa) | Build 43
+
+fix(ci): add id-token:write + issues/PR perms to claude job for OIDC auth
+
+
+
+---
+
 ## [![v1.14.1](https://img.shields.io/badge/v1.14.1-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/5e3b71bfd957e160feea5a04b2dbfac728dfbbb0) | Build 42
 
 fix(ci): conditionally enable track_progress (unsupported on labeled event)
