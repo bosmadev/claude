@@ -3,6 +3,25 @@
 
 ---
 
+## [![v1.14.5](https://img.shields.io/badge/v1.14.5-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/ef0e839995df7c042d341132d27aae850feeebe7) | Build 47
+
+fix(ci): inline Python one-liner to fix YAML parse error
+
+
+
+---
+
+## [![Build_46](https://img.shields.io/badge/Build_46-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/1a525bc04389c9f4a6cf58a36d878f4004cfec52) | Build 46
+
+fix(ci): strip Windows hooks from settings.json on Linux CI runners
+
+- [x] After cloning bosmadev/claude to ~/.claude, strip hooks section and Windows env vars (PYTHONPYCACHEPREFIX=C:/...) from settings.json
+- [x] Root cause of @claude review posting "0 seconds" with no actual review: hooks with %USERPROFILE% paths crash on Linux, causing Claude Code to exit immediately
+- [x] Also added open PR guard to reset-dev job (prevents force-reset when dev branch has unmerged PR)
+
+
+---
+
 ## [![v1.14.4](https://img.shields.io/badge/v1.14.4-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/83a4edb4a4126abe58b28b55da79ac07607fdcf3) | Build 45
 
 fix: add Build ID guard + reset-dev open PR protection
