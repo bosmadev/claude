@@ -1308,6 +1308,86 @@ def check_env_encryption() -> None:
     return
 
 
+def check_build_id(hook_input: dict) -> None:
+    """
+    Block git commit on main/master without Build ID prefix.
+
+    Enforces the convention: commits to main MUST have 'Build N:' prefix
+    so that changelog.ts can auto-generate CHANGELOG entries.
+
+    This is the hook-layer defense. The /commit skill auto-injects Build IDs,
+    but this guard catches direct git commit bypasses.
+    """
+    command = hook_input.get("tool_input", {}).get("command", "")
+
+    # Only intercept git commit commands
+    if not re.match(r"^git\s+commit\b", command):
+        return
+
+    # Get project directory and detect branch
+    cwd = hook_input.get("cwd", ".")
+    repo_root = find_git_root_from_cwd(cwd)
+    if not repo_root:
+        return
+
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        branch = result.stdout.strip() if result.returncode == 0 else ""
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return
+
+    # Only enforce on main/master
+    if branch not in ("main", "master"):
+        return
+
+    # Extract commit message from command
+    heredoc_match = re.search(r'cat\s*<<\s*[\'"]?EOF[\'"]?\s*\n(.*?)\nEOF', command, re.DOTALL)
+    if heredoc_match:
+        msg = heredoc_match.group(1).strip()
+    else:
+        msg_match = re.search(r'-m\s+(["\'])((?:(?!\1).|\\.)*)\1', command, re.DOTALL)
+        if msg_match:
+            msg = msg_match.group(2).replace(r'\"', '"').replace(r"\'", "'")
+        else:
+            msg = ""
+
+    if not msg:
+        return
+
+    # Check first line (subject) for Build ID prefix
+    subject = msg.split("\n")[0].strip()
+
+    # Allow bot commits (changelog automation)
+    if subject.startswith("chore: bump to") or subject.startswith("chore(release)"):
+        return
+
+    # Enforce Build ID
+    if not re.match(r"^Build \d+:", subject):
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    f"BLOCKED: Commit to {branch} missing Build ID prefix.\n"
+                    f"Got: '{subject}'\n"
+                    f"Expected: 'Build N: scope: description'\n\n"
+                    f"Use /commit skill to auto-detect Build ID, or manually add 'Build N:' prefix.\n"
+                    f"Run: CL=$(grep '^## ' CHANGELOG.md 2>/dev/null | grep -oP 'Build \\K\\d+' | sort -rn | head -1); "
+                    f"GL=$(git log --oneline -50 2>/dev/null | grep -oP 'Build \\K\\d+' | sort -rn | head -1); "
+                    f"MAX=$(echo -e \"${{CL:-0}}\\n${{GL:-0}}\" | sort -rn | head -1); echo $((MAX + 1))"
+                ),
+            }
+        }
+        print(json.dumps(output))
+        sys.exit(0)
+
+
 def main() -> None:
     """Main entry point with mode dispatch."""
     if len(sys.argv) < 2:
@@ -1337,11 +1417,15 @@ def main() -> None:
         command = hook_input.get("tool_input", {}).get("command", "")
         if not re.match(r"^git\s+commit\b", command):
             sys.exit(0)
-        # It's a git commit — run both checks by re-injecting stdin
+        # It's a git commit — run all checks by re-injecting stdin
         import io
         raw = json.dumps(hook_input)
+        # Check 1: Build ID on main/master
+        check_build_id(hook_input)
+        # Check 2: .env encryption
         sys.stdin = io.StringIO(raw)
         check_env_encryption()
+        # Check 3: Commit review (save to commit.md)
         sys.stdin = io.StringIO(raw)
         commit_review()
     elif mode == "ai-log":

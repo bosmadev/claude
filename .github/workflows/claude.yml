@@ -459,6 +459,8 @@ jobs:
           token: ${{ secrets.ADMIN_TOKEN || github.token }}
 
       - name: Reset dev branches to latest main
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_TOKEN || github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -471,6 +473,13 @@ jobs:
           REPO=$(basename "$GITHUB_REPOSITORY")
           for BRANCH in "${REPO}-dev" "${REPO}-night-dev"; do
             if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+              # GUARD: Skip reset if branch has an open PR (prevents wiping unmerged work)
+              OPEN_PR=$(gh pr list --head "$BRANCH" --state open --json number,title -q '.[0]' 2>/dev/null || echo "")
+              if [ -n "$OPEN_PR" ]; then
+                echo "⚠️  SKIPPED $BRANCH — open PR exists: $OPEN_PR"
+                echo "   Reset deferred until PR is merged or closed."
+                continue
+              fi
               git push --force origin "$LATEST:refs/heads/$BRANCH"
               echo "✓ Reset $BRANCH to $(git rev-parse --short $LATEST)"
             else

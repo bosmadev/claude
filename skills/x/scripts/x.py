@@ -2201,8 +2201,13 @@ def cmd_log(args):
     save_history(history)
 
 
-async def cmd_check_author(tweet_id: str):
-    """Check if tweet author matches our X_HANDLE (exit 0=safe, 1=own post)"""
+async def cmd_check_author(tweet_id: str, known_author: str = ""):
+    """Check if tweet author matches our X_HANDLE (exit 0=safe, 1=own post)
+
+    Args:
+        tweet_id: Tweet ID to check
+        known_author: Pre-known author handle from search results (skips API fetch)
+    """
     config = load_config()
     my_handle = config.get("handle", "").lstrip("@").lower() if config else ""
 
@@ -2210,9 +2215,18 @@ async def cmd_check_author(tweet_id: str):
         print("WARNING: No X_HANDLE configured, cannot check author — allowing post")
         sys.exit(0)
 
+    # Fast path: if caller already knows the author from search results
+    if known_author:
+        if known_author.lstrip("@").lower() == my_handle:
+            print(f"BLOCKED: Tweet {tweet_id} is by @{known_author.lstrip('@')} (our own post)")
+            sys.exit(1)
+        print(f"OK: Tweet {tweet_id} is by @{known_author.lstrip('@')} (safe — from --author)")
+        sys.exit(0)
+
     tweet_info = await get_tweet_details(tweet_id)
     if not tweet_info:
         print(f"BLOCKED: Could not fetch tweet {tweet_id} — fail-closed for safety")
+        print(f"Hint: pass --author HANDLE from search results to bypass fetch")
         sys.exit(1)
 
     author = tweet_info.get("author", "").lstrip("@").lower()
@@ -2915,6 +2929,7 @@ Examples:
 
     ca_p = subparsers.add_parser("check-author", help="Check if tweet author is our own handle (exit 0=safe, 1=own post)")
     ca_p.add_argument("tweet_id", help="Tweet ID to check")
+    ca_p.add_argument("--author", default="", help="Known author handle from search results (skips API fetch)")
 
     history_p = subparsers.add_parser("history", help="Show posting history")
     history_p.add_argument("--days", type=int, help="Filter by days ago")
@@ -3000,7 +3015,7 @@ Examples:
     elif cmd == "check":
         cmd_check(args)
     elif cmd == "check-author":
-        asyncio.run(cmd_check_author(args.tweet_id))
+        asyncio.run(cmd_check_author(args.tweet_id, getattr(args, 'author', '')))
     elif cmd == "history":
         cmd_history(args)
     elif cmd == "status":
