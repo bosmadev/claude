@@ -190,6 +190,7 @@ jobs:
           use_sticky_comment: true
           include_fix_links: true
           use_commit_signing: true
+          show_full_output: true
           # Security: Removed cp/mv - use Write/Edit tools instead for file manipulation
           # max_turns capped at 50 to prevent runaway costs
           claude_args: |
