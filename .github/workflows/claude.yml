@@ -141,15 +141,7 @@ jobs:
           # Hooks use %USERPROFILE% paths and PYTHONPYCACHEPREFIX=C:/... which don't exist on Linux.
           # Keep the rest (permissions, allowed tools, env vars) but remove hooks + Windows paths.
           if [ -f ~/.claude/settings.json ]; then
-            python3 -c "
-import json, sys
-with open(sys.argv[1]) as f: s = json.load(f)
-s.pop('hooks', None)
-env = s.get('env', {})
-env.pop('PYTHONPYCACHEPREFIX', None)
-with open(sys.argv[1], 'w') as f: json.dump(s, f, indent=2)
-print('Stripped hooks + Windows env from settings.json for CI')
-" ~/.claude/settings.json
+            python3 -c 'import json,os;p=os.path.expanduser("~/.claude/settings.json");s=json.load(open(p));s.pop("hooks",None);s.get("env",{}).pop("PYTHONPYCACHEPREFIX",None);json.dump(s,open(p,"w"),indent=2);print("Stripped hooks + Windows env from settings.json for CI")'
           fi
 
       - name: Setup Node.js
