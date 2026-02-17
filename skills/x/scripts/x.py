@@ -580,7 +580,13 @@ async def cmd_search(query: str, count: int = 20, min_engagement: int = 0):
     try:
         raw = r.text.strip()
         if not raw:
-            print(json.dumps({"error": "Empty response body", "tweets": [], "raw_status": r.status_code}))
+            print(json.dumps({
+                "error": "Empty response body",
+                "tweets": [],
+                "raw_status": r.status_code,
+                "rate_limited": True,
+                "hint": "Search API throttled (200 + empty body). Wait 5 min and retry with different query."
+            }))
             sys.exit(1)
         data = json.loads(raw)
         instructions = (
@@ -781,13 +787,14 @@ def sanitize_reply_text(text: str) -> str:
     return text.strip()
 
 
-async def cmd_post(tweet_id: str, text: str, allow_original: bool = False):
+async def cmd_post(tweet_id: str, text: str, allow_original: bool = False, target_author: str = ""):
     """Post a reply to a specific tweet
 
     Args:
         tweet_id: Tweet ID to reply to (REQUIRED - no standalone posts allowed)
         text: Reply text
         allow_original: Override profile wall protection (manual use only)
+        target_author: Pre-checked author handle from search results (skip API fetch if provided)
 
     Exit codes:
         0: Success
@@ -805,14 +812,28 @@ async def cmd_post(tweet_id: str, text: str, allow_original: bool = False):
     # Self-reply guard: check if replying to own post
     if not allow_original:
         config = load_config()
-        my_handle = config.get("handle", "").lstrip("@") if config else ""
+        my_handle = config.get("handle", "").lstrip("@").lower() if config else ""
 
         if my_handle:
-            tweet_info = await get_tweet_details(tweet_id)
-            if tweet_info and tweet_info.get("author", "").lstrip("@") == my_handle:
+            # Fast path: if agent passed --target-author from search results, check that first
+            if target_author and target_author.lstrip("@").lower() == my_handle:
                 print(_red(f"ERROR: Self-reply violation - cannot reply to own post"))
-                print(_red(f"Target tweet author: @{tweet_info.get('author')}"))
+                print(_red(f"Target author: @{target_author.lstrip('@')} (from --target-author)"))
                 print(_red(f"Your handle: @{my_handle}"))
+                sys.exit(4)
+
+            # Full check: fetch tweet details to verify author
+            tweet_info = await get_tweet_details(tweet_id)
+            if tweet_info:
+                if tweet_info.get("author", "").lstrip("@").lower() == my_handle:
+                    print(_red(f"ERROR: Self-reply violation - cannot reply to own post"))
+                    print(_red(f"Target tweet author: @{tweet_info.get('author')}"))
+                    print(_red(f"Your handle: @{my_handle}"))
+                    sys.exit(4)
+            elif not target_author:
+                # Fetch failed AND no --target-author provided: fail closed
+                print(_red(f"ERROR: Cannot verify tweet author (fetch failed) - blocking for safety"))
+                print(_red(f"Hint: pass --target-author HANDLE from search results to bypass fetch"))
                 sys.exit(4)
 
     # Fix literal \n from shell arguments → actual newlines
@@ -2191,8 +2212,8 @@ async def cmd_check_author(tweet_id: str):
 
     tweet_info = await get_tweet_details(tweet_id)
     if not tweet_info:
-        print(f"WARNING: Could not fetch tweet {tweet_id} — allowing post")
-        sys.exit(0)
+        print(f"BLOCKED: Could not fetch tweet {tweet_id} — fail-closed for safety")
+        sys.exit(1)
 
     author = tweet_info.get("author", "").lstrip("@").lower()
     if author == my_handle:
@@ -2844,6 +2865,7 @@ Examples:
     post_p.add_argument("text", nargs="?", default=None, help="Reply text (or use --stdin)")
     post_p.add_argument("--stdin", action="store_true", help="Read reply text from stdin (avoids shell expansion of $ signs)")
     post_p.add_argument("--allow-original", action="store_true", help="Override profile wall protection (manual use only)")
+    post_p.add_argument("--target-author", default="", help="Author handle from search results (bypasses API fetch for self-reply check)")
 
     quote_p = subparsers.add_parser("quote", help="Create quote tweet with commentary (posted as reply)")
     quote_p.add_argument("tweet_id", help="Tweet ID to quote")
@@ -2944,7 +2966,7 @@ Examples:
         if not text:
             print(_red("ERROR: No reply text provided (use positional arg or --stdin)"))
             sys.exit(2)
-        asyncio.run(cmd_post(args.tweet_id, text, args.allow_original))
+        asyncio.run(cmd_post(args.tweet_id, text, args.allow_original, getattr(args, 'target_author', '')))
     elif cmd == "quote":
         text = args.text
         if args.stdin or text is None:

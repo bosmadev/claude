@@ -1,7 +1,7 @@
 ---
 name: x
 description: "X/Twitter outreach -- research engagement, compose original posts from news, and distribute via replies. Claude dynamically searches, composes, and posts via X API (fast) or Chrome MCP (fallback)."
-argument-hint: "research [N] [model] {TOPIC} | post [N] [model] {TEXT with URL} | compose | news | history | status | help"
+argument-hint: "research [N] [model] {TOPIC} | post [N] [model] {TEXT with URL} | compose | campaign [N] [model] {TOPIC} | stop | status | news | history | help"
 user-invocable: true
 ---
 
@@ -174,7 +174,8 @@ On first run, the scraper reads `.env` (or system env) and auto-generates `skill
 | `compose` | Pick news item, compose original tweet, distribute via replies | `/x compose` |
 | `news` | Show scraped news feed (RSS, Messari, changelogs) | `/x news` |
 | `history` | Show posting history | `/x history` |
-| `status` | Show daily/weekly counts + reach | `/x status` |
+| `status` | Show daily/weekly counts + reach. If campaign active: show agent count + campaign runtime | `/x status` |
+| `stop` | Shutdown active campaign: SendMessage(shutdown_request) to all agents → TeamDelete() → final stats | `/x stop` |
 | `scrape` | Run scraper now, update feed.json | `/x scrape` |
 | `feed` | Show current auto-generated feed (queries + news) | `/x feed` |
 | `scheduler install [N]` | Install auto-scraper (every Nh, default 6) | `/x scheduler install 4` |
@@ -1103,8 +1104,12 @@ Show usage help.
 
 **Campaign:** /x campaign [N] [model] {TOPIC}
   Spawn N-agent team for continuous posting (research → post → repeat)
-  Uses TeamCreate + persistent agents. Runs until you say "stop".
+  Uses TeamCreate + persistent agents. Runs until `/x stop`.
   Example: /x campaign 10 sonnet AI cost complaints
+
+**Stop:** /x stop
+  Shutdown active campaign: sends shutdown_request to all agents, TeamDelete, final stats
+  Only works when a campaign is active (x-campaign team exists)
 
 **News:** /x news
   Show current scraped news feed (RSS, crypto, changelogs)
@@ -1113,7 +1118,7 @@ Show usage help.
   Show posting history
 
 **Status:** /x status
-  Show daily/weekly counts + reach
+  Show daily/weekly counts + reach. During active campaign: includes agent count + runtime
 
 **Model Selection:**
   [N] -- number of parallel agents (default: 1, campaign default: 10)
@@ -1473,7 +1478,7 @@ No RETRY_CHECK, VERIFY_FIX, or REVIEW phases. Posts are short replies validated 
 - NO idle enforcement (agents self-enforce via continuous loop)
 ```
 
-**Phase 3: Shutdown (ONLY on explicit user request)**
+**Phase 3: Shutdown (triggered by `/x stop`)**
 
 ```
 1. SendMessage(type="shutdown_request", recipient="{agent-name}") to EACH agent
@@ -1715,9 +1720,9 @@ Claude (team lead):
     - quote-tweeter (viral quotes)
     - thread-diver (deep thread replies)
   Campaign active. All agents working silently.
-  Say "stop" or "shut down" to end the campaign.
+  Use `/x stop` to end the campaign. Use `/x status` to check progress.
 
-User: how's it going?
+User: /x status
 
 Claude: [runs x.py status]
   Campaign x-campaign active (23 min):
@@ -1725,7 +1730,7 @@ Claude: [runs x.py status]
   - Milestone 1: 94% (47/50)
   - All 10 agents active
 
-User: shut it down
+User: /x stop
 
 Claude:
   Shutting down x-campaign...

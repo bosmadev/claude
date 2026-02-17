@@ -1545,14 +1545,15 @@ def bypass_permissions_guard() -> None:
 
     # Allowlist patterns for /x bypass mode
     x_allowlist = [
-        # Python x.py commands
-        r"^python\s+x\.py\b",
-        r"^python\s+skills/x/scripts/x\.py\b",
-        r"^python3\s+x\.py\b",
-        r"^python3\s+skills/x/scripts/x\.py\b",
+        # Python x.py commands (any path: x.py, skills/x/scripts/x.py, ~/.claude/skills/x/scripts/x.py)
+        r"^python3?\s+\S*x\.py\b",
+
+        # Piped commands to x.py (echo '...' | python x.py post ID --stdin)
+        r"^echo\s+.*\|\s*python3?\s+\S*x\.py\b",
+        r"^printf\s+.*\|\s*python3?\s+\S*x\.py\b",
 
         # Git read-only
-        r"^git\s+(status|log|diff|show|remote|fetch|rev-parse|describe|ls-files)\b",
+        r"^git\s+(status|log|diff|show|remote|fetch|rev-parse|describe|ls-files|check-ignore|name-rev|symbolic-ref)\b",
         r"^git\s+branch\s+(?!-[dD])",          # git branch (list), not -D (delete)
 
         # File system read-only
@@ -1565,6 +1566,9 @@ def bypass_permissions_guard() -> None:
 
         # Process inspection (read-only)
         r"^ps\b", r"^pgrep\b", r"^top\b", r"^htop\b",
+
+        # Sleep (needed for rate limit retry waits)
+        r"^sleep\b",
     ]
 
     for pattern in x_allowlist:
