@@ -137,6 +137,21 @@ jobs:
             https://x-access-token:${{ secrets.ADMIN_TOKEN }}@github.com/bosmadev/claude.git \
             ~/.claude 2>/dev/null || echo "::warning::Could not clone bosmadev/claude config"
 
+          # Strip Windows-specific hooks and env from settings.json — they break on Linux runners.
+          # Hooks use %USERPROFILE% paths and PYTHONPYCACHEPREFIX=C:/... which don't exist on Linux.
+          # Keep the rest (permissions, allowed tools, env vars) but remove hooks + Windows paths.
+          if [ -f ~/.claude/settings.json ]; then
+            python3 -c "
+import json, sys
+with open(sys.argv[1]) as f: s = json.load(f)
+s.pop('hooks', None)
+env = s.get('env', {})
+env.pop('PYTHONPYCACHEPREFIX', None)
+with open(sys.argv[1], 'w') as f: json.dump(s, f, indent=2)
+print('Stripped hooks + Windows env from settings.json for CI')
+" ~/.claude/settings.json
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
