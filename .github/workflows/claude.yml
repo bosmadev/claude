@@ -133,24 +133,11 @@ jobs:
             https://x-access-token:${{ secrets.ADMIN_TOKEN }}@github.com/bosmadev/claude.git \
             ~/.claude 2>/dev/null || echo "::warning::Could not clone bosmadev/claude config"
 
-      - name: Detect package manager
-        id: pkg-mgr
-        run: |
-          if [ -f pnpm-lock.yaml ]; then
-            echo "mgr=pnpm" >> "$GITHUB_OUTPUT"
-          else
-            echo "mgr=npm" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Setup pnpm (if needed)
-        if: steps.pkg-mgr.outputs.mgr == 'pnpm'
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js with caching
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: ${{ steps.pkg-mgr.outputs.mgr }}
+          # No cache — claude job only uses npx for MCP servers, no project deps installed
 
       - name: Validate Required Packages
         run: |
