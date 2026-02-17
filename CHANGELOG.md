@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.14.3](https://img.shields.io/badge/v1.14.3-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/a0c14aa4aced6f1f7add39200fec585998f83bd9) | Build 44
+
+debug: enable show_full_output for @claude action
+
+
+
+---
+
 ## [![v1.14.2](https://img.shields.io/badge/v1.14.2-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/f354ec53f0306f9e38cc6117440525a2c96a99fa) | Build 43
 
 fix(ci): add id-token:write + issues/PR perms to claude job for OIDC auth
