@@ -3498,23 +3498,254 @@ This will properly close the Ralph session."""
 
         return {"tracked": True, "agent_id": agent_id}
 
+    # -------------------------------------------------------------------------
+    # Soft-failure detection: 37 indicators across 7 categories
+    # -------------------------------------------------------------------------
+    _SOFT_FAILURE_INDICATORS: list[tuple[str, str]] = [
+        # Polite refusal (11)
+        ("polite_refusal", "could not complete"),
+        ("polite_refusal", "i was unable"),
+        ("polite_refusal", "cannot be completed"),
+        ("polite_refusal", "i'm unable to"),
+        ("polite_refusal", "i am unable to"),
+        ("polite_refusal", "unable to proceed"),
+        ("polite_refusal", "i couldn't complete"),
+        ("polite_refusal", "could not proceed"),
+        ("polite_refusal", "not able to complete"),
+        ("polite_refusal", "unfortunately i cannot"),
+        ("polite_refusal", "regret that i"),
+        # Permission denied (6)
+        ("permission_denied", "don't have permission"),
+        ("permission_denied", "access denied"),
+        ("permission_denied", "unauthorized"),
+        ("permission_denied", "permission denied"),
+        ("permission_denied", "not authorized"),
+        ("permission_denied", "insufficient permissions"),
+        # Context exhaustion (8)
+        ("context_exhaustion", "running low on context"),
+        ("context_exhaustion", "token limit"),
+        ("context_exhaustion", "token usage:"),
+        ("context_exhaustion", "context window"),
+        ("context_exhaustion", "approaching the limit"),
+        ("context_exhaustion", "context is full"),
+        ("context_exhaustion", "running out of context"),
+        ("context_exhaustion", "maximum context"),
+        # Tool/env failure (6)
+        ("tool_env_failure", "tool error"),
+        ("tool_env_failure", "command failed"),
+        ("tool_env_failure", "bash error"),
+        ("tool_env_failure", "execution failed"),
+        ("tool_env_failure", "tool call failed"),
+        ("tool_env_failure", "environment error"),
+        # Partial completion (7)
+        ("partial_completion", "task incomplete"),
+        ("partial_completion", "partially completed"),
+        ("partial_completion", "only completed"),
+        ("partial_completion", "not fully complete"),
+        ("partial_completion", "partial implementation"),
+        ("partial_completion", "incomplete implementation"),
+        ("partial_completion", "did not finish"),
+        # Confused agent (4)
+        ("confused_agent", "i don't understand the task"),
+        ("confused_agent", "task is ambiguous"),
+        ("confused_agent", "unclear what"),
+        ("confused_agent", "i'm not sure what"),
+        # Blocked/escalation (5)
+        ("blocked_escalation", "need human intervention"),
+        ("blocked_escalation", "blocked by"),
+        ("blocked_escalation", "waiting for"),
+        ("blocked_escalation", "requires manual"),
+        ("blocked_escalation", "escalating to"),
+    ]
+
+    def detect_soft_failure(
+        self,
+        last_assistant_message: str,
+        exit_status: int,
+        num_turns: int,
+        agent_transcript_path: Optional[str] = None,
+    ) -> dict:
+        """
+        Detect soft failures: agents that exit 0 but didn't actually complete work.
+
+        Priority order:
+        1. Structured signals (TASK_COMPLETE: / TASK_FAILED:)
+        2. Heuristic 1: empty message + exit 0 (no text to keyword-scan)
+        3. Keyword scan: 37 indicators across 7 categories
+        4. Heuristic 2: short message (<50 chars) + exit 0
+        5. Heuristic 3: low turn count (<3) + exit 0
+
+        Falls back to transcript parsing when last_assistant_message is empty.
+
+        Returns dict: soft_failed, category, reason, indicator, source.
+        """
+        msg_lower = last_assistant_message.lower() if last_assistant_message else ""
+
+        # --- 1. Structured signals take absolute priority ---
+        if "task_complete:" in msg_lower:
+            return {
+                "soft_failed": False,
+                "category": "structured_signal",
+                "reason": "TASK_COMPLETE signal found",
+                "indicator": "TASK_COMPLETE:",
+                "source": "last_assistant_message",
+            }
+        if "task_failed:" in msg_lower:
+            return {
+                "soft_failed": True,
+                "category": "structured_signal",
+                "reason": "TASK_FAILED signal found",
+                "indicator": "TASK_FAILED:",
+                "source": "last_assistant_message",
+            }
+
+        # --- Transcript fallback: parse when message is empty ---
+        source = "last_assistant_message"
+        if not last_assistant_message and agent_transcript_path:
+            transcript_text = self._read_transcript_last_message(agent_transcript_path)
+            if transcript_text:
+                last_assistant_message = transcript_text
+                msg_lower = transcript_text.lower()
+                source = "transcript_fallback"
+
+        # --- 2. Heuristic: empty message + exit 0 (must run before keyword scan) ---
+        if exit_status == 0 and not last_assistant_message:
+            return {
+                "soft_failed": True,
+                "category": "heuristic",
+                "reason": "Empty last_assistant_message with exit 0 (context window kill suspected)",
+                "indicator": "empty_message_exit_0",
+                "source": source,
+            }
+
+        # --- 3. Keyword scan: 37 indicators across 7 categories ---
+        # Run before length/turn heuristics so explicit signals take priority
+        if msg_lower:
+            for category, indicator in self._SOFT_FAILURE_INDICATORS:
+                if indicator in msg_lower:
+                    return {
+                        "soft_failed": True,
+                        "category": category,
+                        "reason": f"Soft failure indicator found: '{indicator}'",
+                        "indicator": indicator,
+                        "source": source,
+                    }
+
+        # --- 4. Heuristic: very short message (<50 chars) + exit 0 ---
+        # Only if no keyword matched — "Done." with no context is suspicious
+        if exit_status == 0 and len(last_assistant_message.strip()) < 50:
+            return {
+                "soft_failed": True,
+                "category": "heuristic",
+                "reason": f"Short message ({len(last_assistant_message.strip())} chars) with exit 0",
+                "indicator": "short_message_exit_0",
+                "source": source,
+            }
+
+        # --- 5. Heuristic: low turn count (<3) + exit 0 ---
+        # Only if no keyword matched — suspiciously few turns
+        if exit_status == 0 and num_turns < 3:
+            return {
+                "soft_failed": True,
+                "category": "heuristic",
+                "reason": f"Low turn count ({num_turns}) with exit 0 (hit wall on first tool call?)",
+                "indicator": "low_turns_exit_0",
+                "source": source,
+            }
+
+        return {
+            "soft_failed": False,
+            "category": "none",
+            "reason": "No soft failure indicators detected",
+            "indicator": "",
+            "source": source,
+        }
+
+    def _read_transcript_last_message(self, transcript_path: str) -> str:
+        """
+        Parse agent_transcript_path JSONL to extract the last assistant message text.
+
+        Returns empty string on any failure (non-critical fallback path).
+        """
+        try:
+            path = Path(transcript_path)
+            if not path.exists():
+                return ""
+            last_content = ""
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if entry.get("role") != "assistant":
+                        continue
+                    content = entry.get("content", "")
+                    if isinstance(content, str):
+                        last_content = content
+                    elif isinstance(content, list):
+                        texts = [
+                            block.get("text", "")
+                            for block in content
+                            if isinstance(block, dict) and block.get("type") == "text"
+                        ]
+                        if texts:
+                            last_content = " ".join(t for t in texts if t)
+            return last_content
+        except Exception:
+            return ""
+
+    def _write_hook_last_run(
+        self,
+        agent_id: str,
+        exit_status: int,
+        soft_failure_result: dict,
+        num_turns: int,
+        cost_usd: float,
+        duration_ms: int,
+    ) -> None:
+        """
+        Write hook execution state to ~/.claude/ralph/hook-last-run.json.
+
+        Called on EVERY SubagentStop invocation (even outside Ralph sessions).
+        Provides a debug breadcrumb for diagnosing agent failures.
+        """
+        try:
+            hook_state_path = Path.home() / ".claude" / "ralph" / "hook-last-run.json"
+            hook_state_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_json(hook_state_path, {
+                "timestamp": datetime.now().isoformat(),
+                "agent_id": agent_id,
+                "exit_status": exit_status,
+                "num_turns": num_turns,
+                "cost_usd": cost_usd,
+                "duration_ms": duration_ms,
+                "soft_failed": soft_failure_result.get("soft_failed", False),
+                "soft_failure_category": soft_failure_result.get("category", ""),
+                "soft_failure_reason": soft_failure_result.get("reason", ""),
+                "soft_failure_indicator": soft_failure_result.get("indicator", ""),
+                "soft_failure_source": soft_failure_result.get("source", ""),
+                "integrity_marker": "claude_ralph_hook_state_v1",
+            }, fsync=False)
+        except Exception:
+            pass  # Non-critical: never block hook execution
+
     def handle_hook_subagent_stop(self, stdin_content: Optional[str] = None) -> dict:
         """
         Handle SubagentStop hook - track agent completion, enforce iteration limits, manage retries.
 
-        Records completion, updates metrics, detects failures, and queues failed agents
-        for retry (max 3 retries per agent).
-        """
-        if not self.state_exists():
-            return {}
+        Records completion, updates metrics, detects failures (hard + soft), and queues
+        failed agents for retry (max 3 retries per agent).
 
+        Always writes hook-last-run.json even when no Ralph session is active.
+        """
+        # Parse stdin first — needed for hook-last-run.json which is always written
         try:
             data = json.loads(stdin_content) if stdin_content else json.loads(sys.stdin.read())
         except (json.JSONDecodeError, TypeError):
-            return {}
-
-        state = self.read_state()
-        if not state:
             return {}
 
         agent_id = data.get("agent_id", data.get("subagent_id", "unknown"))
@@ -3522,14 +3753,68 @@ This will properly close the Ralph session."""
         num_turns = data.get("num_turns", 0)
         exit_status = data.get("exit_status", 0)
         duration_ms = data.get("duration_ms", 0)
+        last_assistant_message = data.get("last_assistant_message", "")
+        agent_transcript_path = data.get("agent_transcript_path", "")
 
-        # Detect failure: non-zero exit status
-        failed = exit_status != 0
+        # Detect hard failure: non-zero exit status
+        hard_failed = exit_status != 0
 
-        status_label = "FAILED" if failed else "SUCCESS"
+        # Detect soft failure: agent exited 0 but didn't complete work
+        soft_failure_result: dict = {
+            "soft_failed": False, "category": "none",
+            "reason": "", "indicator": "", "source": ""
+        }
+        if not hard_failed:
+            soft_failure_result = self.detect_soft_failure(
+                last_assistant_message=last_assistant_message,
+                exit_status=exit_status,
+                num_turns=num_turns,
+                agent_transcript_path=agent_transcript_path or None,
+            )
+
+        failed = hard_failed or soft_failure_result.get("soft_failed", False)
+
+        # Write hook state on EVERY SubagentStop invocation (even outside Ralph sessions)
+        self._write_hook_last_run(
+            agent_id=agent_id,
+            exit_status=exit_status,
+            soft_failure_result=soft_failure_result,
+            num_turns=num_turns,
+            cost_usd=cost_usd,
+            duration_ms=duration_ms,
+        )
+
+        # Ralph session-specific tracking
+        if not self.state_exists():
+            return {
+                "tracked": False,
+                "agent_id": agent_id,
+                "failed": failed,
+                "hard_failed": hard_failed,
+                "soft_failed": soft_failure_result.get("soft_failed", False),
+                "soft_failure_category": soft_failure_result.get("category", ""),
+            }
+
+        state = self.read_state()
+        if not state:
+            return {}
+
+        if hard_failed:
+            status_label = "FAILED(hard)"
+        elif soft_failure_result.get("soft_failed"):
+            status_label = f"FAILED(soft:{soft_failure_result.get('category', '?')})"
+        else:
+            status_label = "SUCCESS"
+
         self.log_activity(
             f"SubagentStop: {agent_id} ({status_label}) ${cost_usd:.4f}, {num_turns} turns, {duration_ms}ms"
         )
+        if soft_failure_result.get("soft_failed"):
+            self.log_activity(
+                f"  Soft failure: {soft_failure_result.get('reason', '')} "
+                f"[source={soft_failure_result.get('source', '')}]",
+                level="WARN"
+            )
 
         # Update heartbeat and track cost
         state.last_heartbeat = datetime.now().isoformat()
@@ -3542,8 +3827,9 @@ This will properly close the Ralph session."""
             except Exception:
                 pass
 
-        # Update progress.json with aggregated cost
-        self._update_progress_with_agent_cost(cost_usd, exit_status=exit_status)
+        # Update progress.json — treat soft failures as hard failures for progress tracking
+        effective_exit_status = exit_status if not soft_failure_result.get("soft_failed") else 1
+        self._update_progress_with_agent_cost(cost_usd, exit_status=effective_exit_status)
 
         # Handle retry logic for failed agents
         retry_queued = False
@@ -3553,6 +3839,8 @@ This will properly close the Ralph session."""
                 "num_turns": num_turns,
                 "exit_status": exit_status,
                 "duration_ms": duration_ms,
+                "soft_failed": soft_failure_result.get("soft_failed", False),
+                "soft_failure_category": soft_failure_result.get("category", ""),
             })
 
         return {
@@ -3561,6 +3849,9 @@ This will properly close the Ralph session."""
             "cost_usd": cost_usd,
             "num_turns": num_turns,
             "failed": failed,
+            "hard_failed": hard_failed,
+            "soft_failed": soft_failure_result.get("soft_failed", False),
+            "soft_failure_category": soft_failure_result.get("category", ""),
             "retry_queued": retry_queued,
         }
 
