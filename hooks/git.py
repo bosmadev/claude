@@ -6,15 +6,15 @@ This module consolidates git-related hooks into a single file with
 mode dispatch based on command-line argument.
 
 Usage:
-  python3 git.py commit-review        # PreToolUse: Review git commit commands
-  python3 git.py change-tracker       # PostToolUse: Track file changes
-  python3 git.py command-history      # PostToolUse: Track bash commands
-  python3 git.py env-check            # PreToolUse: Check .env encryption
-  python3 git.py pre-commit-checks    # PreToolUse: Combined commit-review + env-check
-  python3 git.py post-commit-metadata # PostToolUse: Store AI metadata in git notes
-  python3 git.py ai-log               # CLI: Show AI attribution log
-  python3 git.py ai-stats             # CLI: Show AI authorship statistics
-  python3 git.py ai-blame <file>      # CLI: Show per-line AI attribution
+  python git.py commit-review        # PreToolUse: Review git commit commands
+  python git.py change-tracker       # PostToolUse: Track file changes
+  python git.py command-history      # PostToolUse: Track bash commands
+  python git.py env-check            # PreToolUse: Check .env encryption
+  python git.py pre-commit-checks    # PreToolUse: Combined commit-review + env-check
+  python git.py post-commit-metadata # PostToolUse: Store AI metadata in git notes
+  python git.py ai-log               # CLI: Show AI attribution log
+  python git.py ai-stats             # CLI: Show AI authorship statistics
+  python git.py ai-blame <file>      # CLI: Show per-line AI attribution
 """
 
 import json

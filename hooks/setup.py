@@ -6,9 +6,9 @@ This hook fires via `--init`, `--init-only`, or `--maintenance` flags
 and performs environment checks to ensure consistent Claude Code setup.
 
 Usage:
-  python3 setup.py validate-symlinks  # Verify symlink structure
-  python3 setup.py check-mcp          # Test MCP server connectivity
-  python3 setup.py full               # Run all checks
+  python setup.py validate-symlinks  # Verify symlink structure
+  python setup.py check-mcp          # Test MCP server connectivity
+  python setup.py full               # Run all checks
 
 Environment Variables:
   CLAUDE_CODE_TMPDIR - Custom temp directory (recommended: /mnt/claude-tmp)

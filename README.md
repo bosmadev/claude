@@ -606,7 +606,7 @@ All hooks and scripts use `scripts/compat.py` for platform abstraction:
 - Hooks: `from hooks.compat import ...` (re-exported from `scripts/compat.py`)
 - Scripts: `from scripts.compat import ...` (direct import)
 
-**Linux support:** Additive compatibility layer - symlinks replace junctions, aplay/paplay for audio.
+**Linux support:** Additive compatibility layer - symlinks replace junctions, aplay/paplay for audio. All scripts use `python` (not `python3`) — install `python-is-python3` package on Ubuntu/Debian (`sudo apt install python-is-python3`) to ensure `python` resolves to Python 3.
 
 ### Agent Inventory
 

@@ -6,22 +6,22 @@ This module consolidates plan-related hooks and skill dispatch into a single fil
 with mode dispatch based on command-line argument.
 
 Usage:
-  python3 guards.py protect              # (disabled) File protection
-  python3 guards.py guardian             # PostToolUse: Plan drift detection
-  python3 guards.py plan-comments        # UserPromptSubmit: Plan comment tracking
-  python3 guards.py plan-write-check     # PostToolUse: Check for USER comments
-  python3 guards.py skill-parser         # UserPromptSubmit: Parse /start command arguments
-  python3 guards.py insights-reminder    # PostToolUse: Remind about Insights section
-  python3 guards.py ralph-enforcer       # Ralph protocol enforcement
-  python3 guards.py ralph-agent-tracker  # (deprecated) Redirects to scripts/ralph.py
-  python3 guards.py skill-interceptor    # Skill interception and routing
-  python3 guards.py skill-validator      # Skill validation checks
-  python3 guards.py plan-rename-tracker  # Track plan file renames
-  python3 guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
-  python3 guards.py quality-deprecation      # PostToolUse: Warn about /quality deprecation
-  python3 guards.py fs-guard                 # PreToolUse: Block new file/folder creation and deletion
-  python3 guards.py x-post-check             # PostToolUse: Log /x skill Chrome MCP clicks
-  python3 guards.py bypass-permissions-guard # PreToolUse: Validate commands in bypass mode
+  python guards.py protect              # (disabled) File protection
+  python guards.py guardian             # PostToolUse: Plan drift detection
+  python guards.py plan-comments        # UserPromptSubmit: Plan comment tracking
+  python guards.py plan-write-check     # PostToolUse: Check for USER comments
+  python guards.py skill-parser         # UserPromptSubmit: Parse /start command arguments
+  python guards.py insights-reminder    # PostToolUse: Remind about Insights section
+  python guards.py ralph-enforcer       # Ralph protocol enforcement
+  python guards.py ralph-agent-tracker  # (deprecated) Redirects to scripts/ralph.py
+  python guards.py skill-interceptor    # Skill interception and routing
+  python guards.py skill-validator      # Skill validation checks
+  python guards.py plan-rename-tracker  # Track plan file renames
+  python guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
+  python guards.py quality-deprecation      # PostToolUse: Warn about /quality deprecation
+  python guards.py fs-guard                 # PreToolUse: Block new file/folder creation and deletion
+  python guards.py x-post-check             # PostToolUse: Log /x skill Chrome MCP clicks
+  python guards.py bypass-permissions-guard # PreToolUse: Validate commands in bypass mode
 """
 
 import json
@@ -940,12 +940,84 @@ This skill will be removed in a future release."""
 # Ralph Enforcer (PostToolUse:ExitPlanMode)
 # =============================================================================
 
+def _derive_plan_slug(session_info_path: Path, plan_content: str) -> str | None:
+    """Derive a slug for the plan file from session custom title or plan heading.
+
+    Priority:
+    1. Custom /rename title from .session-info (session_name field)
+    2. Plan # Title heading
+    3. None (keep random name)
+
+    Returns a slug like "upgrade-cc-241-to-249-audit" or None.
+    """
+    slug: str | None = None
+
+    # Priority 1: custom /rename title from .session-info
+    try:
+        info = json.loads(session_info_path.read_text(encoding="utf-8"))
+        session_name = info.get("session_name", "").strip()
+        if session_name:
+            # Convert to slug: lowercase, replace non-alphanumeric with hyphens, collapse
+            slug = re.sub(r"[^a-z0-9]+", "-", session_name.lower()).strip("-")
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        pass
+
+    if slug:
+        return slug
+
+    # Priority 2: plan # Title heading (first H1)
+    title_match = re.search(r"^#\s+(.+)$", plan_content, re.MULTILINE)
+    if title_match:
+        title = title_match.group(1).strip()
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+        if slug:
+            return slug
+
+    return None
+
+
+def _update_task_queue_for_rename(old_path: str, new_path: str, cwd: Path) -> str | None:
+    """Update task queue files after a plan rename.
+
+    Returns log message if queue was updated, None otherwise.
+    """
+    import glob as glob_module
+    import shutil
+
+    queue_pattern = str(cwd / ".claude" / "task-queue-*.json")
+    for queue_file in glob_module.glob(queue_pattern):
+        try:
+            with open(queue_file) as f:
+                queue = json.load(f)
+
+            # Match on basename or full path
+            stored = queue.get("plan_file", "")
+            if stored == old_path or os.path.basename(stored) == os.path.basename(old_path):
+                new_id = os.path.basename(new_path).replace(".md", "")
+                queue["plan_id"] = new_id
+                queue["plan_file"] = new_path
+
+                with open(queue_file, "w") as f:
+                    json.dump(queue, f, indent=2)
+
+                new_queue_file = str(cwd / ".claude" / f"task-queue-{new_id}.json")
+                if queue_file != new_queue_file:
+                    shutil.move(queue_file, new_queue_file)
+
+                return f"Task queue updated: {os.path.basename(queue_file)} -> task-queue-{new_id}.json"
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    return None
+
+
 def ralph_enforcer() -> None:
     """Enforce Ralph agent spawning after plan approval.
 
     Triggers on ExitPlanMode and checks if:
     1. A plan file exists with Ralph Configuration
-    2. If so, injects MANDATORY instructions to spawn agents
+    2. Auto-renames plan file from random CC name to session/plan slug
+    3. If Ralph Configuration found, injects MANDATORY instructions to spawn agents
 
     This prevents the common failure mode where plan is approved
     but agents are never spawned.
@@ -973,11 +1045,35 @@ def ralph_enforcer() -> None:
 
     plan_file = plan_files[0]
 
-    # Read the plan and extract Ralph Configuration
+    # Read the plan content
     try:
         content = plan_file.read_text(encoding="utf-8", errors="replace")
     except (OSError, UnicodeDecodeError, ValueError):
         sys.exit(0)
+
+    # --- Auto-rename plan file from random CC name to session/plan slug ---
+    rename_note = ""
+    session_info_path = _claude_home / ".session-info"
+    slug = _derive_plan_slug(session_info_path, content)
+    if slug and slug != plan_file.stem:
+        new_plan_file = plan_file.parent / f"{slug}.md"
+        if not new_plan_file.exists():
+            try:
+                os.rename(plan_file, new_plan_file)
+                old_path = str(plan_file)
+                plan_file = new_plan_file
+                # Also update any task queue files referencing the old name
+                queue_log = _update_task_queue_for_rename(old_path, str(plan_file), cwd)
+                rename_note = f"\nPlan renamed: {os.path.basename(old_path)} → {plan_file.name}"
+                if queue_log:
+                    rename_note += f"\n{queue_log}"
+            except OSError:
+                pass  # Rename failed (cross-device, permissions) — continue with original name
+        # Re-read content from new path if rename succeeded
+        try:
+            content = plan_file.read_text(encoding="utf-8", errors="replace")
+        except (OSError, UnicodeDecodeError, ValueError):
+            pass
 
     # Look for Ralph Configuration block
     ralph_match = re.search(
@@ -1073,7 +1169,7 @@ After all implementation agents complete:
 2. Wait for review completion
 3. Output: RALPH_COMPLETE + EXIT_SIGNAL
 
-State file created: {state_path}"""
+State file created: {state_path}{rename_note}"""
         }
     }
     print(json.dumps(output))

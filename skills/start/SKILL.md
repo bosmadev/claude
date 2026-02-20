@@ -541,6 +541,43 @@ Create a structured plan following the **Decision Matrix Format** with emoji-pre
 - `<br>` is ONLY allowed in Decision Matrix Pros/Cons cells (above)
 - For multi-line content in regular tables, use separate rows with empty first column
 
+### Plan Presentation Style (for Presenting Options to User)
+
+When presenting plan options to the user for approval, use blockquote format with compact tables:
+
+**Multi-option format (use when 2+ options exist):**
+
+```markdown
+> ### Option A — [Name]
+> | Aspect | Detail |
+> |--------|--------|
+> | Approach | [one line] |
+> | Pros | [comma-separated] |
+> | Cons | [comma-separated] |
+> | Effort | [S/M/L] |
+
+> ### Option B — [Name]
+> | Aspect | Detail |
+> |--------|--------|
+> | Approach | [one line] |
+> | Pros | [comma-separated] |
+> | Cons | [comma-separated] |
+> | Effort | [S/M/L] |
+
+**Recommendation:** Option A — [one sentence why]
+```
+
+**Single-option shorthand (use when decision is already clear):**
+
+```markdown
+**Decision:** [Name] — [one sentence rationale]
+```
+
+**Scrapped-options convention:**
+- Drop rejected options entirely from plan files after user approves a direction
+- Only the chosen option remains in the plan — no "rejected options" section
+- This keeps plans lean and avoids confusing implementors with alternatives
+
 **Emoji Section Headers (MANDATORY):**
 
 ```markdown

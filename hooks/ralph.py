@@ -6,11 +6,11 @@ This module reads stdin (hook input JSON), determines the hook mode from
 sys.argv[1], and forwards to the main Ralph script for processing.
 
 Usage:
-    python3 ralph.py stop             # Stop hook (orchestrator)
-    python3 ralph.py session-start    # SessionStart hook
-    python3 ralph.py pre-compact      # PreCompact hook
-    python3 ralph.py subagent-start   # SubagentStart hook
-    python3 ralph.py subagent-stop    # SubagentStop hook
+    python ralph.py stop             # Stop hook (orchestrator)
+    python ralph.py session-start    # SessionStart hook
+    python ralph.py pre-compact      # PreCompact hook
+    python ralph.py subagent-start   # SubagentStart hook
+    python ralph.py subagent-stop    # SubagentStop hook
 """
 
 import os

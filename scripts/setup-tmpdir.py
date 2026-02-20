@@ -52,7 +52,7 @@ def setup_linux():
 
     if os.getuid() != 0:
         print("ERROR: Linux tmpfs setup requires root. Run with sudo:")
-        print(f"  sudo python3 {__file__}")
+        print(f"  sudo python {__file__}")
         sys.exit(1)
 
     print(f"Setting up CLAUDE_CODE_TMPDIR at {tmpdir_path}...")

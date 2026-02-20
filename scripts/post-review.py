@@ -7,9 +7,9 @@ TODO-P1/P2/P3 comments in source code. If not, injects them.
 
 Usage:
   # As a CLI tool:
-  python3 post-review.py --repo-root /path/to/repo
-  python3 post-review.py --dry-run
-  python3 post-review.py --report-only
+  python post-review.py --repo-root /path/to/repo
+  python post-review.py --dry-run
+  python post-review.py --report-only
 
   # As a Claude Code hook (PostToolUse:Skill):
   Reads JSON from stdin, checks if the completed skill was "review",

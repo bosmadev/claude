@@ -66,7 +66,51 @@ Update the frontmatter:
 
 Use current UTC time in ISO 8601 format.
 
-### Step 5: Report
+### Step 5: Post-Processing Verification
+
+After applying all changes, **re-scan the entire plan file** to verify no USER comments remain:
+
+```bash
+grep -n "USER:" path/to/plan.md
+```
+
+If any `USER:` lines are found after processing:
+1. Report which lines still have USER comments
+2. Process them again (Step 2)
+3. Re-scan again until clean
+
+**HALT condition:** If the same USER comment appears 3+ times across processing passes (loop detected), stop and report the issue to the user.
+
+### Step 6: Formatting Check
+
+After USER comments are cleared, run a full-file formatting check for common markdown corruption:
+
+**Check 1 — Broken horizontal rules:**
+```bash
+grep -n "^---$" path/to/plan.md
+```
+Horizontal rules should appear on their own line. Flag any `---` that appears:
+- Immediately after a heading (no blank line between)
+- Inside a table row as cell content
+- At the start of a list item
+
+**Check 2 — Merged table headers:**
+Look for table rows where the separator line (`|---|---|`) is missing or merged with content:
+```bash
+grep -n "^|" path/to/plan.md | grep -v "^|[-:]" | head -50
+```
+Flag any content row not preceded by a `|---|` separator row.
+
+**Check 3 — Compressed numbered lists:**
+Look for numbered list items with no blank line between them where blank lines existed before:
+```bash
+grep -n "^\d\+\." path/to/plan.md
+```
+If numbered items immediately follow each other with no spacing and the list has >3 items, verify the formatting is intentional (not accidentally collapsed).
+
+Report any formatting issues found but do NOT auto-fix without USER confirmation.
+
+### Step 7: Report
 
 After processing, report:
 
@@ -77,6 +121,8 @@ Processed: [filename]
 - USER comments found: N
 - Changes applied: N
 - Markers added: N
+- Post-verification: CLEAN (or: N remaining USER comments)
+- Formatting check: PASS (or: N issues found)
 
 Files now clean of USER comments.
 ```
@@ -201,6 +247,26 @@ When applying changes to plan files, all tables and sections MUST use emoji-pref
 **Priority items:** 🔴 Critical, 🟡 Medium, 🟢 Low.
 **Decision tables:** Each row gets a leading emoji for visual scanning.
 **Comparison matrices:** Use emoji columns for at-a-glance status.
+
+## Pre-ExitPlanMode Validation Gate (MANDATORY)
+
+**Before calling ExitPlanMode**, the `/start` skill MUST validate that no `USER:` comments remain in any plan file:
+
+```bash
+grep -rn "USER:" ~/.claude/plans/*.md 2>/dev/null
+```
+
+**If any USER comments remain:**
+1. **HALT** — do NOT call ExitPlanMode
+2. Output: `⛔ HALT: Plan has unprocessed USER comments. Run /reviewplan first.`
+3. List the files and line numbers with remaining USER comments
+4. Wait for user to run `/reviewplan` and confirm
+
+**Only proceed with ExitPlanMode after:**
+- Zero `USER:` matches across all plan files, OR
+- User explicitly overrides with `/start ... force` (documents the override)
+
+This gate prevents implementation agents from working off a stale plan that still has pending user feedback.
 
 ## Integration with /start
 
