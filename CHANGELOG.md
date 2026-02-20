@@ -3,6 +3,14 @@
 
 ---
 
+## [![v1.17.3](https://img.shields.io/badge/v1.17.3-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/26fccf643d4a23a6741a9ade5bf1ef4a940734af) | Build 55
+
+docs: codify whole-integer Build ID rule
+
+
+
+---
+
 ## [![v1.17.2](https://img.shields.io/badge/v1.17.2-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/5e23c400c98fb449dd0974ec57766d1db29b338e) | Build 54
 
 fix: block raw git commit in Ralph teams + upgrade validation script
