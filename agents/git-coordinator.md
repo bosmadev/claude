@@ -7,6 +7,8 @@ color: gray
 tools:
   - Read
   - Bash
+skills:
+  - commit
 ---
 
 # Git Coordinator Agent
@@ -62,9 +64,12 @@ SendMessage(
 ```
 
 Git-coordinator executes:
+
+> **CRITICAL: ALWAYS use the `/commit` skill for git commits. NEVER run `git commit` directly.**
+
 ```bash
 git add <changed-files>
-git commit -m "<message>"
+# Then invoke /commit skill — never raw git commit
 ```
 
 ### 4. Push Phase
@@ -89,6 +94,12 @@ git stash
 ```
 
 **Only git-coordinator may execute git write operations.**
+
+**Git-coordinator MUST use `/commit` skill — NEVER `git commit` directly:**
+```bash
+# WRONG: git commit -m "message"
+# RIGHT: use /commit skill which handles message formatting, CHANGELOG, build IDs
+```
 
 ## Communication Protocol
 

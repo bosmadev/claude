@@ -69,32 +69,33 @@ def windows_install():
     print(f"Script:   {CYAN}{script_path}{RESET}")
     print()
 
-    # --- Task 1: 30-minute recurring refresh ---
+    # --- Task 1: 30-minute recurring refresh (hidden window) ---
     print("Creating 30-minute recurring task...")
+    import base64 as _base64
+
+    ps_refresh = f'''
+$action = New-ScheduledTaskAction -Execute "{python_exe}" -Argument '"{script_path}" --sync'
+$trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 30) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Limited
+Register-ScheduledTask -TaskName "{TASK_NAME_REFRESH}" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force -Description "Refresh Claude OAuth token every 30 minutes (hidden)"
+'''
     try:
+        encoded_refresh = _base64.b64encode(ps_refresh.encode("utf-16-le")).decode("ascii")
         result = subprocess.run(
-            [
-                "schtasks", "/create",
-                "/tn", TASK_NAME_REFRESH,
-                "/sc", "MINUTE",
-                "/mo", "30",
-                "/tr", f'"{python_exe}" "{script_path}" --sync',
-                "/f",
-            ],
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", encoded_refresh],
             capture_output=True,
             text=True,
         )
         if result.returncode == 0:
-            print(f"  {GREEN}OK{RESET} {TASK_NAME_REFRESH} (every 30 min)")
+            print(f"  {GREEN}OK{RESET} {TASK_NAME_REFRESH} (every 30 min, hidden)")
         else:
             print(f"  {RED}FAIL{RESET} {TASK_NAME_REFRESH}: {result.stderr.strip()}")
     except FileNotFoundError:
-        print(f"  {RED}FAIL{RESET} schtasks not found")
+        print(f"  {RED}FAIL{RESET} PowerShell not found")
 
     # --- Task 2: Power resume / startup trigger ---
     print("Creating startup/resume trigger task...")
-    import base64
-
     # Use -EncodedCommand to prevent injection via paths with special characters
     ps_script = f'''
 $action = New-ScheduledTaskAction -Execute "{python_exe}" -Argument '"{script_path}" --sync'
@@ -110,9 +111,9 @@ Register-ScheduledTask -TaskName "{TASK_NAME_RESUME}" -Action $action -Trigger @
 '''
     try:
         # Encode to Base64 for -EncodedCommand (UTF-16LE required)
-        encoded_cmd = base64.b64encode(ps_script.encode("utf-16-le")).decode("ascii")
+        encoded_cmd = _base64.b64encode(ps_script.encode("utf-16-le")).decode("ascii")
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-EncodedCommand", encoded_cmd],
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", encoded_cmd],
             capture_output=True,
             text=True,
         )

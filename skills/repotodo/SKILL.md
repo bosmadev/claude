@@ -303,7 +303,7 @@ After processing TODOs, run VERIFY+FIX agents to catch issues introduced during 
 **Agent Configuration:**
 - **Agent count:** 2 VERIFY+FIX agents (default)
 - **Iterations:** 2 per agent (default)
-- **Model:** Opus 4.5
+- **Model:** Opus 4.6
 - **Full specification:** See `agents/verify-fix.md` for complete agent behavior and criteria
 
 **VERIFY+FIX Workflow:**

@@ -783,6 +783,12 @@ def main() -> None:
 
     cwd     = inp.get("cwd", ".")
 
+    # Added dirs indicator: show "+Nd" when workspace has additional directories
+    added_dirs = inp.get("workspace", {}).get("added_dirs", [])
+    if not isinstance(added_dirs, list):
+        added_dirs = []
+    added_dirs_indicator = f" {CYAN}+{len(added_dirs)}d{RESET}" if len(added_dirs) > 0 else ""
+
     # Model display: short alias format O4.6 / S4.5 / H4.5
     def _short_model(display_name: str) -> str:
         """Convert 'Opus 4.6' → 'O4.6', 'Sonnet 4.5' → 'S4.5'."""
@@ -1088,7 +1094,7 @@ def main() -> None:
         git_display = ""  # Neither Ralph nor git
 
     line = (
-        f"{SALMON}{model}{RESET}{effort_display} "
+        f"{SALMON}{model}{RESET}{effort_display}{added_dirs_indicator} "
         f"{GREY}{style}{RESET} "
         f"{ctx_color}{pct}%{context_suffix}{RESET} "
         f"{DARK_GREY}|{RESET} "

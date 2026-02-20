@@ -42,9 +42,9 @@ From `$ARGUMENTS`, parse in order:
 
 | Command | Plan Phase | Impl Phase | TTY Confirmation |
 |---------|-----------|-----------|-----------------|
-| `/start` | Opus 4.5 | Opus 4.5 | `⚡ All phases: Opus 4.5` |
-| `/start sonnet` | Sonnet 4.5 | Opus 4.5 (auto-switch) | `📝 Planning: Sonnet 4.5` → approve → `⚡ Switching to Opus 4.5` |
-| `/start sonnet all` | Sonnet 4.5 | Sonnet 4.5 | `💰 Budget mode: Sonnet 4.5 (all phases)` |
+| `/start` | Opus 4.6 | Opus 4.6 | `⚡ All phases: Opus 4.6` |
+| `/start sonnet` | Sonnet 4.6 | Opus 4.6 (auto-switch) | `📝 Planning: Sonnet 4.6` → approve → `⚡ Switching to Opus 4.6` |
+| `/start sonnet all` | Sonnet 4.6 | Sonnet 4.6 | `💰 Budget mode: Sonnet 4.6 (all phases)` |
 
 **Implementation:** When `sonnet` keyword detected:
 - Plan-phase agents: `Task(model="sonnet", ...)`

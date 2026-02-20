@@ -27,16 +27,16 @@ Displays usage information and examples.
 |-----------|---------|-------|
 | Agents | 10 | 1-10 (hard cap) |
 | Iterations | 3 | 1-5 |
-| Model | Opus 4.5 | opus / sonnet / haiku |
+| Model | Opus 4.6 | opus / sonnet / haiku |
 | Scope | working | working / impact / branch / staged / path / pr |
 
 ### Override Syntax
 
 ```
-/review                          → 10 agents, 3 iterations, Opus 4.5, working scope
-/review N                        → N agents, 3 iterations, Opus 4.5
-/review N M                      → N agents, M iterations, Opus 4.5
-/review N M sonnet               → N agents, M iterations, Sonnet 4.5
+/review                          → 10 agents, 3 iterations, Opus 4.6, working scope
+/review N                        → N agents, 3 iterations, Opus 4.6
+/review N M                      → N agents, M iterations, Opus 4.6
+/review N M sonnet               → N agents, M iterations, Sonnet 4.6
 /review N M haiku                → N agents, M iterations, Haiku
 /review working                  → 10 agents, working tree only (R1)
 /review impact                   → 10 agents, working tree + impact radius (R2)
@@ -414,7 +414,7 @@ This skill is the **manual review** mode (`/review` command). It differs from pl
 
 | Aspect | This Skill (/review) | Plan-Spawned (after /start) |
 |--------|---------------------|---------------------------|
-| Model | Opus 4.5 (default) | Opus 4.5 |
+| Model | Opus 4.6 (default) | Opus 4.6 |
 | Agents | 10 (default) | 2-5 (dynamic) |
 | Iterations | 3 (default) | 2-3 |
 | TODOs | MUST leave TODO-P1/P2/P3 | NEVER leave TODOs |
@@ -509,5 +509,5 @@ All review report tables MUST use emoji-prefixed headers for visual scanning:
 - Use `/repotodo` to process findings after review
 - Re-run `/review` after fixes to verify
 - Hard cap: 10 agents maximum
-- Default model: Opus 4.5 (comprehensive analysis with security + design)
+- Default model: Opus 4.6 (comprehensive analysis with security + design)
 - Use `sonnet` or `haiku` override for faster/cheaper scans
