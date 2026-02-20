@@ -3,6 +3,22 @@
 
 ---
 
+## [![v1.17.1](https://img.shields.io/badge/v1.17.1-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/fb225b611bb4ad2796ea6cb0845b6b00527e5ca0) | Build 53
+
+fix(linux): restore compat.py + memory-unify.py cross-platform fixes
+
+- [x] get_claude_home(): returns ~/.claude on all platforms (removed /usr/share/claude)
+- [x] create_symlink(): uses os.symlink() first on Windows, falls back to mklink /J
+- [x] Full rewrite using os.symlink() via compat.create_symlink() on all platforms
+- [x] CLAUDE_SOURCE_DIR env var for configurable source base directory
+- [x] Linux /home/*/source/ and /root/source/ worktree detection patterns
+- [x] Unix path hash: skips Path.resolve() on Windows for Unix-style paths
+- [x] All 8 path hash tests pass (Windows + Linux formats)
+- [x] Failure warning logged to ~/.claude/debug/memory-unify.log
+
+
+---
+
 ## [![v1.17.0](https://img.shields.io/badge/v1.17.0-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/37116d4c57ed5360c4d72c78f258b3edfb44eb20) | Build 52
 
 feat(ralph): hybrid soft-failure detection for SubagentStop hook
