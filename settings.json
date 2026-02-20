@@ -365,6 +365,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python ${USERPROFILE:-$HOME}/.claude/hooks/env-setup.py",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "python ${USERPROFILE:-$HOME}/.claude/hooks/memory-unify.py",
             "timeout": 5,
             "async": true
@@ -385,7 +395,8 @@
           {
             "type": "command",
             "command": "python ${USERPROFILE:-$HOME}/.claude/scripts/fix-chrome-native-host.py",
-            "timeout": 30
+            "timeout": 30,
+            "async": true
           }
         ]
       },
@@ -801,5 +812,34 @@
     ]
   },
   "autoUpdatesChannel": "latest",
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "spinnerTipsOverride": {
+    "tips": [
+      "Ctrl+T → task list | Ctrl+O → transcript | Ctrl+Shift+O → teammate preview",
+      "Ctrl+F kills all background agents (press twice to confirm)",
+      "/rename your session BEFORE /clear — resume only matches custom titles",
+      "Shift+Tab cycles mode (plan/auto) | Ctrl+Shift+Tab → model picker",
+      "Alt+V pastes images from clipboard into chat",
+      "Add USER: comments to plan files → /reviewplan processes them",
+      "Ctrl+R → history search | Ctrl+G → external editor for long prompts",
+      "/token status — check token expiry before long Ralph runs",
+      "Budget mode: /start 5 3 sonnet all [task] — all phases use Sonnet",
+      "noreview flag skips VERIFY+FIX + REVIEW for faster iteration",
+      "Statusline: O4.6=Opus S4.6=Sonnet H=Haiku | arrows=effort | %=context",
+      "Push Gate: agents must push before marking complete — check git log if stuck",
+      "Ctrl+B backgrounds a running foreground task",
+      "/chats list — see all sessions with cost and duration",
+      "/sounds on|off — toggle audio feedback per session",
+      "/nightshift — autonomous dev in worktrees while you sleep",
+      "/ask gemini [question] — query multiple AI models in parallel",
+      "/launch — open dev server + browsers for visual verification",
+      "/docx read file.pdf — extract text from PDF/DOCX/XLSX",
+      "7 safety layers: Skill→Hook→Context→PushGate→Exit→VERIFY+FIX→Review",
+      "/init-repo — copy claude.yml, CLAUDE.md templates to any repo",
+      "ACID transactions: atomic_write_json for crash-safe state files",
+      "/screen capture — screenshot for visual bug reports",
+      "Shift+Enter → newline in chat (multi-line prompts)"
+    ],
+    "excludeDefault": false
+  }
 }

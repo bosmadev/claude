@@ -3,6 +3,9 @@
 # ===========================================
 .cache/
 .claude/*
+backups/
+*.backup
+*.claude.json.backup
 cache/
 chrome/
 daily-cost/
