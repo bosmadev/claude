@@ -3,6 +3,37 @@
 
 ---
 
+## [![v1.16.0](https://img.shields.io/badge/v1.16.0-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/81f740d4504543e107767ed19a32a3668bf32d64) | Build 51
+
+feat: add /memoryreview skill with analyze/optimize/pull/diff/help
+
+- [x] skills/memoryreview/SKILL.md: context fork, 5 commands, argument-hint
+- [x] scripts/memoryreview.py: analyze (duplicates/stale), optimize (CC 200-line limit),
+
+
+---
+
+## [![Build_50](https://img.shields.io/badge/Build_50-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/9873730cc7f1cf35af9200084c6f5712d56c8040) | Build 50
+
+feat(linux): cross-platform compat fixes + unified symlink memory-unify
+
+- [x] scripts/compat.py: get_claude_home() returns ~/.claude on all platforms (fixes Linux default)
+- [x] scripts/compat.py: create_symlink() uses os.symlink() first on Windows, falls back to mklink /J
+- [x] hooks/memory-unify.py: full rewrite using os.symlink() on all platforms; adds CLAUDE_SOURCE_DIR env var; Linux /home/*/source/ pattern; Unix path hash support; unprivileged symlink warning
+- [x] hooks/env-setup.py: new SessionStart hook that detects Windows paths in env block on Linux and logs fix instructions
+- [x] settings.json: add env-setup.py to SessionStart chain; CLAUDE_CODE_TMPDIR/PYTHONPYCACHEPREFIX kept as Windows paths (env block does not expand shell vars)
+
+
+---
+
+## [![Build_49](https://img.shields.io/badge/Build_49-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/1bb3b14a36dc940c6ba139c61a8d7b957a61a326) | Build 49
+
+feat(python-std): standardize python command + plan presentation + reviewplan validation
+
+
+
+---
+
 ## [![v1.15.0](https://img.shields.io/badge/v1.15.0-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/3765fb7c723575e19ed298febca4ed1f0c350ea0) | Build 48
 
 feat(hooks): add ConfigChange hook with async audit logger + permission suggester
