@@ -3,6 +3,21 @@
 
 ---
 
+## [![v1.15.0](https://img.shields.io/badge/v1.15.0-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/3765fb7c723575e19ed298febca4ed1f0c350ea0) | Build 48
+
+feat(hooks): add ConfigChange hook with async audit logger + permission suggester
+
+- [x] hooks/config-change.py: fires on settings.json/settings.local.json changes
+- [x] Diffs old vs new allow-list permissions, detects newly added entries
+- [x] 8 generalization rules: python3 → python, absolute paths → ~, pipe chains flagged
+- [x] 6 specificity indicators trigger suggestions (long args, head/tail pipes, abs paths)
+- [x] Audit log: ~/.claude/debug/config-changes.log with timestamps
+- [x] Suggests settings.json (permanent) vs settings.local.json (local-only) scope
+- [x] Registered as async ConfigChange hook in settings.json (timeout: 10s)
+
+
+---
+
 ## [![v1.14.5](https://img.shields.io/badge/v1.14.5-2026--02--17-333333.svg)](https://github.com/bosmadev/claude/commit/ef0e839995df7c042d341132d27aae850feeebe7) | Build 47
 
 fix(ci): inline Python one-liner to fix YAML parse error
