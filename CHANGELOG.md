@@ -3,6 +3,20 @@
 
 ---
 
+## [![v1.17.0](https://img.shields.io/badge/v1.17.0-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/37116d4c57ed5360c4d72c78f258b3edfb44eb20) | Build 52
+
+feat(ralph): hybrid soft-failure detection for SubagentStop hook
+
+- [x] Add detect_soft_failure() with 37 indicators across 7 categories:
+- [x] Structured signals TASK_COMPLETE:/TASK_FAILED: take highest priority
+- [x] 3 heuristics: empty message + exit 0, short msg (<50 chars), low turns (<3)
+- [x] _read_transcript_last_message(): JSONL transcript fallback when msg empty
+- [x] _write_hook_last_run(): atomic write to ~/.claude/ralph/hook-last-run.json
+- [x] handle_hook_subagent_stop(): now detects both hard + soft failures,
+
+
+---
+
 ## [![v1.16.0](https://img.shields.io/badge/v1.16.0-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/81f740d4504543e107767ed19a32a3668bf32d64) | Build 51
 
 feat: add /memoryreview skill with analyze/optimize/pull/diff/help
