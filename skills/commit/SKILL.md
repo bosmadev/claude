@@ -27,7 +27,7 @@ argument-hint: "[confirm|abort|show|clear|log|summary|help]"
    ```bash
    CL=$(grep '^## ' CHANGELOG.md 2>/dev/null | grep -oP 'Build \K\d+' | sort -rn | head -1); GL=$(git log --oneline -50 2>/dev/null | grep -oP 'Build \K\d+' | sort -rn | head -1); MAX=$(echo -e "${CL:-0}\n${GL:-0}" | sort -rn | head -1); echo $((MAX + 1))
    ```
-   **CRITICAL:** Use the bash output as-is. Do NOT manually parse CHANGELOG.md. This command checks BOTH CHANGELOG headings AND recent git commits (covers the race between push and GitHub Action updating CHANGELOG).
+   **CRITICAL:** Use the bash output as-is. Do NOT manually parse CHANGELOG.md. This command checks BOTH CHANGELOG headings AND recent git commits (covers the race between push and GitHub Action updating CHANGELOG). Build IDs are **always whole integers** (48, 49, 50) — NEVER use decimals like 48.1 or suffixes like 48a.
 8. Generate a scope-prefix subject line (feat/fix/refactor/cleanup/config/docs/test/perf). **If on main/master, prepend Build ID:** `Build {nextBuildId}: scope: description`
 9. Generate categorized bullet points describing the changes
 10. Write the subject + bullets to the `## Ready` section of `.claude/commit.md`

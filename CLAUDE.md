@@ -205,8 +205,10 @@ D:/source/{repo}/{repo}-dev/  [{repo}-dev] — development
 
 **Excluded repos:** `my-app`, `nextjs-bosmadev` (dummy/template repos)
 
-**Build ID Auto-Detection:**
+**Build ID Rules:**
 
+- **ALWAYS whole integers** — `Build 48`, `Build 49`, never `Build 48.1` or `Build 48a`
+- Auto-detection: MAX(CHANGELOG headings, git log last 50) + 1
 - `/commit` on `main`: reads CHANGELOG.md → highest Build N → injects `Build N+1`
 - `/openpr` from `*-dev`: reads CHANGELOG.md → highest Build N → PR title: `Build N+1`
 - Legacy `b{N}` branches: extracted from branch name (backward compat)
