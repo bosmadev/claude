@@ -3,6 +3,20 @@
 
 ---
 
+## [![v1.17.2](https://img.shields.io/badge/v1.17.2-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/5e23c400c98fb449dd0974ec57766d1db29b338e) | Build 54
+
+fix: block raw git commit in Ralph teams + upgrade validation script
+
+- [x] Added `scripts/validate-upgrade.py` (303 lines) for validating CC 2.1.49 upgrade integrity — checks git hooks, settings.json structure, hook registrations, and import paths
+- [x] Added `check_teammate_git_commit()` to `hooks/git.py` to block raw `git commit` from Ralph teammates (detected via `CLAUDE_CODE_TASK_LIST_ID`), enforcing `/commit` skill usage for Build ID injection and changelog formatting
+- [x] Updated `agents/git-coordinator.md` to document the hook-enforced block with correct/wrong usage examples and explanation of why raw commits break changelog automation
+- [x] Fixed `hooks/emergency-stop.py` import path — changed `from transaction import` to `from hooks.transaction import` with proper sys.path insertion for cross-directory imports
+- [x] Updated `settings.json` — moved `autoUpdatesChannel` and `skipDangerousModePermissionPrompt` after spinnerTips, added `excludeDefault: false` to spinnerTipsOverride
+- [x] Updated `CHANGELOG.md` Build 47 entry with missing bullet points for the YAML parse error fix
+
+
+---
+
 ## [![v1.17.1](https://img.shields.io/badge/v1.17.1-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/fb225b611bb4ad2796ea6cb0845b6b00527e5ca0) | Build 53
 
 fix(linux): restore compat.py + memory-unify.py cross-platform fixes
