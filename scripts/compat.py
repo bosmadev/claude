@@ -53,9 +53,8 @@ def get_claude_home() -> Path:
     env = os.environ.get("CLAUDE_HOME")
     if env:
         return Path(env)
-    if IS_WINDOWS:
-        return Path.home() / ".claude"
-    return Path("/usr/share/claude")
+    # Both Windows and Linux default to ~/.claude
+    return Path.home() / ".claude"
 
 
 def setup_stdin_timeout(seconds: int, debug_label: str = "") -> None:
@@ -183,28 +182,34 @@ def file_unlock(fd: int) -> None:
 
 def create_symlink(target: Path, link: Path) -> bool:
     """
-    Create a symlink/junction, cross-platform.
+    Create a symlink, cross-platform using os.symlink().
 
-    On Windows: creates a junction using cmd.exe mklink /J.
+    On Windows: tries os.symlink() first (requires unprivileged symlinks enabled),
+    falls back to mklink /J junction if os.symlink fails.
     On Linux: creates a symlink using os.symlink.
 
     Args:
         target: Path to the target directory
-        link: Path where the symlink/junction should be created
+        link: Path where the symlink should be created
 
     Returns:
         True if successful, False otherwise
     """
     try:
         if IS_WINDOWS:
-            # Quote paths for cmd.exe to handle spaces correctly
-            result = subprocess.run(
-                ["cmd.exe", "/c", "mklink", "/J", f'"{link}"', f'"{target}"'],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            return result.returncode == 0
+            try:
+                # Preferred: os.symlink with target_is_directory for directory links
+                os.symlink(str(target), str(link), target_is_directory=True)
+                return True
+            except OSError:
+                # Fallback: mklink /J junction (works without elevated rights)
+                result = subprocess.run(
+                    ["cmd.exe", "/c", "mklink", "/J", str(link), str(target)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                return result.returncode == 0
         else:
             os.symlink(str(target), str(link))
             return True

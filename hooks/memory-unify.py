@@ -2,9 +2,12 @@
 r"""
 Memory Unification Hook - SessionStart Hook for Worktree Memory Sharing
 
-Automatically creates NTFS junctions to share memory across git worktrees.
-For repos following the D:\source\{repo}\{branch} convention, dev worktrees
-redirect their memory to the main worktree via NTFS junctions.
+Automatically creates symlinks to share memory across git worktrees.
+For repos following the {source_dir}/{repo}/{branch} convention, dev worktrees
+redirect their memory to the main worktree via os.symlink() (all platforms).
+
+Set CLAUDE_SOURCE_DIR to override the default source directory.
+Default: D:/source on Windows, ~/source on Linux.
 
 Usage:
   python memory-unify.py                  # SessionStart hook mode (reads stdin)
@@ -16,7 +19,6 @@ Usage:
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -26,7 +28,14 @@ _PARENT = Path(__file__).resolve().parent.parent
 if str(_PARENT) not in sys.path:
     sys.path.insert(0, str(_PARENT))
 
-from hooks.compat import setup_stdin_timeout, cancel_stdin_timeout
+from hooks.compat import (
+    IS_WINDOWS,
+    cancel_stdin_timeout,
+    create_symlink,
+    get_symlink_target as _get_symlink_target,
+    is_symlink as _is_symlink,
+    setup_stdin_timeout,
+)
 
 
 # Wrapper functions for backward compat within this file
@@ -50,8 +59,37 @@ PROJECTS_DIR = CLAUDE_HOME / "projects"
 # Known repos for --setup mode
 KNOWN_REPOS = ["cwchat", "pulsona", "gswarm-api"]
 
-# Worktree detection regex: D:/source/{repo}/{branch}
-WORKTREE_PATTERN = re.compile(r"^([A-Za-z]):/source/([^/]+)/([^/]+)/?$")
+
+def _get_source_dir() -> Path:
+    """Return the source directory, platform-aware with env override."""
+    env = os.environ.get("CLAUDE_SOURCE_DIR")
+    if env:
+        return Path(env)
+    if IS_WINDOWS:
+        return Path("D:/source")
+    # Linux/Mac: use ~/source as default
+    return Path.home() / "source"
+
+
+# Worktree detection: matches both Windows (D:/source) and Unix (/home/user/source) layouts
+WORKTREE_PATTERN_WIN = re.compile(r"^([A-Za-z]):/source/([^/]+)/([^/]+)/?$")
+WORKTREE_PATTERN_UNIX = re.compile(r"^(/(?:home/[^/]+|root|Users/[^/]+)/source)/([^/]+)/([^/]+)/?$")
+
+_SYMLINK_WARNING_SHOWN = False
+
+
+def _warn_symlink_unavailable(reason: str) -> None:
+    """Log a once-per-process warning when symlink creation is unavailable."""
+    global _SYMLINK_WARNING_SHOWN
+    if _SYMLINK_WARNING_SHOWN:
+        return
+    _SYMLINK_WARNING_SHOWN = True
+    log_dir = CLAUDE_HOME / "debug"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "memory-unify.log"
+    from datetime import datetime
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now().isoformat()} - WARNING: {reason}\n")
 
 
 # =============================================================================
@@ -63,10 +101,10 @@ def compute_path_hash(path: str) -> str:
     r"""
     Compute path hash for Claude Code project directory naming.
 
-    Algorithm (from plan):
-    1. Normalize backslashes to forward slashes: D:\source\cwchat\main -> D:/source/cwchat/main
-    2. Replace forward slashes with single dash: D:/source/cwchat/main -> D:-source-cwchat-main
-    3. Replace first colon with double dash: D:-source-cwchat-main -> D--source-cwchat-main
+    Algorithm:
+    1. Normalize backslashes to forward slashes
+    2. Windows (has colon): D:/source/cwchat/main -> D--source-cwchat-main
+    3. Unix (no colon): /home/dennis/source/cwchat/main -> home-dennis-source-cwchat-main
 
     Args:
         path: Absolute path to hash
@@ -74,28 +112,29 @@ def compute_path_hash(path: str) -> str:
     Returns:
         Path hash string suitable for directory naming
     """
-    # Resolve to absolute path and normalize
-    try:
-        resolved = Path(path).resolve()
-        normalized = str(resolved).replace("\\", "/")
-    except (OSError, ValueError):
-        # Fallback to original path if resolution fails
-        normalized = path.replace("\\", "/")
+    # Normalize separators first
+    normalized = path.replace("\\", "/")
 
-    # Split on first colon to separate drive letter
-    if ":" in normalized:
-        drive, rest = normalized.split(":", 1)
-        # Strip leading slash before replacing
-        rest = rest.lstrip("/")
-        # Replace remaining slashes with dashes
-        rest = rest.replace("/", "-")
-        # Rejoin with double dash
-        normalized = f"{drive}--{rest}"
+    # Only resolve via Path if this looks like a native path on the current OS
+    # (avoid Path.resolve() turning /home/... into C:\home\... on Windows)
+    if IS_WINDOWS and not re.match(r"^[A-Za-z]:", normalized):
+        # Unix-style path on Windows host — skip resolve, hash as-is
+        pass
     else:
-        # No colon (Unix path) - just replace slashes
-        normalized = normalized.replace("/", "-")
+        try:
+            resolved = Path(path).resolve()
+            normalized = str(resolved).replace("\\", "/")
+        except (OSError, ValueError):
+            pass
 
-    return normalized
+    if ":" in normalized:
+        # Windows path: D:/source/... -> D--source-...
+        drive, rest = normalized.split(":", 1)
+        rest = rest.lstrip("/").replace("/", "-")
+        return f"{drive}--{rest}"
+    else:
+        # Unix path: /home/dennis/source/... -> home-dennis-source-...
+        return normalized.lstrip("/").replace("/", "-")
 
 
 # =============================================================================
@@ -103,87 +142,75 @@ def compute_path_hash(path: str) -> str:
 # =============================================================================
 
 
-def detect_source_repo(cwd: str) -> Optional[Tuple[str, str]]:
+def detect_source_repo(cwd: str) -> Optional[Tuple[str, str, str]]:
     r"""
-    Detect if CWD is a worktree in D:\source\{repo}\{branch} layout.
+    Detect if CWD is a worktree in {source_dir}/{repo}/{branch} layout.
 
-    Args:
-        cwd: Current working directory
+    Supports:
+    - Windows: D:/source/{repo}/{branch}
+    - Linux: /home/user/source/{repo}/{branch}, /root/source/{repo}/{branch}
+    - Custom: CLAUDE_SOURCE_DIR/{repo}/{branch}
 
     Returns:
-        (repo_name, branch_name) if match, None otherwise
+        (repo_name, branch_name, base_path) tuple or None
     """
-    # Normalize path for matching
     normalized = cwd.replace("\\", "/")
 
-    match = WORKTREE_PATTERN.match(normalized)
+    # Windows drive letter pattern
+    match = WORKTREE_PATTERN_WIN.match(normalized)
     if match:
         drive, repo, branch = match.groups()
-        return (repo, branch)
+        return (repo, branch, f"{drive}:/source")
+
+    # Unix home/root pattern
+    match = WORKTREE_PATTERN_UNIX.match(normalized)
+    if match:
+        base, repo, branch = match.groups()
+        return (repo, branch, base)
+
+    # Custom CLAUDE_SOURCE_DIR pattern
+    source_str = str(_get_source_dir()).replace("\\", "/")
+    if normalized.startswith(source_str + "/"):
+        rest = normalized[len(source_str) + 1:].strip("/")
+        parts = rest.split("/")
+        if len(parts) == 2:
+            repo, branch = parts
+            return (repo, branch, source_str)
 
     return None
 
 
 # =============================================================================
-# Junction Management
+# Symlink Management
 # =============================================================================
 
 
-from hooks.compat import is_symlink as _is_symlink, get_symlink_target as _get_symlink_target
-
-
 def is_junction(path: Path) -> bool:
-    """
-    Check if a path is an NTFS junction.
-
-    Uses Python 3.12+ Path.is_junction() if available,
-    falls back to os.path.islink() for older versions.
-
-    Args:
-        path: Path to check
-
-    Returns:
-        True if path is a junction, False otherwise
-    """
-    if not path.exists():
+    """Check if path is a symlink/junction (cross-platform)."""
+    if not path.exists() and not path.is_symlink():
         return False
     return _is_symlink(path)
 
 
 def get_junction_target(path: Path) -> Optional[Path]:
-    """
-    Get the target of an NTFS junction.
-
-    Args:
-        path: Junction path
-
-    Returns:
-        Target path if junction exists, None otherwise
-    """
+    """Get the target of a symlink/junction."""
     if not is_junction(path):
         return None
-
     target = _get_symlink_target(path)
     if target:
-        return target.resolve()
+        try:
+            return target.resolve()
+        except OSError:
+            return target
     return None
 
 
-def create_memory_junction(
-    dev_hash: str, main_hash: str
-) -> dict:
+def create_memory_junction(dev_hash: str, main_hash: str) -> dict:
     """
-    Create NTFS junction from dev memory to main memory.
-
-    Args:
-        dev_hash: Path hash for dev worktree
-        main_hash: Path hash for main worktree
+    Create symlink from dev memory to main memory (all platforms).
 
     Returns:
-        dict with keys:
-        - success: bool
-        - action: str (created|skipped|warned)
-        - message: str
+        dict with keys: success (bool), action (str), message (str)
     """
     dev_memory = PROJECTS_DIR / dev_hash / "memory"
     main_memory = PROJECTS_DIR / main_hash / "memory"
@@ -193,31 +220,21 @@ def create_memory_junction(
         try:
             main_memory.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            return {
-                "success": False,
-                "action": "error",
-                "message": f"Failed to create main memory dir: {e}",
-            }
+            return {"success": False, "action": "error", "message": f"Failed to create main memory dir: {e}"}
 
     # Check if dev memory already exists
-    if dev_memory.exists():
-        # Case 1: Already a junction pointing to the right place
+    if dev_memory.exists() or dev_memory.is_symlink():
         if is_junction(dev_memory):
             target = get_junction_target(dev_memory)
-            if target and target.resolve() == main_memory.resolve():
-                return {
-                    "success": True,
-                    "action": "skipped",
-                    "message": "Junction already exists and is correct",
-                }
-            else:
-                return {
-                    "success": False,
-                    "action": "warned",
-                    "message": f"Junction exists but points to wrong target: {target}",
-                }
+            if target:
+                try:
+                    if target.resolve() == main_memory.resolve():
+                        return {"success": True, "action": "skipped", "message": "Symlink already exists and is correct"}
+                except OSError:
+                    pass
+            return {"success": False, "action": "warned", "message": f"Symlink exists but points to wrong target: {target}"}
 
-        # Case 2: Real directory with content
+        # Real directory with content?
         try:
             files = list(dev_memory.iterdir())
             if files:
@@ -229,41 +246,30 @@ def create_memory_junction(
         except OSError:
             pass
 
-        # Case 3: Empty directory - remove and create junction
+        # Empty directory - remove before creating symlink
         try:
             dev_memory.rmdir()
         except OSError as e:
-            return {
-                "success": False,
-                "action": "error",
-                "message": f"Failed to remove empty dev memory dir: {e}",
-            }
+            return {"success": False, "action": "error", "message": f"Failed to remove empty dev memory dir: {e}"}
 
     # Ensure parent directory exists
     dev_memory.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create junction using compat.create_symlink
-    from hooks.compat import create_symlink
-
-    try:
-        if create_symlink(main_memory, dev_memory):
-            return {
-                "success": True,
-                "action": "created",
-                "message": f"Created junction: {dev_hash}/memory -> {main_hash}/memory",
-            }
-        else:
-            return {
-                "success": False,
-                "action": "error",
-                "message": "create_symlink failed",
-            }
-
-    except Exception as e:
+    # Create symlink using compat.create_symlink (os.symlink + mklink /J fallback on Windows)
+    if create_symlink(main_memory, dev_memory):
+        return {
+            "success": True,
+            "action": "created",
+            "message": f"Created symlink: {dev_hash}/memory -> {main_hash}/memory",
+        }
+    else:
+        _warn_symlink_unavailable(
+            "create_symlink() failed — on Windows enable unprivileged symlinks or run as admin"
+        )
         return {
             "success": False,
             "action": "error",
-            "message": f"Exception creating junction: {e}",
+            "message": "create_symlink() failed — check permissions (see ~/.claude/debug/memory-unify.log)",
         }
 
 
@@ -273,45 +279,36 @@ def create_memory_junction(
 
 
 def hook_session_start() -> None:
-    """
-    SessionStart hook entry point.
-
-    Reads stdin JSON, detects worktree, creates junction if needed.
-    """
+    """SessionStart hook entry point. Reads stdin JSON, creates symlink if needed."""
     try:
         raw_input = sys.stdin.read()
         hook_input = json.loads(raw_input)
         _cancel_timeout()
     except json.JSONDecodeError:
-        # Invalid JSON - exit silently
         sys.exit(0)
 
-    # Extract working directory
     cwd = hook_input.get("workingDirectory", "")
     if not cwd:
         sys.exit(0)
 
-    # Detect if this is a dev worktree
     repo_info = detect_source_repo(cwd)
     if not repo_info:
-        # Not a D:\source\{repo}\{branch} worktree - exit silently
         sys.exit(0)
 
-    repo_name, branch_name = repo_info
+    repo_name, branch_name, base_path = repo_info
 
-    # Skip if this is the main worktree
+    # Skip main worktree
     if branch_name == "main":
         sys.exit(0)
 
     # Compute path hashes
     dev_hash = compute_path_hash(cwd)
-    main_path = cwd.replace(f"\\{branch_name}", "\\main").replace(f"/{branch_name}", "/main")
+    normalized_cwd = cwd.replace("\\", "/")
+    main_path = normalized_cwd.replace(f"/{branch_name}", "/main")
     main_hash = compute_path_hash(main_path)
 
-    # Create junction
     result = create_memory_junction(dev_hash, main_hash)
 
-    # Output hook result if noteworthy
     if result["action"] in ("created", "warned", "error"):
         output = {
             "hookSpecificOutput": {
@@ -330,44 +327,28 @@ def hook_session_start() -> None:
 
 
 def setup_repo(repo_name: str) -> None:
-    """
-    Setup memory junction for a single repo's dev worktree.
+    """Setup memory symlink for a single repo's dev worktree."""
+    source = _get_source_dir()
+    main_path = str(source / repo_name / "main")
+    dev_path = str(source / repo_name / f"{repo_name}-dev")
 
-    Args:
-        repo_name: Name of repo (e.g., "cwchat")
-    """
-    # Construct paths
-    main_path = f"D:/source/{repo_name}/main"
-    dev_path = f"D:/source/{repo_name}/{repo_name}-dev"
-
-    # Check if main worktree exists
     if not Path(main_path).exists():
-        print(f"⚠️  Main worktree not found: {main_path}")
+        print(f"[WARN] Main worktree not found: {main_path}")
         return
 
-    # Compute hashes
     main_hash = compute_path_hash(main_path)
     dev_hash = compute_path_hash(dev_path)
-
-    # Create junction
     result = create_memory_junction(dev_hash, main_hash)
 
-    # Output result
-    status_emoji = {
-        "created": "✅",
-        "skipped": "⏭️",
-        "warned": "⚠️",
-        "error": "❌",
-    }
-    emoji = status_emoji.get(result["action"], "ℹ️")
-    print(f"{emoji} {repo_name}: {result['message']}")
+    markers = {"created": "[OK]", "skipped": "[SKIP]", "warned": "[WARN]", "error": "[FAIL]"}
+    print(f"{markers.get(result['action'], '[INFO]')} {repo_name}: {result['message']}")
 
 
 def setup_all_repos() -> None:
-    """Setup memory junctions for all known repos."""
-    print("Setting up memory junctions for known repos...")
+    """Setup memory symlinks for all known repos."""
+    source = _get_source_dir()
+    print(f"Setting up memory symlinks for known repos (source: {source})...")
     print()
-
     for repo in KNOWN_REPOS:
         setup_repo(repo)
 
@@ -379,28 +360,29 @@ def setup_all_repos() -> None:
 
 def test_path_hash() -> None:
     """Test path hash computation with sample paths."""
-    # Generate expected hash for user's home .claude directory
     home_claude = str(Path.home() / ".claude")
     home_claude_hash = compute_path_hash(home_claude)
-    
+
     test_cases = [
         ("D:\\source\\cwchat\\main", "D--source-cwchat-main"),
         ("D:/source/cwchat/main", "D--source-cwchat-main"),
         ("D:\\source\\cwchat\\cwchat-dev", "D--source-cwchat-cwchat-dev"),
         ("D:/source/pulsona/main", "D--source-pulsona-main"),
+        ("/home/dennis/source/cwchat/main", "home-dennis-source-cwchat-main"),
+        ("/home/dennis/source/cwchat/cwchat-dev", "home-dennis-source-cwchat-cwchat-dev"),
+        ("/root/source/pulsona/main", "root-source-pulsona-main"),
         (home_claude, home_claude_hash),
     ]
 
     print("Path Hash Test:")
     print("-" * 60)
-
     for path, expected in test_cases:
         result = compute_path_hash(path)
-        # Use ASCII status indicators for Windows console compatibility
         status = "[PASS]" if result == expected else "[FAIL]"
         print(f"{status} {path}")
-        print(f"   Expected: {expected}")
-        print(f"   Got:      {result}")
+        if result != expected:
+            print(f"   Expected: {expected}")
+            print(f"   Got:      {result}")
         print()
 
 
@@ -412,7 +394,6 @@ def test_path_hash() -> None:
 def main() -> None:
     """Main CLI entry point with mode dispatch."""
     if len(sys.argv) < 2:
-        # No args - run as hook
         _setup_timeout()
         hook_session_start()
         return
@@ -421,19 +402,13 @@ def main() -> None:
 
     if mode == "--setup":
         if len(sys.argv) >= 3:
-            # Setup specific repo
-            repo_name = sys.argv[2]
-            setup_repo(repo_name)
+            setup_repo(sys.argv[2])
         else:
-            # Setup all known repos
             setup_all_repos()
-
     elif mode == "--test":
         test_path_hash()
-
     elif mode == "--help":
         print(__doc__)
-
     else:
         print(f"Unknown mode: {mode}")
         print("Use --help for usage information")
