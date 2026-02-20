@@ -10,10 +10,10 @@ Production [Claude Code](https://docs.anthropic.com/en/docs/claude-code) configu
 
 | Category | Count | Highlights |
 |----------|-------|------------|
-| Skills | 22 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/nightshift`, `/docx`, `/docker`, `/ask`, `/test`, `/sounds` |
+| Skills | 23 | `/start`, `/review`, `/commit`, `/openpr`, `/x`, `/nightshift`, `/memoryreview`, `/docx`, `/docker`, `/ask`, `/test`, `/sounds` |
 | Agents | 42 | Specialist (Opus), reviewer (Sonnet), ops (Sonnet), git coordinator (Haiku) |
-| Hooks | 15 | Security gate, auto-allow, change tracking, Ralph orchestration, ACID state, sound effects |
-| Scripts | 32 | Token management, Chrome MCP fix, statusline, session repair, PR aggregation |
+| Hooks | 18 | Security gate, auto-allow, change tracking, Ralph orchestration, ACID state, ConfigChange, env-setup, sound effects |
+| Scripts | 33 | Token management, Chrome MCP fix, statusline, memoryreview, session repair, PR aggregation |
 | Safety | 7 layers | Push gate, VERIFY+FIX, security hooks, budget guard, ACID transactions |
 | Model Routing | 3 layers | Global default, skill fork, per-agent override for cost optimization |
 
@@ -66,8 +66,8 @@ All implementation agents must push their work to remote before completion (Push
 
 | Command | Description |
 |---------|-------------|
-| `/review` | 10 agents, 3 iter, Sonnet 4.5, working tree |
-| `/review [N] [M]` | N agents, M iterations, Sonnet 4.5 |
+| `/review` | 10 agents, 3 iter, Sonnet 4.6, working tree |
+| `/review [N] [M]` | N agents, M iterations, Sonnet 4.6 |
 | `/review [N] [M] opus` | N agents, M iterations, Opus 4.5 |
 | `/review [N] [M] haiku` | N agents, M iterations, Haiku |
 | `/review working` | Working tree only (R1 scope) |
@@ -133,6 +133,16 @@ Installs `.github/workflows/claude.yml`, `.claude/` directory structure, and upd
 | `/repotodo help` | Show usage |
 
 TODO format: `TODO-P1:`, `TODO-P2:`, `TODO-P3:`, or plain `TODO:`
+
+### /memoryreview - Memory File Management
+
+| Command | Description |
+|---------|-------------|
+| `/memoryreview` or `/memoryreview analyze` | Analyze MEMORY.md — duplicates, stale entries, line count vs 200-line limit |
+| `/memoryreview optimize` | Suggest moving detail to topic files to stay under CC 200-line limit |
+| `/memoryreview pull` | Smart merge from main worktree — diffs by heading, merges new entries |
+| `/memoryreview diff` | Show differences between main and current branch memory |
+| `/memoryreview help` | Show usage and examples |
 
 ### /reviewplan - Process Plan USER Comments
 
@@ -403,7 +413,7 @@ Shows available skills and usage information.
 
 ```
 /start 5 3 sonnet all [task]
-  -> All phases use Sonnet 4.5 (cheaper)
+  -> All phases use Sonnet 4.6 (cheaper)
   -> /commit
   -> /openpr
 ```
@@ -558,6 +568,7 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | Stop | - | `sounds.py session-stop` | 5s | Play session stop sound (async) |
 | SessionStart | startup\|resume | `utils.py model-capture` | 5s | Capture model ID for session |
 | SessionStart | - | `ralph.py session-start` | 10s | Initialize Ralph session |
+| SessionStart | - | `env-setup.py` | 5s | Cross-platform env var detection (warns on Linux if Windows paths found) |
 | SessionStart | - | `sounds.py session-start` | 5s | Play session start sound (async) |
 | PreCompact | - | `ralph.py pre-compact` | 10s | Save Ralph state before compaction |
 | PreToolUse | Read | `auto-allow.py` | 5s | Auto-approve safe Read operations |
@@ -574,6 +585,7 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | PostToolUse | Task | `ralph.py agent-tracker` | 10s | Track agent progress |
 | PostToolUse | Skill | `guards.py skill-validator` | 5s | Validate skill invocation |
 | PostToolUse | Skill | `post-review.py hook` | 30s | Post-review processing |
+| ConfigChange | - | `config-change.py` | 10s | Async audit logger + permission generalization suggester |
 | PostToolUse | computer | `guards.py x-post-check` | 5s | Security audit: log Chrome clicks during /x sessions |
 | PostToolUse | - | `sounds.py post-tool` | 5s | Play tool error/commit sound (async, no success beep) |
 | UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | Parse skill commands |
@@ -593,7 +605,7 @@ All hooks and scripts use `scripts/compat.py` for platform abstraction:
 
 **Functions:**
 - `IS_WINDOWS` - Boolean constant for platform detection
-- `get_claude_home()` - Returns Path to CLAUDE_HOME (Windows: `~/.claude`, Linux: `/usr/share/claude`)
+- `get_claude_home()` - Returns Path to CLAUDE_HOME (`~/.claude` on all platforms)
 - `setup_stdin_timeout(seconds)` - Cross-platform timeout for stdin reads
 - `cancel_stdin_timeout()` - Cancel active timeout
 - `file_lock(fd)` - Advisory file locking (Windows: msvcrt, Linux: fcntl)
@@ -764,8 +776,8 @@ The `.github/workflows/claude.yml` workflow provides AI-assisted PR automation, 
 
 | Model | Use Case |
 |-------|----------|
-| `claude-sonnet-4-5-20250929` | Default — best speed/quality balance |
-| `claude-sonnet-4-5-20250929[1m]` | 1M context for large PRs |
+| `claude-sonnet-4-6` | Default — best speed/quality balance |
+| `claude-sonnet-4-6[1m]` | 1M context for large PRs |
 | `claude-opus-4-6` | Maximum reasoning and analysis |
 | `claude-haiku-4-5-20251001` | Budget fallback, simple tasks |
 
@@ -850,11 +862,25 @@ Automated changelog generation via GitHub Actions workflow (`claude.yml`):
 - [x] {change_2}
 ```
 
+### Build ID Auto-Injection (Git Hook)
+
+A git `commit-msg` hook (`.git/hooks/commit-msg`) automatically prepends `Build N:` to all commits on `main`/`master` branches. This catches ALL commits regardless of source — `/commit` skill, Ralph agents, or manual `git commit`.
+
+**How it works:**
+1. Reads highest Build number from BOTH `CHANGELOG.md` headings AND recent git log (50 commits)
+2. Takes `MAX(changelog, git_log) + 1` as next Build ID
+3. Prepends `Build N: ` to the commit message first line
+4. Skips: commits already with Build ID, merge commits, changelog bumps (`chore: bump to v`)
+5. Only runs on `main`/`master` branch — dev branches are not affected
+
+**Why git-level hook:** CC hooks (`git.py check_build_id`) only catch commits through Claude Code. The git `commit-msg` hook catches ALL commits including from Ralph agents that bypass `/commit` skill.
+
 ### Key Points
 
 - Working branches do NOT edit CHANGELOG directly — all updates via GitHub Actions post-merge
 - `changelog.ts` requires `Build N` in commit subject to trigger (format: `Build 3: feat: description`)
 - `/commit` on main auto-reads CHANGELOG.md → injects `Build N+1`
+- Git `commit-msg` hook is the safety net — catches commits that bypass `/commit` skill
 - Feature branches: Build ID from branch name via `/openpr` squash merge
 - Version bumping: `scripts/aggregate-pr.py --bump` with semantic versioning
 - Override: `skip-changelog` or `skip-release` labels on PR
@@ -1007,40 +1033,41 @@ Experimental feature enabling parallel Claude Code instances within a session.
 | `/start` main | Opus 4.6 | High | 200K | — | Complex orchestration |
 | `/start` impl agents | Opus 4.6 | High | 200K | L3 | Task(model="opus") override |
 | `/start` plan agents | Opus 4.6 | Med | 200K | L3 | Planning phase |
-| `/start sonnet` plan | Sonnet 4.5 | N/A | 200K | L3 | Budget-mode planning |
+| `/start sonnet` plan | Sonnet 4.6 | N/A | 200K | L3 | Budget-mode planning |
 | `/review` main | Opus 4.6 | Med | 200K | — | Orchestration only |
-| `/review` agents | Sonnet 4.5 | N/A | 1M | L3 | Read-only, extended context |
+| `/review` agents | Sonnet 4.6 | N/A | 1M | L3 | Read-only, extended context |
 | `/repotodo` | Opus 4.6 | High | 200K | — | Critical code changes |
 | `/reviewplan` | Opus 4.6 | Med | 200K | — | Plan edits only |
-| `/commit` | Sonnet 4.5 | N/A | 200K | L2 | Fork, pattern matching |
-| `/openpr` | Sonnet 4.5 | N/A | 200K | L2 | Fork, read commits |
-| `/screen` | Sonnet 4.5 | N/A | 200K | L2 | Fork, screenshots |
-| `/youtube` | Sonnet 4.5 | N/A | 200K | L2 | Fork, transcription |
-| `/launch` | Sonnet 4.5 | N/A | 200K | L2 | Fork, browser |
+| `/commit` | Sonnet 4.6 | N/A | 200K | L2 | Fork, pattern matching |
+| `/openpr` | Sonnet 4.6 | N/A | 200K | L2 | Fork, read commits |
+| `/screen` | Sonnet 4.6 | N/A | 200K | L2 | Fork, screenshots |
+| `/youtube` | Sonnet 4.6 | N/A | 200K | L2 | Fork, transcription |
+| `/launch` | Sonnet 4.6 | N/A | 200K | L2 | Fork, browser |
 | `/token` | Haiku 4.5 | N/A | 200K | L2 | Fork, token mgmt |
-| `/rule` | Sonnet 4.5 | N/A | 200K | L2 | Fork, settings |
-| `/init-repo` | Sonnet 4.5 | N/A | 200K | L2 | Fork, templates |
-| `/x` | Sonnet 4.5 | N/A | 200K | L2 | Fork, X/Twitter outreach |
-| `/x` agents | Sonnet 4.5 | N/A | 200K | L3 | Never Opus (continuous loops burn quota) |
-| `/nightshift` | Sonnet 4.5 | N/A | 200K | L2 | Fork, orchestration |
-| `/nightshift` agents | Sonnet 4.5 | N/A | 200K | L3 | Opus blocked, Ollama/Gemini via GSwarm |
+| `/rule` | Sonnet 4.6 | N/A | 200K | L2 | Fork, settings |
+| `/init-repo` | Sonnet 4.6 | N/A | 200K | L2 | Fork, templates |
+| `/x` | Sonnet 4.6 | N/A | 200K | L2 | Fork, X/Twitter outreach |
+| `/x` agents | Sonnet 4.6 | N/A | 200K | L3 | Never Opus (continuous loops burn quota) |
+| `/nightshift` | Sonnet 4.6 | N/A | 200K | L2 | Fork, orchestration |
+| `/nightshift` agents | Sonnet 4.6 | N/A | 200K | L3 | Opus blocked, Ollama/Gemini via GSwarm |
+| `/memoryreview` | Sonnet 4.6 | N/A | 200K | L2 | Fork, memory analysis |
 | `/sounds` | Opus 4.6 | Med | 200K | — | Main, file toggle (<1 turn) |
-| `/ask` | Sonnet 4.5 | N/A | 200K | L2 | Fork, multi-model query |
-| `/test` | Sonnet 4.5 | N/A | 200K | L2 | Fork, test generation |
-| `/docx` | Sonnet 4.5 | N/A | 200K | L2 | Fork, document processing |
-| `/docker` | Sonnet 4.5 | N/A | 200K | L2 | Fork, Dockerfile generation |
+| `/ask` | Sonnet 4.6 | N/A | 200K | L2 | Fork, multi-model query |
+| `/test` | Sonnet 4.6 | N/A | 200K | L2 | Fork, test generation |
+| `/docx` | Sonnet 4.6 | N/A | 200K | L2 | Fork, document processing |
+| `/docker` | Sonnet 4.6 | N/A | 200K | L2 | Fork, Dockerfile generation |
 | `/chats` | Opus 4.6 | Med | 200K | — | Main (avoid fork summarization) |
 | `/help` | Haiku 4.5 | N/A | 200K | L2 | Fork, trivial |
 | VERIFY+FIX scoped | Opus 4.6 | Med | 200K | — | Per-task checks |
 | VERIFY+FIX full | Opus 4.6 | High | 200K | — | Final gate |
 | VERIFY+FIX plan | Opus 4.6 | Med | 200K | — | Plan checks |
-| Post-review agents | Sonnet 4.5 | N/A | 1M | L3 | Read-only review |
+| Post-review agents | Sonnet 4.6 | N/A | 1M | L3 | Read-only review |
 | Ralph impl agents | Opus 4.6 | High | 200K | L3 | Task(model="opus") |
 | Ralph work-stealing | Opus 4.6 | High | 200K | L3 | Same as impl |
 | Ralph retry queue | Opus 4.6 | High | 200K | L3 | Retries need best quality |
-| GH Actions (auto PR) | Sonnet 4.5 | N/A | 200K | — | Default trigger |
-| GH Actions: Summarize | Sonnet 4.5 | N/A | 1M | — | Large PRs |
-| GH Actions: Review | Sonnet 4.5 | N/A | 1M | — | Full repo context |
+| GH Actions (auto PR) | Sonnet 4.6 | N/A | 200K | — | Default trigger |
+| GH Actions: Summarize | Sonnet 4.6 | N/A | 1M | — | Large PRs |
+| GH Actions: Review | Sonnet 4.6 | N/A | 1M | — | Full repo context |
 | GH Actions: Security | Opus 4.6 | Med | 200K | — | OWASP depth |
 | GH Actions: Custom | User picks | Varies | Varies | — | workflow_dispatch |
 | Specialist agents (18) | Opus | — | — | .md | go, nextjs, python, typescript, docker, testing, hook-dev, refactor, verify-fix + more |

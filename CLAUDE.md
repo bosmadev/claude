@@ -1,4 +1,4 @@
-# Claude Code Configuration (Based on 2.1.41)
+# Claude Code Configuration (Based on 2.1.49)
 
 ## Directory Structure
 
@@ -9,10 +9,10 @@
 │   ├── ISSUE_TEMPLATE/
 │   └── workflows/claude.yml
 ├── agents/                     # Agent configuration files (42 files)
-├── hooks/                      # Claude Code hook handlers (15 files)
+├── hooks/                      # Claude Code hook handlers (18 files)
 ├── output-styles/              # Response formatting styles
-├── scripts/                    # CLI utilities (32 scripts)
-├── skills/                     # Skill definitions (/commands, 22 skills)
+├── scripts/                    # CLI utilities (33 scripts)
+├── skills/                     # Skill definitions (/commands, 23 skills)
 ├── CLAUDE.md                   # Core patterns (this file)
 ├── settings.json               # Hook registrations
 └── README.md                   # Public-facing documentation
@@ -271,6 +271,7 @@ Token-efficient model assignment via permanent, native mechanisms:
 | `/docker`     | Fork    | Sonnet (L1) | Dockerfile generation and audit                |
 | `/init-repo`  | Fork    | Sonnet (L1) | Repository setup templates                     |
 | `/rule`       | Fork    | Sonnet (L1) | Settings.json rule management                  |
+| `/memoryreview` | Fork  | Sonnet (L1) | Memory analysis and optimization               |
 | `/chats`      | No      | Opus (main) | Session listing (avoid fork summarization bug) |
 | `/help`       | Fork    | Haiku       | Show help info, trivial operation              |
 
@@ -310,7 +311,7 @@ For all social media, comments, replies, and public-facing content:
 
 For complete skill command tables with all argument combinations, see [README.md &gt; Skills Reference](./README.md#skills-reference).
 
-22 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`, `/ask`, `/test`, `/docx`, `/docker`, `/nightshift`, `/sounds`, `/quality` (deprecated)
+23 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/memoryreview`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`, `/ask`, `/test`, `/docx`, `/docker`, `/nightshift`, `/sounds`, `/quality` (deprecated)
 
 ### /x Environment Variables
 
@@ -347,7 +348,7 @@ Ralph agents use atomic task claiming with `FileLock` to prevent idle agents. Qu
 
 ## Hook System
 
-20 hook handlers across 13 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart, SubagentStop, Notification, PermissionRequest, TaskCompleted, TeammateIdle. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol, /x security), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete hook registration table.
+22 hook handlers across 14 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart, SubagentStop, Notification, PermissionRequest, TaskCompleted, TeammateIdle. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol, /x security), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete hook registration table.
 
 **Code-level guards:** `sanitize_reply_text()` in `skills/x/scripts/x.py` (every X post), `x-post-check` in `guards.py` (Chrome MCP audit log).
 

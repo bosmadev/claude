@@ -28,8 +28,8 @@ feat(ralph): hybrid soft-failure detection for SubagentStop hook
 - [x] 3 heuristics: empty message + exit 0, short msg (<50 chars), low turns (<3)
 - [x] _read_transcript_last_message(): JSONL transcript fallback when msg empty
 - [x] _write_hook_last_run(): atomic write to ~/.claude/ralph/hook-last-run.json
-- [x] handle_hook_subagent_stop(): now detects both hard + soft failures,
-
+- [x] handle_hook_subagent_stop(): now detects both hard + soft failures, routes to retry queue
+- [x] Hook state persistence: atomic write to ~/.claude/ralph/hook-last-run.json on every SubagentStop
 
 ---
 
@@ -37,9 +37,8 @@ feat(ralph): hybrid soft-failure detection for SubagentStop hook
 
 feat: add /memoryreview skill with analyze/optimize/pull/diff/help
 
-- [x] skills/memoryreview/SKILL.md: context fork, 5 commands, argument-hint
-- [x] scripts/memoryreview.py: analyze (duplicates/stale), optimize (CC 200-line limit),
-
+- [x] skills/memoryreview/SKILL.md: context fork, 5 commands (analyze/optimize/pull/diff/help), argument-hint for TTY autocomplete
+- [x] scripts/memoryreview.py (491 lines): analyze (duplicates/stale/line count vs 200-line CC limit), optimize (suggest topic file moves), pull (smart merge from main worktree), diff (cross-branch comparison), help
 
 ---
 
@@ -52,7 +51,7 @@ feat(linux): cross-platform compat fixes + unified symlink memory-unify
 - [x] hooks/memory-unify.py: full rewrite using os.symlink() on all platforms; adds CLAUDE_SOURCE_DIR env var; Linux /home/*/source/ pattern; Unix path hash support; unprivileged symlink warning
 - [x] hooks/env-setup.py: new SessionStart hook that detects Windows paths in env block on Linux and logs fix instructions
 - [x] settings.json: add env-setup.py to SessionStart chain; CLAUDE_CODE_TMPDIR/PYTHONPYCACHEPREFIX kept as Windows paths (env block does not expand shell vars)
-
+- [x] fix(linux): restore compat.py + memory-unify.py cross-platform fixes (fb225b6)
 
 ---
 
@@ -60,7 +59,20 @@ feat(linux): cross-platform compat fixes + unified symlink memory-unify
 
 feat(python-std): standardize python command + plan presentation + reviewplan validation
 
+- [x] settings.json: 24 custom spinner tips, shift+enter keybinding, chrome hook async
+- [x] keybindings.json: shift+enter → chat:newline
+- [x] .gitignore: added backups/ directory exclusion
+- [x] Standardized python3 → python across settings/skills/hooks (shebangs kept as python3 for Linux)
 
+---
+
+## [![Build_48.1](https://img.shields.io/badge/Build_48.1-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/52b9e8f) | Build 48.1
+
+feat(guards): add ExitPlanMode auto-rename hook for plan files
+
+- [x] scripts/guards.py: track_plan_rename() renames random plan files to match session slug
+- [x] skills/reviewplan/SKILL.md: validation gate (halt on missed USER comments) + full-file formatting check
+- [x] skills/start/SKILL.md: baked plan presentation style (blockquote options, compact tables)
 
 ---
 
