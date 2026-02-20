@@ -811,9 +811,8 @@
       "Unifying"
     ]
   },
-  "autoUpdatesChannel": "latest",
-  "skipDangerousModePermissionPrompt": true,
   "spinnerTipsOverride": {
+    "excludeDefault": false,
     "tips": [
       "Ctrl+T → task list | Ctrl+O → transcript | Ctrl+Shift+O → teammate preview",
       "Ctrl+F kills all background agents (press twice to confirm)",
@@ -839,7 +838,8 @@
       "ACID transactions: atomic_write_json for crash-safe state files",
       "/screen capture — screenshot for visual bug reports",
       "Shift+Enter → newline in chat (multi-line prompts)"
-    ],
-    "excludeDefault": false
-  }
+    ]
+  },
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true
 }

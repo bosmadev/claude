@@ -68,7 +68,7 @@ All implementation agents must push their work to remote before completion (Push
 |---------|-------------|
 | `/review` | 10 agents, 3 iter, Sonnet 4.6, working tree |
 | `/review [N] [M]` | N agents, M iterations, Sonnet 4.6 |
-| `/review [N] [M] opus` | N agents, M iterations, Opus 4.5 |
+| `/review [N] [M] opus` | N agents, M iterations, Opus 4.6 |
 | `/review [N] [M] haiku` | N agents, M iterations, Haiku |
 | `/review working` | Working tree only (R1 scope) |
 | `/review impact` | Working tree + impact radius (R2) |
@@ -535,10 +535,10 @@ After patching, restart your Claude Code session for the MCP server to load the 
 │   ├── ISSUE_TEMPLATE/
 │   └── workflows/claude.yml
 ├── agents/                     # Agent configuration files (42 files)
-├── hooks/                      # Claude Code hook handlers (15 files)
+├── hooks/                      # Claude Code hook handlers (18 files)
 ├── output-styles/              # Response formatting styles
-├── scripts/                    # CLI utilities (32 scripts)
-├── skills/                     # Skill definitions (22 skills)
+├── scripts/                    # CLI utilities (33 scripts)
+├── skills/                     # Skill definitions (23 skills)
 ├── plans/                      # Plan files from /start sessions
 ├── CLAUDE.md                   # Model knowledge (behavioral patterns)
 ├── settings.json               # Hook registrations and permissions
@@ -564,40 +564,61 @@ Hooks intercept Claude Code events at different lifecycle stages:
 |-----------|---------|---------|---------|---------|
 | Setup | - | `token-guard.py check` | 60s | Validate Claude token before session |
 | Setup | - | `setup.py validate-symlinks` | 30s | Verify symlink integrity |
+| Setup | - | `sounds.py setup` | 5s | Initialize sound system (async) |
 | Stop | - | `ralph.py stop` | 30s | Cleanup Ralph state |
+| Stop | - | `claudeChangeStop.js` | 5s | ClaudeCodeChange stop tracking |
 | Stop | - | `sounds.py session-stop` | 5s | Play session stop sound (async) |
 | SessionStart | startup\|resume | `utils.py model-capture` | 5s | Capture model ID for session |
 | SessionStart | - | `ralph.py session-start` | 10s | Initialize Ralph session |
-| SessionStart | - | `env-setup.py` | 5s | Cross-platform env var detection (warns on Linux if Windows paths found) |
+| SessionStart | - | `env-setup.py` | 5s | Cross-platform env var detection (warns on Linux if Windows paths found, async) |
+| SessionStart | - | `memory-unify.py` | 5s | Create NTFS junctions to unify memory/ across worktrees (async) |
+| SessionStart | - | `repair-sessions-index.py --hook` | 15s | Auto-repair sessions index on startup |
+| SessionStart | - | `fix-chrome-native-host.py` | 30s | Patch Chrome native host for MCP (async) |
 | SessionStart | - | `sounds.py session-start` | 5s | Play session start sound (async) |
 | PreCompact | - | `ralph.py pre-compact` | 10s | Save Ralph state before compaction |
-| PreToolUse | Read | `auto-allow.py` | 5s | Auto-approve safe Read operations |
+| PreCompact | - | `sounds.py pre-compact` | 5s | Play pre-compact sound (async) |
+| PreToolUse | Read | `auto-allow.py` | 5s | Auto-approve safe Read operations (async) |
+| PreToolUse | Bash | `guards.py bypass-permissions-guard` | 5s | Block permission bypass attempts |
+| PreToolUse | Bash | `guards.py fs-guard` | 5s | File system write protection |
+| PreToolUse | Bash | `sandbox-boundary.py pretool` | 5s | Enforce sandbox directory boundaries |
 | PreToolUse | Bash | `security-gate.py pre-bash` | 5s | Security validation for Bash commands |
 | PreToolUse | Bash | `git.py pre-commit-checks` | 5s | Git safety checks before commits |
-| PreToolUse | MultiEdit\|Edit\|Write | `auto-allow.py` | 5s | Auto-approve safe edits |
+| PreToolUse | MultiEdit\|Edit\|Write | `guards.py fs-guard` | 5s | File system write protection |
+| PreToolUse | MultiEdit\|Edit\|Write | `auto-allow.py` | 5s | Auto-approve safe edits (async) |
+| PreToolUse | MultiEdit\|Edit\|Write | `claudeChangePreToolUse.js` | 5s | ClaudeCodeChange pre-tool tracking |
 | PreToolUse | Task | `ralph.py hook-pretool` | 10s | Ralph task orchestration prep |
-| PostToolUse | Bash | `git.py command-history` | 5s | Track git command history |
-| PostToolUse | Edit\|Write | `git.py change-tracker` | 5s | Log file changes for commits |
-| PostToolUse | Edit\|Write | `guards.py guardian` | 5s | Validate edit safety |
-| PostToolUse | Edit\|Write | `guards.py plan-write-check` | 5s | Enforce plan change markers |
-| PostToolUse | Edit\|Write | `guards.py insights-reminder` | 5s | Remind to update insights |
+| PostToolUse | Bash | `git.py command-history` | 5s | Track git command history (async) |
+| PostToolUse | Bash | `git.py post-commit-metadata` | 90s | Fetch GitHub metadata post-commit (async) |
+| PostToolUse | Bash | `build-intelligence.py hook` | 5s | Detect build errors and suggest fixes |
+| PostToolUse | Edit\|Write | `security-gate.py post-edit` | 5s | Security scan after file edits |
+| PostToolUse | Edit\|Write | `git.py change-tracker` | 5s | Log file changes for commits (async) |
+| PostToolUse | Edit\|Write | `git.py frontend-verification` | 5s | Prompt visual check on frontend edits (async) |
+| PostToolUse | Edit\|Write | `guards.py guardian` | 5s | Validate edit safety (async) |
+| PostToolUse | Edit\|Write | `guards.py plan-write-check` | 5s | Enforce plan change markers (async) |
+| PostToolUse | Edit\|Write | `guards.py insights-reminder` | 5s | Remind to update insights (async) |
 | PostToolUse | ExitPlanMode | `guards.py ralph-enforcer` | 10s | Validate Ralph protocol on plan exit |
 | PostToolUse | Task | `ralph.py agent-tracker` | 10s | Track agent progress |
 | PostToolUse | Skill | `guards.py skill-validator` | 5s | Validate skill invocation |
+| PostToolUse | Skill | `guards.py quality-deprecation` | 5s | Warn on deprecated /quality skill |
 | PostToolUse | Skill | `post-review.py hook` | 30s | Post-review processing |
-| ConfigChange | - | `config-change.py` | 10s | Async audit logger + permission generalization suggester |
 | PostToolUse | computer | `guards.py x-post-check` | 5s | Security audit: log Chrome clicks during /x sessions |
 | PostToolUse | - | `sounds.py post-tool` | 5s | Play tool error/commit sound (async, no success beep) |
 | UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | Parse skill commands |
 | UserPromptSubmit | ^/start | `guards.py skill-parser` | 5s | Parse /start command args |
 | UserPromptSubmit | - | `guards.py plan-comments` | 5s | Detect USER comments in plans |
 | UserPromptSubmit | - | `guards.py auto-ralph` | 5s | Auto-trigger Ralph for complex tasks |
+| UserPromptSubmit | - | `sounds.py user-prompt-submit` | 5s | Play prompt submit sound (async) |
 | SubagentStart | - | `ralph.py hook-subagent-start` | 10s | Initialize subagent context |
+| SubagentStart | - | `context-injection.py` | 5s | Inject Ralph context into subagent prompt |
+| SubagentStart | - | `sounds.py subagent-start` | 5s | Play subagent start sound (async) |
 | SubagentStop | - | `ralph.py hook-subagent-stop` | 10s | Cleanup subagent state |
+| SubagentStop | - | `sounds.py subagent-stop` | 5s | Play subagent stop sound (async) |
+| PermissionRequest | - | `sounds.py permission-request` | 5s | Play permission request sound (async) |
+| TaskCompleted | - | `sounds.py task-completed` | 5s | Play task completed sound (async) |
+| TeammateIdle | - | `sounds.py teammate-idle` | 5s | Play teammate idle alert (async) |
+| ConfigChange | - | `config-change.py` | 10s | Async audit logger + permission generalization suggester |
 | Notification | permission_prompt | `utils.py notify` | 10s | Desktop notifications |
-| Notification | permission_prompt | `sounds.py notification` | 5s | Play notification sound (async) |
-| Stop | - | `claudeChangeStop.js` | 5s | ClaudeCodeChange stop tracking |
-| PreToolUse | MultiEdit\|Edit\|Write | `claudeChangePreToolUse.js` | 5s | ClaudeCodeChange pre-tool tracking |
+| Notification | - | `sounds.py notification` | 5s | Play notification sound (async) |
 
 ### Cross-Platform Compatibility
 
@@ -1046,7 +1067,7 @@ Experimental feature enabling parallel Claude Code instances within a session.
 | `/token` | Haiku 4.5 | N/A | 200K | L2 | Fork, token mgmt |
 | `/rule` | Sonnet 4.6 | N/A | 200K | L2 | Fork, settings |
 | `/init-repo` | Sonnet 4.6 | N/A | 200K | L2 | Fork, templates |
-| `/x` | Sonnet 4.6 | N/A | 200K | L2 | Fork, X/Twitter outreach |
+| `/x` | Opus 4.6 | Med | 200K | — | Main context, agents use Sonnet (no fork) |
 | `/x` agents | Sonnet 4.6 | N/A | 200K | L3 | Never Opus (continuous loops burn quota) |
 | `/nightshift` | Sonnet 4.6 | N/A | 200K | L2 | Fork, orchestration |
 | `/nightshift` agents | Sonnet 4.6 | N/A | 200K | L3 | Opus blocked, Ollama/Gemini via GSwarm |

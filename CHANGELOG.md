@@ -95,7 +95,8 @@ feat(hooks): add ConfigChange hook with async audit logger + permission suggeste
 
 fix(ci): inline Python one-liner to fix YAML parse error
 
-
+- [x] Collapsed multiline Python heredoc into single-line python3 -c invocation in claude.yml
+- [x] Fixes YAML block scalar parse error that caused all GitHub Actions jobs to fail with 0 jobs created
 
 ---
 

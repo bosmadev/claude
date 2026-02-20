@@ -95,11 +95,26 @@ git stash
 
 **Only git-coordinator may execute git write operations.**
 
-**Git-coordinator MUST use `/commit` skill — NEVER `git commit` directly:**
+**CRITICAL: ALWAYS use `/commit` skill. NEVER run `git commit` directly.**
+
+Raw `git commit` is BLOCKED by `hooks/git.py` for all Ralph teammates (detected via
+`CLAUDE_CODE_TASK_LIST_ID` env var). Any attempt will produce:
+`BLOCKED: Raw git commit is not allowed for Ralph teammates/subagents.`
+
+Correct usage:
 ```bash
-# WRONG: git commit -m "message"
-# RIGHT: use /commit skill which handles message formatting, CHANGELOG, build IDs
+# WRONG — blocked by hook, will never succeed:
+git commit -m "Build 48: fix: update auth"
+
+# RIGHT — use /commit skill:
+claude --skill commit
+# OR signal team-lead to run /commit from main session
 ```
+
+**Why this matters:** Raw git commit bypasses:
+- Build ID injection (`Build N:` prefix required for changelog automation)
+- CHANGELOG body formatting (proper `- [x]` bullet structure)
+- `/commit` skill's CHANGELOG automation hooks
 
 ## Communication Protocol
 

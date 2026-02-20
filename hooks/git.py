@@ -1308,6 +1308,51 @@ def check_env_encryption() -> None:
     return
 
 
+def check_teammate_git_commit(hook_input: dict) -> None:
+    """
+    Block raw `git commit` from Ralph teammates/subagents.
+
+    Teammates MUST use the /commit skill instead of raw git commit.
+    Raw git commit bypasses:
+    - Build ID injection (commit title format: "Build N: scope: desc")
+    - Changelog body formatting (proper `- [x]` bullets)
+    - /commit skill's CHANGELOG automation hooks
+
+    Detection: CLAUDE_CODE_TASK_LIST_ID env var is set when running in a team context.
+    Exception: main session (no CLAUDE_CODE_TASK_LIST_ID) may use raw git commit freely.
+    """
+    command = hook_input.get("tool_input", {}).get("command", "")
+
+    # Only intercept git commit commands
+    if not re.match(r"^git\s+commit\b", command):
+        return
+
+    # Check if we're in a teammate/subagent context
+    # CLAUDE_CODE_TASK_LIST_ID is set when running inside an agent team
+    task_list_id = os.environ.get("CLAUDE_CODE_TASK_LIST_ID", "")
+    if not task_list_id:
+        # Main session — allow raw git commit
+        return
+
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "block",
+            "permissionDecisionReason": (
+                "BLOCKED: Raw `git commit` is not allowed for Ralph teammates/subagents.\n\n"
+                "Use the /commit skill instead:\n"
+                "  - /commit — auto-detects Build ID, formats CHANGELOG body\n\n"
+                "Raw git commit bypasses Build ID injection and changelog body formatting, "
+                "which broke changelog automation in 10 commits during the upgrade audit.\n\n"
+                "If you are the git-coordinator agent, invoke the /commit skill via Bash:\n"
+                "  claude --skill commit"
+            ),
+        }
+    }
+    print(json.dumps(output))
+    sys.exit(0)
+
+
 def check_build_id(hook_input: dict) -> None:
     """
     Block git commit on main/master without Build ID prefix.
@@ -1420,6 +1465,8 @@ def main() -> None:
         # It's a git commit — run all checks by re-injecting stdin
         import io
         raw = json.dumps(hook_input)
+        # Check 0: Block raw git commit from Ralph teammates (must run first)
+        check_teammate_git_commit(hook_input)
         # Check 1: Build ID on main/master
         check_build_id(hook_input)
         # Check 2: .env encryption

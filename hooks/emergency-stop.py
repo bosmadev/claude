@@ -22,8 +22,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+_PARENT = Path(__file__).resolve().parent.parent
+if str(_PARENT) not in sys.path:
+    sys.path.insert(0, str(_PARENT))
+
 # Import ACID transaction primitives
-from transaction import atomic_write_json, transactional_update
+from hooks.transaction import atomic_write_json, transactional_update
 
 
 # =============================================================================

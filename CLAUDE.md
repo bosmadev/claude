@@ -262,7 +262,7 @@ Token-efficient model assignment via permanent, native mechanisms:
 | `/youtube`    | Fork    | Sonnet (L1) | Transcription management                       |
 | `/launch`     | Fork    | Sonnet (L1) | Browser verification                           |
 | `/token`      | Fork    | Haiku       | Token status/refresh                           |
-| `/x`          | Fork    | Sonnet (L1) | X/Twitter outreach, auto-posting               |
+| `/x`          | No      | Opus (main) | X/Twitter outreach, main context, agents use Sonnet |
 | `/nightshift` | Fork    | Sonnet (L1) | Autonomous maintenance, spawns Sonnet agents   |
 | `/sounds`     | No      | Opus (main) | File toggle, instant operation (<1 turn)        |
 | `/ask`        | Fork    | Sonnet (L1) | Multi-model query orchestration                |
