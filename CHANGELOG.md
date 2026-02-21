@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.19.2](https://img.shields.io/badge/v1.19.2-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/be02a027b16dae96f3decb79788ef4971d7530dd) | Build 59
+
+docs: add review trigger table with OWNER gating and loop risk
+
+- [x] Replaced basic trigger table with detailed OWNER gating info
+- [x] Added loop risk column for each trigger type
+- [x] Documented two-audience workflow (owner vs contributors)
+
+
+---
+
 ## [![v1.19.1](https://img.shields.io/badge/v1.19.1-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/49f906772baf45dbf0eab4bdc9aa87af0a0558df) | Build 58
 
 fix(ci): add OWNER gating to labeled and assigned triggers
