@@ -3,6 +3,16 @@
 
 ---
 
+## [![v1.19.1](https://img.shields.io/badge/v1.19.1-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/49f906772baf45dbf0eab4bdc9aa87af0a0558df) | Build 58
+
+fix(ci): add OWNER gating to labeled and assigned triggers
+
+- [x] Prevent non-owners from triggering reviews via claude label
+- [x] Prevent non-owners from triggering reviews via issue assignment
+
+
+---
+
 ## [![v1.19.0](https://img.shields.io/badge/v1.19.0-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/6f35742a7c6934259cebea1bd23f69e16d442ad7) | Build 57
 
 feat: PR body auto-update hook, [x] commit format, drift detection
