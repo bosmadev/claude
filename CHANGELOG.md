@@ -3,6 +3,21 @@
 
 ---
 
+## [![v1.18.0](https://img.shields.io/badge/v1.18.0-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/688da4e19a478318f0afbb5cd0b5151c79b4a3a5) | Build 56
+
+feat: harden x.py anti-AI sanitization and add style-mirroring + history repair
+
+- [x] Enhanced `sanitize_reply_text()` in x.py with quote stripping (double and single quotes), em/en-dash blocking, auto-lowercase first character, and trailing period removal to make replies sound more human
+- [x] Added 30+ new AI-cliche phrase patterns to the blocklist (game-changer, have you considered, at scale, inference layer, solid stack, etc.) to catch LLM-telltale phrasing
+- [x] Added `analyze_style()` function to x.py for parsing tweet writing style (case, punctuation, slang, emoji, sentence length, formality) so agents can mirror the target author's voice
+- [x] Fixed `load_history()` to auto-repair corrupted history.json using `json.JSONDecoder.raw_decode()` -- saves backup before writing repaired file
+- [x] Added `fix-history.py` utility script for manual one-shot repair of corrupted history.json
+- [x] Fixed `cmd_post` and `cmd_quote` stdin read bug -- no longer reads from stdin when text arg is None (only when `--stdin` flag is explicit)
+- [x] Changed settings.json `defaultMode` from `plan` to `acceptEdits`
+
+
+---
+
 ## [![v1.17.3](https://img.shields.io/badge/v1.17.3-2026--02--20-333333.svg)](https://github.com/bosmadev/claude/commit/26fccf643d4a23a6741a9ade5bf1ef4a940734af) | Build 55
 
 docs: codify whole-integer Build ID rule
