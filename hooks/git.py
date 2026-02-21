@@ -871,6 +871,10 @@ def post_commit_metadata() -> None:
     # Extracts -C <path> from original command to push from correct repo
     auto_push_after_commit(command)
 
+    # Auto-update PR body after every successful push
+    # This runs aggregate-pr.py and updates the open PR body via gh CLI
+    auto_update_pr_body(command)
+
     sys.exit(0)
 
 
@@ -955,6 +959,87 @@ def auto_push_after_commit(original_command: str) -> None:
         print(f"Auto-push timed out (60s) — push manually: git push")
     except (FileNotFoundError, OSError) as e:
         print(f"Auto-push error: {e}")
+
+
+def auto_update_pr_body(original_command: str) -> None:
+    """
+    Auto-update PR body after every successful commit+push.
+
+    Runs aggregate-pr.py to regenerate the PR body from all branch commits,
+    then updates the open PR via `gh pr edit`. This ensures PR body stays
+    current regardless of whether /commit or raw git commit was used.
+
+    Skips on main/master branches (no PR to update).
+    Non-blocking: logs warnings but never blocks the hook on failure.
+    """
+    # Extract -C <path> if present
+    git_args = []
+    cwd = None
+    c_match = re.search(r"git\s+(-C\s+(\S+))", original_command)
+    if c_match:
+        git_args = ["-C", c_match.group(2)]
+        cwd = c_match.group(2)
+
+    try:
+        # Get current branch name
+        result = subprocess.run(
+            ["git"] + git_args + ["branch", "--show-current"],
+            capture_output=True, text=True, timeout=5,
+        )
+        branch = result.stdout.strip() if result.returncode == 0 else ""
+        if not branch or branch in ("main", "master"):
+            return  # No PR to update on main
+
+        # Check for open PR on this branch
+        result = subprocess.run(
+            ["gh", "pr", "list", "--head", branch, "--state", "open",
+             "--json", "number", "-q", ".[0].number"],
+            capture_output=True, text=True, timeout=15, cwd=cwd,
+        )
+        pr_number = result.stdout.strip()
+        if not pr_number:
+            return  # No open PR
+
+        # Get base branch for the PR
+        result = subprocess.run(
+            ["gh", "pr", "view", pr_number, "--json", "baseRefName",
+             "-q", ".baseRefName"],
+            capture_output=True, text=True, timeout=10, cwd=cwd,
+        )
+        base_branch = result.stdout.strip() or "main"
+
+        # Run aggregate-pr.py to generate new PR body
+        scripts_dir = Path.home() / ".claude" / "scripts"
+        aggregate_script = scripts_dir / "aggregate-pr.py"
+        if not aggregate_script.exists():
+            return
+
+        result = subprocess.run(
+            [sys.executable, str(aggregate_script), base_branch],
+            capture_output=True, text=True, timeout=30, cwd=cwd,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return
+
+        # Skip title line (first line) — PR body starts from line 3
+        pr_body = "\n".join(result.stdout.strip().split("\n")[2:])
+        if not pr_body.strip():
+            return
+
+        # Update PR body via gh CLI
+        result = subprocess.run(
+            ["gh", "pr", "edit", pr_number, "--body", pr_body],
+            capture_output=True, text=True, timeout=15, cwd=cwd,
+        )
+        if result.returncode == 0:
+            print(f"PR #{pr_number} body auto-updated with latest commits.")
+        else:
+            print(f"PR body update failed: {result.stderr.strip()[:100]}")
+
+    except subprocess.TimeoutExpired:
+        print("PR body update timed out — skipping")
+    except (FileNotFoundError, OSError) as e:
+        print(f"PR body update error: {e}")
 
 
 def store_ai_metadata(commit_hash: str, agent_name: str | None = None, model: str | None = None) -> None:
