@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.19.0](https://img.shields.io/badge/v1.19.0-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/6f35742a7c6934259cebea1bd23f69e16d442ad7) | Build 57
+
+feat: PR body auto-update hook, [x] commit format, drift detection
+
+- [x] Added auto_update_pr_body() to git.py post-commit hook — runs aggregate-pr.py after every push to update open PR body automatically
+- [x] Updated /commit skill to enforce [x] checkbox format in all commit body bullets — prevents bare "- " bullets that don't render as checkmarks
+- [x] Created sync-workflows.py drift detection script — compares ~/.claude source-of-truth against repo copies, reports drift, optional --fix flag
+
+
+---
+
 ## [![v1.18.0](https://img.shields.io/badge/v1.18.0-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/688da4e19a478318f0afbb5cd0b5151c79b4a3a5) | Build 56
 
 feat: harden x.py anti-AI sanitization and add style-mirroring + history repair
