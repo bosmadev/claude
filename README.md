@@ -775,14 +775,19 @@ The `.github/workflows/claude.yml` workflow provides AI-assisted PR automation, 
 
 ### Trigger Methods
 
-| Trigger | How to Use |
-|---------|-----------|
-| `@claude review` comment | Comment on issue or PR |
-| `@claude review` in PR review | Submit PR review with comment |
-| Issue assigned to `claude[bot]` | Assign in GitHub UI |
-| `claude` label | Add label to PR |
-| PR opened | Automatic on every new PR |
-| Manual dispatch | Actions tab UI |
+| Trigger | How | OWNER Gated | Loop Risk |
+|---------|-----|-------------|-----------|
+| `@claude review` comment | Comment on issue or PR | Yes (`author_association`) | None — manual |
+| `@claude review` in PR review | Submit PR review body | Yes (`author_association`) | None — manual |
+| Issue assigned to `claude[bot]` | Assign in GitHub UI | Yes (`repository_owner`) | None — one-time |
+| `claude` label added | Add label to PR | Yes (`repository_owner`) | None — one-time |
+| Push to labeled PR | Auto on `synchronize` | Label gate (owner added it) | Low — remove label when done |
+| PR opened with label | Auto if `claude` label exists | Label gate | None — one-time |
+| `workflow_dispatch` | Actions tab UI | Write access required | None — manual |
+
+**Two audiences, two workflows:**
+- **Owner (you):** Local `/review` for deep 10-agent analysis before merging
+- **Contributors:** Add `claude` label to their PR → automated feedback → they push fixes → Claude re-reviews and updates sticky comment → remove label when satisfied
 
 ### Manual Dispatch Actions
 
