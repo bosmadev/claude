@@ -780,11 +780,223 @@ def sanitize_reply_text(text: str) -> str:
         text = re.sub(r"\bbro\b", "dude", text, flags=re.IGNORECASE)
         print(_yellow("SANITIZED: Replaced 'bro' with 'dude'"))
 
-    # 6. Warn if reply looks too long for a casual reply (>280 chars)
+    # 6. NUKE ALL QUOTES from text (AI always wraps words in quotes, humans never do on twitter)
+    # Remove ALL double quotes that aren't part of URLs
+    text = re.sub(r'"([^"]{1,80})"', lambda m: m.group(1) if 'http' not in m.group(1) else m.group(0), text)
+    # Remove ALL remaining stray double quotes (not in URLs)
+    text = re.sub(r'"(?!https?://)', '', text)
+    # Remove single quotes wrapping phrases (e.g., 'almost any business problem' -> almost any business problem)
+    # But preserve contractions (don't, can't, it's, you're)
+    text = re.sub(r"(?<!\w)'([^']{2,50})'(?!\w)", lambda m: m.group(1) if 'http' not in m.group(1) else m.group(0), text)
+
+    # 6.5 BLOCK em-dashes and en-dashes -- dead AI giveaway, real people use - or --
+    # Step 1 already converts unicode em/en dashes, but block if agents type the ascii em-dash pattern
+    # Actually just ensure no unicode dashes survived
+    if '\u2014' in text or '\u2013' in text:
+        text = text.replace('\u2014', '--').replace('\u2013', '-')
+
+    # 7. Block AI-telltale phrases (dead giveaway of LLM output)
+    ai_cliche_patterns = [
+        r"\bgame[- ]?changer\b",
+        r"\bcouldn'?t agree more\b",
+        r"^(this is exactly|that'?s exactly) (what|why|how)",
+        r"^(absolutely|definitely|precisely)[.!,]",
+        r"\bspot on\b",
+        r"\bnailed? it\b",
+        r"^100% this\b",
+        r"\blove this approach\b",
+        r"\bbrilliant\b",
+        r"\bmassively underrated\b",
+        r"\bso underrated\b",
+        r"\bI'?ve been saying this\b",
+        r"\bthe real question is\b",
+        r"\bthis resonates\b",
+        r"\bthis hits home\b",
+        r"\bpreach\b",
+        r"\blouder for the people\b",
+        r"\bthis is the way\b",
+        r"\bcan'?t stress this enough\b",
+        r"\bthis right here\b",
+        r"\bunderrated (take|comment|point|observation)\b",
+        r"\bsolid (take|point|observation)\b",
+        r"\bwell said\b",
+        r"\bperfectly (said|put|stated|captured|articulated)\b",
+        r"\bgreat (point|take|observation)\b",
+        r"\bexcellent (point|take|observation)\b",
+        r"^honestly,?\s",
+        r"\bI couldn'?t have said it better\b",
+        r"\byou'?re not wrong\b",
+        r"\bthis is (incredibly|remarkably|genuinely|truly) (important|valuable|useful)\b",
+        # NEW: More AI patterns that real people never write
+        r"\bhave you considered\b",  # AI consultant tone
+        r"\blove that .{5,30} covers\b",  # "love that X covers Y" pattern
+        r"\bgood complement\b",  # marketing speak
+        r"\bgreat use case\b",  # product manager speak
+        r"\bat scale\b",  # consultant jargon nobody uses on twitter
+        r"\bbecomes the (next )?bottleneck\b",  # architect jargon
+        r"\bcurious how that stacks up\b",  # AI question pattern
+        r"\bfor the inference layer\b",  # too technical/structured
+        r"\bwould fit well with\b",  # sales pitch
+        r"\bgood complement to\b",  # marketing
+        r"\binteresting that\b",  # AI observation opener
+        r"\bthe real cost was\b",  # AI philosophical opener
+        r"\bwhen you scale\b",  # consultant speak
+        r"\bfor (most|many) use cases\b",  # AI hedge pattern
+        r"\bif you need higher throughput\b",  # sales engineer
+        r"\binference (cost|backend|layer)\b",  # too jargon-heavy for twitter
+        r"\ba solid stack\b",  # AI code reviewer phrase
+        r"\bgreat complement\b",  # marketing
+        r"\blove that .{3,20} learn\b",  # "love that X learn" pattern
+        r"\bone thing .{5,30} hit fast is\b",  # structured AI observation
+    ]
+    for pat in ai_cliche_patterns:
+        if re.search(pat, text, re.IGNORECASE):
+            print(_red(f"BLOCKED: Reply uses AI-cliche phrase matching '{pat}'"))
+            print(_red(f"Text was: {text[:200]}"))
+            print(_yellow("TIP: Write like youre texting a friend. No AI phrases. Just say what you mean plainly."))
+            sys.exit(1)
+
+    # 7.5 Block replies that are too fluent/structured (AI writes perfect grammar, humans dont)
+    # Count semicolons (AI loves them, twitter users never use them)
+    if text.count(';') > 0:
+        text = text.replace(';', ',')  # downgrade to comma
+    # Block long dashes used for dramatic pauses (AI pattern)
+    if ' -- ' in text and text.count(' -- ') > 1:
+        print(_red("BLOCKED: Multiple dashes (--) is an AI writing pattern"))
+        sys.exit(1)
+
+    # 8. Auto-lowercase first character (real people dont capitalize tweet-replies)
+    if text and text[0].isupper() and not text.startswith(("I ", "I'", "GSwarm", "GPU", "API", "LLM", "AI ", "CPU", "RAM", "HTTP", "URL", "SDK", "CLI", "UI", "UX")):
+        text = text[0].lower() + text[1:]
+
+    # 9. Strip trailing period from last sentence (people dont end tweets with .)
+    text = re.sub(r'\.\s*$', '', text)
+
+    # 10. Warn if reply looks too long for a casual reply (>280 chars)
     if len(text) > 280:
         print(_yellow(f"WARNING: Reply is {len(text)} chars -- might be too long for engagement"))
 
     return text.strip()
+
+
+def analyze_style(text: str) -> dict:
+    """Analyze writing style of a tweet and return style markers.
+
+    Agents call this before composing a reply to mirror the target's voice.
+    Returns a dict of style markers that describe how the person writes.
+    """
+    markers = {}
+
+    # Case style
+    words = text.split()
+    if not words:
+        return {"style": "empty"}
+
+    upper_count = sum(1 for w in words if w.isupper() and len(w) > 1)
+    lower_start = text[0].islower() if text else False
+    all_lower = text == text.lower()
+
+    if upper_count > len(words) * 0.5:
+        markers["case"] = "SHOUTY"
+    elif all_lower:
+        markers["case"] = "all lowercase"
+    elif lower_start:
+        markers["case"] = "lowercase start"
+    else:
+        markers["case"] = "normal caps"
+
+    # Punctuation style
+    has_periods = text.count('.') > 0 and not text.endswith('...')
+    has_exclamation = '!' in text
+    has_ellipsis = '...' in text
+    has_question = '?' in text
+    ends_no_punct = not text.rstrip()[-1:] in '.!?'
+
+    punct_markers = []
+    if has_ellipsis:
+        punct_markers.append("uses ...")
+    if has_exclamation:
+        punct_markers.append("uses !")
+    if ends_no_punct:
+        punct_markers.append("no ending punctuation")
+    if not has_periods:
+        punct_markers.append("no periods")
+    markers["punctuation"] = punct_markers if punct_markers else ["standard"]
+
+    # Abbreviations / slang
+    slang_map = {
+        r'\bu\b': 'u', r'\br\b': 'r', r'\brn\b': 'rn', r'\bngl\b': 'ngl',
+        r'\btbh\b': 'tbh', r'\bimo\b': 'imo', r'\bimho\b': 'imho',
+        r'\blol\b': 'lol', r'\blmao\b': 'lmao', r'\bomg\b': 'omg',
+        r'\bw/\b': 'w/', r'\bw/o\b': 'w/o', r'\bb/c\b': 'b/c',
+        r'\bfr\b': 'fr', r'\bfs\b': 'fs', r'\bsmh\b': 'smh',
+        r'\bidk\b': 'idk', r'\bbtw\b': 'btw', r'\bfyi\b': 'fyi',
+        r'\bafaik\b': 'afaik', r'\biirc\b': 'iirc',
+        r'\bgonna\b': 'gonna', r'\bwanna\b': 'wanna', r'\bgotta\b': 'gotta',
+        r'\bdunno\b': 'dunno', r'\bkinda\b': 'kinda', r'\bsorta\b': 'sorta',
+    }
+    found_slang = []
+    for pat, label in slang_map.items():
+        if re.search(pat, text, re.IGNORECASE):
+            found_slang.append(label)
+    markers["slang"] = found_slang if found_slang else ["none"]
+
+    # Emoji usage
+    emoji_pattern = re.compile(
+        "[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251"
+        "\U0001f900-\U0001f9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF"
+        "\U00002600-\U000026FF]+", flags=re.UNICODE
+    )
+    emojis = emoji_pattern.findall(text)
+    markers["emoji"] = f"{len(emojis)} emoji" if emojis else "no emoji"
+
+    # Sentence structure
+    sentences = re.split(r'[.!?\n]+', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    avg_words = sum(len(s.split()) for s in sentences) / max(len(sentences), 1)
+    markers["avg_words_per_sentence"] = round(avg_words, 1)
+
+    if avg_words < 6:
+        markers["sentence_style"] = "choppy/short"
+    elif avg_words < 12:
+        markers["sentence_style"] = "medium"
+    else:
+        markers["sentence_style"] = "long/flowing"
+
+    # Formality
+    formal_signals = [
+        r"\b(therefore|however|furthermore|additionally|consequently|nevertheless)\b",
+        r"\b(utilize|implement|facilitate|optimize|leverage)\b",
+        r"\b(regarding|pertaining|concerning)\b",
+    ]
+    informal_signals = [
+        r"\b(lol|lmao|wtf|omg|smh|bruh|dude|yall|y'all)\b",
+        r"\b(gonna|wanna|gotta|kinda|sorta|dunno)\b",
+        r"\bfuck|shit|damn|hell\b",
+    ]
+    formal_count = sum(1 for p in formal_signals if re.search(p, text, re.IGNORECASE))
+    informal_count = sum(1 for p in informal_signals if re.search(p, text, re.IGNORECASE))
+
+    if formal_count > informal_count:
+        markers["formality"] = "formal"
+    elif informal_count > 0:
+        markers["formality"] = "casual/informal"
+    else:
+        markers["formality"] = "neutral"
+
+    # Generate a one-line style instruction for agents
+    parts = []
+    parts.append(f"case: {markers['case']}")
+    if markers.get('slang') and markers['slang'] != ['none']:
+        parts.append(f"uses slang: {', '.join(markers['slang'])}")
+    parts.append(f"sentences: {markers['sentence_style']} ({markers['avg_words_per_sentence']} words avg)")
+    parts.append(f"formality: {markers['formality']}")
+    parts.append(f"punctuation: {', '.join(markers['punctuation'])}")
+    parts.append(f"emoji: {markers['emoji']}")
+    markers["instruction"] = f"MIRROR THIS STYLE: {' | '.join(parts)}"
+
+    return markers
 
 
 async def cmd_post(tweet_id: str, text: str, allow_original: bool = False, target_author: str = ""):
@@ -2159,7 +2371,22 @@ def load_history():
     if not history_path.exists():
         return {"replies": [], "daily_counts": {}}
     with open(history_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        content = f.read()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        # Corruption: use raw_decode to extract first valid JSON object
+        import shutil
+        decoder = json.JSONDecoder()
+        try:
+            obj, end_idx = decoder.raw_decode(content)
+            # Save repaired version
+            backup_path = str(history_path) + ".backup"
+            shutil.copy2(str(history_path), backup_path)
+            save_history(obj)
+            return obj
+        except Exception:
+            return {"replies": [], "daily_counts": {}}
 
 
 def save_history(data):
@@ -2976,7 +3203,7 @@ Examples:
         asyncio.run(cmd_search(args.query, args.count, args.min_engagement))
     elif cmd == "post":
         text = args.text
-        if args.stdin or text is None:
+        if args.stdin:
             text = sys.stdin.read().strip()
         if not text:
             print(_red("ERROR: No reply text provided (use positional arg or --stdin)"))
@@ -2984,7 +3211,7 @@ Examples:
         asyncio.run(cmd_post(args.tweet_id, text, args.allow_original, getattr(args, 'target_author', '')))
     elif cmd == "quote":
         text = args.text
-        if args.stdin or text is None:
+        if args.stdin:
             text = sys.stdin.read().strip()
         if not text:
             print(_red("ERROR: No commentary text provided (use positional arg or --stdin)"))

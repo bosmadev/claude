@@ -273,7 +273,7 @@
       "Bash(format:*)",
       "Bash(dd:*)"
     ],
-    "defaultMode": "plan"
+    "defaultMode": "acceptEdits"
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
