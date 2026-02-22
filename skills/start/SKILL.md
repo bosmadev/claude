@@ -476,6 +476,8 @@ Review agents leave comments using priority-based format:
 - P2: Performance issues, missing error handling, code quality
 - P3: Refactoring, documentation, test coverage
 
+**MANDATORY: Implementation agents must fix ALL priorities (P1 + P2 + P3).** Never defer P2/P3 findings as "future work" or "architectural debt". If a review finding exists, it gets fixed — period. The only exception is a genuine framework limitation that cannot be worked around, which must be documented with a specific code comment explaining the constraint.
+
 ### Git Diff Scope
 
 When using `review git`: use `git diff --name-only HEAD` for uncommitted changes, or `gh pr diff --name-only` for PR-specific review.
@@ -967,6 +969,9 @@ IMPL_ACTIVE → RETRY_CHECK → VERIFY_FIX → REVIEW → SHUTDOWN → DONE
 **CRITICAL ENFORCEMENT RULES:**
 1. **NEVER skip to SHUTDOWN** after impl agents finish — verify-fix catches real build errors
 2. **NEVER report "done"** before reaching SHUTDOWN state
+3. **FIX ALL PRIORITIES (P1 + P2 + P3)** — agents must not defer P2/P3 as "future fix". Every finding must be resolved in code. Only truly impossible items (framework limitations with documented constraints) may remain open.
+4. **PR body auto-update:** After every push, verify the PR body includes all commits with [x] checkmarks via aggregate-pr.py
+5. **Review comment accuracy:** If a review comment exists, update it to reflect the actual state after fixes — do not leave stale P2/P3 counts
 3. If `noreview` flag: skip VERIFY_FIX and REVIEW, go directly RETRY_CHECK → SHUTDOWN
 4. If stuck in any state for >10 minutes with no progress: report status and ask user
 
@@ -1179,7 +1184,10 @@ RALPH Agent {X}/{N} ({agent_name}) - Phase {phase_number}: {phase_name}
 
 **Success criteria:**
 {what_defines_completion}
+- ALL priority levels must be fixed (P1 AND P2 AND P3) — never leave P2/P3 as "future"
 - Push commits to remote before completion
+
+**CRITICAL: Fix ALL priorities, not just P1.** Do not mark P2 or P3 items as "future fix" or "architectural/future". Every finding assigned to you MUST be fixed in code. If a fix is genuinely impossible (framework limitation), document the specific constraint in a code comment and report to team-lead — but default is to FIX everything.
 ```
 
 **Required fields:**
