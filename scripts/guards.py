@@ -20,7 +20,6 @@ Usage:
   python guards.py auto-ralph           # UserPromptSubmit: Auto-spawn Ralph agents for permissive modes
   python guards.py quality-deprecation      # PostToolUse: Warn about /quality deprecation
   python guards.py fs-guard                 # PreToolUse: Block new file/folder creation and deletion
-  python guards.py x-post-check             # PostToolUse: Log /x skill Chrome MCP clicks
   python guards.py bypass-permissions-guard # PreToolUse: Validate commands in bypass mode
 """
 
@@ -1176,49 +1175,6 @@ State file created: {state_path}{rename_note}"""
     sys.exit(0)
 
 
-# =============================================================================
-# X Post Check (PostToolUse: computer) -- merged from x-guard.py
-# =============================================================================
-
-def x_post_check() -> None:
-    """PostToolUse hook for computer tool during /x skill.
-
-    Logs click actions when .x-session flag exists.
-    Only activates during active /x skill sessions.
-    """
-    try:
-        hook_input = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, TypeError):
-        sys.exit(0)
-
-    tool_name = hook_input.get("tool_name", "")
-    if tool_name != "computer":
-        sys.exit(0)
-
-    tool_input = hook_input.get("tool_input", {})
-    action = tool_input.get("action", "")
-
-    if action != "left_click":
-        sys.exit(0)
-
-    # Check for .x-session flag file
-    session_flag = Path.cwd() / ".claude" / ".x-session"
-    if not session_flag.exists():
-        sys.exit(0)
-
-    # Log the click action during /x skill
-    coordinate = tool_input.get("coordinate", [])
-    log_file = Path.home() / ".claude" / "security" / "x-clicks.log"
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    try:
-        with open(log_file, "a") as f:
-            f.write(f"CLICK at {coordinate}\n")
-    except OSError:
-        pass
-
-    sys.exit(0)
-
 
 # =============================================================================
 # FS Guard (PreToolUse: Write, Bash)
@@ -1339,7 +1295,7 @@ def bypass_permissions_guard() -> None:
     PreToolUse guard for bypass-permissions mode (claude --dangerously-skip-permissions).
 
     When bypass-permissions mode is active, this guard:
-    1. Allows safe commands: python x.py, git read-only, ls, cat, etc.
+    1. Allows safe commands: python scripts, git read-only, ls, cat, etc.
     2. Blocks destructive commands, git write ops, and repo boundary violations
     3. Reuses threat detection from security-gate.py
 
@@ -1595,7 +1551,7 @@ def bypass_permissions_guard() -> None:
         _deny(f"🚫 Nightshift guard: Command not in dev allowlist\n\nCommand: {command[:200]}")
 
     # ═══════════════════════════════════════════════════════════════════
-    # PROFILE: /x and default (restrictive — read-only + x.py)
+    # PROFILE: default (restrictive — read-only + python)
     # ═══════════════════════════════════════════════════════════════════
 
     # ── TTY Confirmation: git writes require AskUserQuestion first ──
@@ -1639,14 +1595,13 @@ def bypass_permissions_guard() -> None:
                 # Block and instruct Claude to confirm with user first
                 _deny_tty_confirm(core_cmd)
 
-    # Allowlist patterns for /x bypass mode
-    x_allowlist = [
-        # Python x.py commands (any path: x.py, skills/x/scripts/x.py, ~/.claude/skills/x/scripts/x.py)
-        r"^python3?\s+\S*x\.py\b",
+    # Default allowlist for bypass-permissions mode
+    default_allowlist = [
+        # Python scripts
+        r"^python3?\s+\S*\.py\b",
 
-        # Piped commands to x.py (echo '...' | python x.py post ID --stdin)
-        r"^echo\s+.*\|\s*python3?\s+\S*x\.py\b",
-        r"^printf\s+.*\|\s*python3?\s+\S*x\.py\b",
+        # Token management script (needed by /token skill)
+        r"^python3?\s+\S*claude-github\.py\b",
 
         # Git read-only
         r"^git\s+(status|log|diff|show|remote|fetch|rev-parse|describe|ls-files|check-ignore|name-rev|symbolic-ref)\b",
@@ -1663,17 +1618,17 @@ def bypass_permissions_guard() -> None:
         # Process inspection (read-only)
         r"^ps\b", r"^pgrep\b", r"^top\b", r"^htop\b",
 
-        # Sleep (needed for rate limit retry waits)
+        # Sleep
         r"^sleep\b",
     ]
 
-    for pattern in x_allowlist:
+    for pattern in default_allowlist:
         # Match against both full command and cd-stripped version
         if re.match(pattern, command, re.IGNORECASE) or re.match(pattern, core_cmd, re.IGNORECASE):
             sys.exit(0)
 
-    # /x: block everything else
-    _deny(f"🚫 Bypass-permissions guard BLOCKED: Command not in allowlist\n\nAllowed: python x.py, git read-only, ls, cat, etc.\nFor dev tooling, use NIGHTSHIFT_AGENT=1\n\nCommand: {command[:200]}")
+    # Default: block unknown commands
+    _deny(f"🚫 Bypass-permissions guard BLOCKED: Command not in allowlist\n\nAllowed: python scripts, git read-only, ls, cat, etc.\nFor dev tooling, use NIGHTSHIFT_AGENT=1\n\nCommand: {command[:200]}")
 
 
 # =============================================================================
@@ -1727,8 +1682,6 @@ def main() -> None:
         quality_deprecation_hook()
     elif mode == "fs-guard":
         fs_guard()
-    elif mode == "x-post-check":
-        x_post_check()
     elif mode == "bypass-permissions-guard":
         bypass_permissions_guard()
     else:

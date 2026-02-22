@@ -320,52 +320,6 @@ Autonomous development cycle manager for off-hours work. Spawns scout agents in 
 /nightshift stop     # Shutdown all agents → single PR with 47 commits
 ```
 
-### /x - X/Twitter Outreach
-
-| Command | Description |
-|---------|-------------|
-| `/x research {TOPIC}` | Explore X queries, rank by engagement |
-| `/x research [N] [model] {TOPIC}` | N parallel agents for research |
-| `/x post {TEXT with URL}` | Compose unique replies, post via X API |
-| `/x post [N] [model] {TEXT}` | N parallel agents for posting |
-| `/x compose` | Scrape news, compose original tweet, distribute via replies |
-| `/x news` | Show current news feed stats |
-| `/x history` | Show posting history |
-| `/x history --days N` | Show history for last N days |
-| `/x history --topic T` | Filter history by topic |
-| `/x status` | Show daily/weekly counts + reach |
-| `/x scrape` | Run scraper now, update feed.json |
-| `/x feed` | Show current auto-generated feed (queries + news) |
-| `/x scheduler install [N]` | Install auto-scraper (every N hours, default 6) |
-| `/x scheduler status` | Show scheduler + feed freshness |
-| `/x scheduler uninstall` | Remove auto-scraper |
-| `/x auto [N] [model]` | Headless auto-run: scrape + research + post |
-| `/x campaign [N] [model] {TOPIC}` | TeamCreate + N agents, continuous posting loop until shutdown |
-| `/x github` | GitHub-to-X pipeline: scan repos/issues, map users to X handles, generate queries |
-| `/x github --search` | Same + search X API for each generated query |
-| `/x help` | Show usage |
-
-Automated X/Twitter outreach with four modes:
-
-- **Post mode** — Find high-engagement targets on X, compose unique replies, post via X API (1-2 sec/post) with Chrome MCP fallback
-- **Compose mode** — Scrape news from 15+ sources (Google News RSS, GitHub API, Messari crypto API, changelogs), compose an original tweet on your profile, then distribute by replying to related conversations with the original tweet URL
-- **Research mode** — Explore X search queries and rank by engagement for future targeting
-- **GitHub mode** — Scan GitHub trending repos, cost issues, and releases; map users to X handles via API; generate targeted search queries for posting
-
-**Configuration:** Auto-generated from `skills/x/.env` (gitignored). Set `X_SHARE_URL`, `X_HANDLE`, `X_PROJECT_NAME`, `X_PROJECT_DESC`, plus X auth tokens. No manual `config.json` creation needed — auto-generates on first run.
-
-**News sources:** Google News RSS (AI, coding, crypto), Google Cloud feeds, GitHub trending repos + cost-related issues + releases, Messari API (optional), markdown changelogs (Claude Code, Next.js, VS Code).
-
-**Scraper scheduler:** `python skills/x/scripts/x.py scraper-install [HOURS]` installs a Windows Task Scheduler job to keep `feed.json` fresh (default: every 6 hours).
-
-**Model routing:** Default Sonnet for ALL /x operations. Never use Opus — continuous posting loops burn weekly quota. `[N]` = parallel agents (default 1), `[model]` = `opus`/`sonnet`/`haiku`.
-
-**Backend architecture:** X HTTP API is primary (1-2 sec/post). Chrome MCP is fallback for visual research, For You feed scanning, and auth expiry recovery.
-
-**Quality guard:** `sanitize_reply_text()` runs before every post — strips non-ASCII encoding artifacts, blocks banned words/phrases, validates formatting (no ALL CAPS, no hashtag spam >2, no excessive punctuation).
-
-**Security audit:** `x-post-check` hook logs all Chrome MCP clicks during `/x` sessions to `~/.claude/security/x-clicks.log`. Activated via `.claude/.x-session` flag file.
-
 ### /sounds - Audio Feedback
 
 | Command | Description |
@@ -601,7 +555,6 @@ Hooks intercept Claude Code events at different lifecycle stages:
 | PostToolUse | Skill | `guards.py skill-validator` | 5s | Validate skill invocation |
 | PostToolUse | Skill | `guards.py quality-deprecation` | 5s | Warn on deprecated /quality skill |
 | PostToolUse | Skill | `post-review.py hook` | 30s | Post-review processing |
-| PostToolUse | computer | `guards.py x-post-check` | 5s | Security audit: log Chrome clicks during /x sessions |
 | PostToolUse | - | `sounds.py post-tool` | 5s | Play tool error/commit sound (async, no success beep) |
 | UserPromptSubmit | ^/(?!start) | `guards.py skill-interceptor` | 5s | Parse skill commands |
 | UserPromptSubmit | ^/start | `guards.py skill-parser` | 5s | Parse /start command args |
@@ -737,13 +690,13 @@ Separate from Ralph Safety Layers (workflow gates) — these protect individual 
 
 #### Bypass-Permissions Guard
 
-When Claude runs with `--bypassPermissions` (used by `/x` posting and `/nightshift` agents), the `guards.py bypass-permissions-guard` enforces two profiles:
+When Claude runs with `--bypassPermissions` (used by `/nightshift` agents), the `guards.py bypass-permissions-guard` enforces two profiles:
 
-**Profile: /x (default — restrictive)**
+**Profile: Default (restrictive)**
 
 | Allowed | Blocked |
 |---------|---------|
-| `python x.py <subcommand>` | All git write operations |
+| Python scripts (`python *.py`) | All git write operations |
 | Git read-only (status, log, diff, show) | File modifications |
 | File read-only (ls, cat, head, tail, grep) | pip, npm, build tools |
 | Text processing (base64, jq) | Docker, system commands |

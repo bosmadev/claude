@@ -264,7 +264,6 @@ Token-efficient model assignment via permanent, native mechanisms:
 | `/youtube`    | Fork    | Sonnet (L1) | Transcription management                       |
 | `/launch`     | Fork    | Sonnet (L1) | Browser verification                           |
 | `/token`      | Fork    | Haiku       | Token status/refresh                           |
-| `/x`          | No      | Opus (main) | X/Twitter outreach, main context, agents use Sonnet |
 | `/nightshift` | Fork    | Sonnet (L1) | Autonomous maintenance, spawns Sonnet agents   |
 | `/sounds`     | No      | Opus (main) | File toggle, instant operation (<1 turn)        |
 | `/ask`        | Fork    | Sonnet (L1) | Multi-model query orchestration                |
@@ -287,49 +286,11 @@ All team agents (IMPL, VERIFY+FIX, review) MUST handle shutdown gracefully:
 
 When you receive a `shutdown_request` message (JSON with `type: "shutdown_request"`), respond by calling `SendMessage` with `type="shutdown_response"`, `request_id` from the message, and `approve=true`. This terminates your process. **Never** respond with "I can't exit" or "close the window" — always use the `SendMessage` tool.
 
-## Communication Tone Standards
-
-For all social media, comments, replies, and public-facing content:
-
-**Target tone:** Friendly + funny + self-aware with light sarcasm. "Friend giving advice over coffee" not "expert lecturing".
-
-**Allowed:**
-- Self-deprecating humor ("Spent 3 hours debugging... forgot to restart server")
-- Playful observations ("We all pretend side projects are 'quick weekenders'. Three months later...")
-- Relatable struggles ("The bug is always in the code you're 100% certain is correct")
-- Genuine curiosity and interest
-
-**Blocked:**
-- Condescending sarcasm ("Love watching people discover X isn't magic...")
-- Dismissive remarks ("Good luck with that...")
-- Schadenfreude ("Hope you hit real complexity...")
-- Superior attitude ("Welcome to reality...")
-
-**Rule:** Self-deprecating ✅ | Putting others down ❌ | Being helpful always ✅
-
----
-
 ## Skill Commands
 
 For complete skill command tables with all argument combinations, see [README.md &gt; Skills Reference](./README.md#skills-reference).
 
-23 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/memoryreview`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/x`, `/ask`, `/test`, `/docx`, `/docker`, `/nightshift`, `/sounds`, `/quality` (deprecated)
-
-### /x Environment Variables
-
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `X_CT0` | Yes | X auth cookie (from Cookie-Editor extension) |
-| `X_AUTH_TOKEN` | Yes | X auth token (from Cookie-Editor extension) |
-| `X_SHARE_URL` | Yes | URL included in every reply (drives impressions) |
-| `X_HANDLE` | Yes | X handle (e.g., `@yourname`) |
-| `X_PROJECT_NAME` | Yes | Project name for generated content |
-| `X_PROJECT_DESC` | Yes | One-line project description |
-| `MESSARI_API_KEY` | No | Crypto news via Messari API |
-
-**Backend:** X HTTP API (primary, 1-2 sec/post) with Chrome MCP fallback (visual research, auth expiry). Never use Opus for /x — continuous loops burn weekly quota.
-
-**Continuous Operation:** X agents work indefinitely with aggressive retry (60-180s intervals). Rate limits trigger wait-retry cycles, never shutdown. Rotate search strategies when rate limited. Only stop on explicit shutdown request.
+22 skills available: `/start`, `/review`, `/commit`, `/openpr`, `/init-repo`, `/repotodo`, `/reviewplan`, `/memoryreview`, `/launch`, `/screen`, `/youtube`, `/token`, `/rule`, `/chats`, `/help`, `/ask`, `/test`, `/docx`, `/docker`, `/nightshift`, `/sounds`, `/quality` (deprecated)
 
 ## Web Research Fallback Chain
 
@@ -350,9 +311,7 @@ Ralph agents use atomic task claiming with `FileLock` to prevent idle agents. Qu
 
 ## Hook System
 
-22 hook handlers across 14 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart, SubagentStop, Notification, PermissionRequest, TaskCompleted, TeammateIdle. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol, /x security), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete hook registration table.
-
-**Code-level guards:** `sanitize_reply_text()` in `skills/x/scripts/x.py` (every X post), `x-post-check` in `guards.py` (Chrome MCP audit log).
+22 hook handlers across 14 lifecycle stages: Setup, Stop, SessionStart, PreCompact, PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart, SubagentStop, Notification, PermissionRequest, TaskCompleted, TeammateIdle. Key handlers: `security-gate.py` (Bash validation), `auto-allow.py` (safe Read/Edit), `guards.py` (plan markers, Ralph protocol), `ralph.py` (orchestration), `git.py` (change tracking). See [README.md > Hook Registration Table](./README.md#hook-registration-table) for the complete hook registration table.
 
 **Cross-platform:** All hooks use `scripts/compat.py` for platform abstraction (stdin timeout, file locking, CLAUDE_HOME, sound playback). Hooks import via `hooks/compat.py` re-export.
 

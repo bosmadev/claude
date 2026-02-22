@@ -615,16 +615,6 @@
         ]
       },
       {
-        "matcher": "computer",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${USERPROFILE:-$HOME}/.claude/scripts/guards.py x-post-check",
-            "timeout": 5
-          }
-        ]
-      },
-      {
         "hooks": [
           {
             "type": "command",

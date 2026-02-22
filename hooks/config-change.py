@@ -42,7 +42,7 @@ LOG_FILE = LOG_DIR / "config-changes.log"
 # ─── Generalization Rules ────────────────────────────────────────────────────
 # Each rule: (pattern_to_detect, suggested_generalization, description)
 GENERALIZATION_RULES = [
-    # python ~/.claude/scripts/x.py log 'tweet' | head -30
+    # python ~/.claude/scripts/statusline.py | head -30
     (
         r"python3?\s+[^\s]*\.claude[/\\]scripts[/\\](\w+\.py)\s+\S.*",
         r"python ~/.claude/scripts/*.py *",
@@ -54,7 +54,7 @@ GENERALIZATION_RULES = [
         r"python ~/.claude/hooks/*.py *",
         "Specific hook + args → wildcard hook pattern",
     ),
-    # python /home/dennis/.claude/scripts/x.py ...  (absolute path)
+    # python /home/dennis/.claude/scripts/guards.py ...  (absolute path)
     (
         r"python3?\s+/[^\s]+\.claude[/\\]scripts[/\\](\w+\.py)\s*.*",
         r"python ~/.claude/scripts/*.py *",

@@ -94,6 +94,19 @@ def _sanitize_message(message: str) -> str:
     sanitized = re.sub(r'(sk-ant-[a-zA-Z0-9_\-]{20,})', r'[REDACTED_API_KEY]', sanitized)
     return sanitized
 
+def debug_log(message: str) -> None:
+    """Log a debug message silently to the log file only (not stdout)."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sanitized = _sanitize_message(message)
+    line = f"[{timestamp}] [DEBUG] {sanitized}"
+    try:
+        ensure_log_dir()
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
 def log(message: str) -> None:
     """Log a message with timestamp to both stdout and log file with automatic rotation."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
