@@ -3,6 +3,18 @@
 
 ---
 
+## [![v1.19.4](https://img.shields.io/badge/v1.19.4-2026--02--22-333333.svg)](https://github.com/bosmadev/claude/commit/dd4f8b5557b587c97ed1fac314c09a88bd382be2) | Build 61
+
+fix(ralph): enforce fixing ALL priorities (P1+P2+P3) in agent workflow
+
+- [x] Add mandatory "fix all priorities" rule to agent prompt template
+- [x] Add enforcement rules 3-5 to state machine (PR body, review comment accuracy)
+- [x] Add priority enforcement to review TODO comment section
+- [x] Agents can no longer defer P2/P3 as "future fix" without framework-limitation justification
+
+
+---
+
 ## [![v1.19.3](https://img.shields.io/badge/v1.19.3-2026--02--22-333333.svg)](https://github.com/bosmadev/claude/commit/67a59c05e93377f059d6aaf343c13303707cda15) | Build 60
 
 cleanup: remove /x skill and all X/Twitter outreach infrastructure
