@@ -3,6 +3,17 @@
 
 ---
 
+## [![v1.19.5](https://img.shields.io/badge/v1.19.5-2026--02--22-333333.svg)](https://github.com/bosmadev/claude/commit/abe0524b3e9c10706e253cf4ae6165ff98d762e2) | Build 62
+
+fix(aggregate-pr): filter raw paragraph text from PR body details
+
+- [x] Only include bullet items (- or * prefix) in Details section
+- [x] Skip raw commit body paragraphs that leak as unformatted text
+- [x] Use regex prefix replacement to avoid corrupting mid-text patterns
+
+
+---
+
 ## [![v1.19.4](https://img.shields.io/badge/v1.19.4-2026--02--22-333333.svg)](https://github.com/bosmadev/claude/commit/dd4f8b5557b587c97ed1fac314c09a88bd382be2) | Build 61
 
 fix(ralph): enforce fixing ALL priorities (P1+P2+P3) in agent workflow
