@@ -348,22 +348,26 @@ def aggregate_pr(base_branch: str = "main") -> PRSummary:
 
 
 def collect_details(commits: list[Commit]) -> str:
-    """Collect commit body details with boilerplate filtering and [x] checkmarks."""
+    """Collect commit body details with boilerplate filtering and [x] checkmarks.
+
+    Only includes lines that are bullet items (- or * prefix). Raw paragraph
+    text from commit bodies is skipped to keep the PR body clean.
+    """
     details = []
     for commit in commits:
         if commit.body:
-            filtered_lines = []
             for line in commit.body.split("\n"):
-                # Skip boilerplate lines
-                if line.strip() and is_boilerplate(line):
+                stripped = line.strip()
+                # Only include bullet items — skip raw paragraph text
+                if not stripped or not (stripped.startswith("- ") or stripped.startswith("* ")):
                     continue
-                # Convert bare "- " bullets to "- [x] " checkmarks
-                if line.strip().startswith("- ") and "[x]" not in line and "[X]" not in line:
-                    line = line.replace("- ", "- [x] ", 1)
-                filtered_lines.append(line)
-            body = "\n".join(filtered_lines).strip()
-            if body:
-                details.append(body)
+                # Skip boilerplate lines
+                if is_boilerplate(line):
+                    continue
+                # Convert bare bullets to "- [x] " checkmarks (prefix-only, not mid-text)
+                if "[x]" not in line and "[X]" not in line:
+                    line = re.sub(r'^(\s*)[-*]\s', r'\1- [x] ', line, count=1)
+                details.append(line)
     return "\n".join(details)
 
 
