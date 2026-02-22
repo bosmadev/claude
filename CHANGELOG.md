@@ -3,6 +3,22 @@
 
 ---
 
+## [![v1.19.3](https://img.shields.io/badge/v1.19.3-2026--02--22-333333.svg)](https://github.com/bosmadev/claude/commit/67a59c05e93377f059d6aaf343c13303707cda15) | Build 60
+
+cleanup: remove /x skill and all X/Twitter outreach infrastructure
+
+- [x] **X Skill Removed (4 files):** Deleted `skills/x/SKILL.md`, `skills/x/scripts/x.py`, `skills/x/scripts/fix-history.py`, and `skills/x/.gitignore` — full removal of X/Twitter outreach skill
+- [x] **Agent Removed (1 file):** Deleted `agents/datascience-hunter.md` — X campaign research agent no longer needed
+- [x] **guards.py Cleaned (71 lines removed):** Removed `x-post-check` hook handler and `/x`-specific bypass-permissions allowlist; generalized default bypass profile to allow all Python scripts instead of only `x.py`
+- [x] **settings.json Updated:** Removed `PostToolUse computer` hook registration for `guards.py x-post-check`
+- [x] **CLAUDE.md Updated:** Removed `/x` skill entry from model routing table, `/x` environment variables section, Communication Tone Standards section, and skill count updated from 23 to 22
+- [x] **README.md Updated:** Removed full `/x` command reference, architecture description, and hook registration table row for `x-post-check`
+- [x] **claude-github.py Updated:** Added `debug_log()` helper function for silent file-only debug logging
+- [x] **hooks/config-change.py Updated:** Updated comment examples to reference `statusline.py` and `guards.py` instead of removed `x.py`
+
+
+---
+
 ## [![v1.19.2](https://img.shields.io/badge/v1.19.2-2026--02--21-333333.svg)](https://github.com/bosmadev/claude/commit/be02a027b16dae96f3decb79788ef4971d7530dd) | Build 59
 
 docs: add review trigger table with OWNER gating and loop risk
